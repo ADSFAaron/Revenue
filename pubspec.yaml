@@ -35,6 +35,15 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.4
 
+  # Online Storage for files
+  firebase_storage: ^10.2.6
+
+  # Online Database for data
+  cloud_firestore: ^3.1.7
+
+  # Firebase Authentication
+  firebase_auth: ^3.3.6
+
 dev_dependencies:
   flutter_native_splash: ^1.3.3
   flutter_test:
@@ -49,6 +58,13 @@ dev_dependencies:
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
+
+flutter_native_splash:
+  color: "#42a5f5"
+  image: assets/AppLogo.png
+  android: true
+  ios: true
+  web: true
 
 # The following section is specific to Flutter.
 flutter:

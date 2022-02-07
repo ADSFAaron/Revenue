@@ -5,22 +5,25 @@ class FadeAnimation extends StatelessWidget {
   final int delay;
   final Widget child;
 
-  // TODO: how to change opacity?
   FadeAnimation(this.delay, this.child);
 
   @override
   Widget build(BuildContext context) {
-    final customTween = Tween<double>(begin: 0.0, end: 1.0);
+    final customTween = Tween<double>(begin: -50.0, end: 0.0);
 
     return PlayAnimation<double>(
       tween: customTween,
       duration: const Duration(milliseconds: 1000),
       delay: Duration(milliseconds: delay),
-      curve: Curves.easeInOut,
+      curve: Curves.easeOut,
       builder: (context, child, value) {
-        return Transform.scale(
-          scale: value,
-          child: child,
+        return AnimatedOpacity(
+          duration: const Duration(milliseconds: 500),
+          opacity: (value + 50.0) / 50.0,
+          child: Transform.translate(
+            offset: Offset(0, value),
+            child: child,
+          ),
         );
       },
       child: child,

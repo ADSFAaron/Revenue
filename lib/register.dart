@@ -27,81 +27,79 @@ class RegisterPage extends StatelessWidget {
           child: Container(
             height: MediaQuery.of(context).size.height - 100,
             width: double.infinity,
-            child: Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: <Widget>[
-                  Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: <Widget>[
-                      Text(
-                        "Register",
-                        style: TextStyle(
-                            fontSize: 30,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black),
-                      ),
-                      SizedBox(height: 10),
-                      Text(
-                        "Register a new account",
-                        style: TextStyle(fontSize: 15, color: Colors.grey[700]),
-                      ),
-                      Padding(
-                        padding:
-                            EdgeInsets.symmetric(vertical: 20, horizontal: 40),
-                        child: Column(
-                          children: <Widget>[
-                            makeInput(label: "Email"),
-                            makeInput(label: "Password", obscureText: true),
-                            makeInput(
-                                label: "Confirm Password", obscureText: true),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 40,
-                        ),
-                        child: Container(
-                          padding: EdgeInsets.only(top: 3, left: 3),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(50),
-                            border: Border.all(color: Colors.black),
-                          ),
-                          child: MaterialButton(
-                            height: 60,
-                            minWidth: MediaQuery.of(context).size.width,
-                            onPressed: () {},
-                            color: Colors.greenAccent,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(50)),
-                            child: Text(
-                              'Register',
-                              style: TextStyle(
-                                  fontSize: 20, fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(height: 20),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text("Already have an account? "),
-                          Text(
-                            "Login",
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 20,
-                            ),
-                          ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: <Widget>[
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: <Widget>[
+                    Text(
+                      "Register",
+                      style: TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black),
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      "Register a new account",
+                      style: TextStyle(fontSize: 15, color: Colors.grey[700]),
+                    ),
+                    Padding(
+                      padding:
+                          EdgeInsets.symmetric(vertical: 20, horizontal: 40),
+                      child: Column(
+                        children: <Widget>[
+                          makeInput(label: "Email"),
+                          makeInput(label: "Password", obscureText: true),
+                          makeInput(
+                              label: "Confirm Password", obscureText: true),
                         ],
                       ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 40,
+                      ),
+                      child: Container(
+                        padding: EdgeInsets.only(top: 3, left: 3),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(50),
+                          border: Border.all(color: Colors.black),
+                        ),
+                        child: MaterialButton(
+                          height: 60,
+                          minWidth: MediaQuery.of(context).size.width,
+                          onPressed: () {},
+                          color: Colors.greenAccent,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(50)),
+                          child: Text(
+                            'Register',
+                            style: TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("Already have an account? "),
+                        Text(
+                          "Login",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 20,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),

@@ -12,7 +12,7 @@ class LoginHomePage extends StatefulWidget {
 }
 
 class _LoginHomePageState extends State<LoginHomePage> {
-  final user = FirebaseAuth.instance.currentUser!;
+  // final user = FirebaseAuth.instance.currentUser!;
   int pageIndex = 0;
 
   final screen = [

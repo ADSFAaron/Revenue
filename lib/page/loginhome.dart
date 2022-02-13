@@ -6,6 +6,8 @@ import 'dart:async';
 
 import 'package:revenue/page/addcart.dart';
 
+import 'addorder.dart';
+
 class HomeContentPage extends StatefulWidget {
   @override
   State<HomeContentPage> createState() => _HomeContentPageState();
@@ -117,7 +119,8 @@ class _HomeContentPageState extends State<HomeContentPage> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => AddCart()),
+                  MaterialPageRoute(
+                      builder: (context) => AddOrder(users['storeID'])),
                 );
               },
               icon: Icon(Icons.add),

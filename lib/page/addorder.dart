@@ -11,7 +11,8 @@ class AddOrder extends StatefulWidget {
 }
 
 class _AddOrderState extends State<AddOrder> {
-  DateTime pickDate = DateTime.now();
+  DateTime pickDate = DateTime.now(); // 讓使用者可以選取時間
+  GlobalKey<FormState> formKey = GlobalKey<FormState>(); // 取得表單選取內容
 
   void _pickDate() async {
     DateTime? date = await showDatePicker(
@@ -51,6 +52,9 @@ class _AddOrderState extends State<AddOrder> {
             );
           }
 
+          // Get Data from Firestore
+
+          // per Row content
           return Column(
             children: <Widget>[
               Padding(
@@ -59,7 +63,7 @@ class _AddOrderState extends State<AddOrder> {
                 child: Container(
                   child: ListTile(
                     title: Text(
-                        "日期： ${pickDate.year}  / ${pickDate.month}  / ${pickDate.day}"),
+                        "日期 :  ${pickDate.year}  / ${pickDate.month}  / ${pickDate.day}"),
                     trailing: Icon(
                       Icons.calendar_today,
                       color: Colors.grey[700],
@@ -67,6 +71,17 @@ class _AddOrderState extends State<AddOrder> {
                     onTap: _pickDate,
                   ),
                 ),
+              ),
+              Form(
+                key: formKey,
+                child: ListView.separated(
+                    itemBuilder: (context, index) => ListTile(
+                          leading: Icon(Icons.event_seat_rounded),
+                          title: Text("test"),
+                          subtitle: Text("subtitle"),
+                        ),
+                    separatorBuilder: (context, index) => Divider(),
+                    itemCount: 10),
               ),
             ],
           );

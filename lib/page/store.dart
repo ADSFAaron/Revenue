@@ -8,7 +8,8 @@ class StorePage extends StatelessWidget {
         child: Column(
           children: <Widget>[
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 28.0, vertical: 20.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -18,7 +19,7 @@ class StorePage extends StatelessWidget {
                     child: Text(
                       "Store name",
                       style: TextStyle(
-                        fontSize: 20,
+                        fontSize: 28.0,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -32,21 +33,50 @@ class StorePage extends StatelessWidget {
                 ],
               ),
             ),
-            Row(children: <Widget>[
-              Card(
-                child: InkWell(
-                  splashColor: Colors.blue.withAlpha(30),
-                  onTap: () {
-                    debugPrint('Card tapped.');
-                  },
-                  child: const SizedBox(
-                    width: 300,
-                    height: 100,
-                    child: Text('A card that can be tapped'),
+            Wrap(
+              children: <Widget>[
+                Card(
+                  color: Color(0xff95eeb3),
+                  child: InkWell(
+                    splashColor: Colors.blue.withAlpha(30),
+                    onTap: () {
+                      debugPrint('Card tapped.');
+                    },
+                    child: SizedBox(
+                      width: 150,
+                      height: 100,
+                      child: Padding(
+                        padding: const EdgeInsets.all(14.0),
+                        child: Column(
+                          children: [
+                            Text(
+                              'NTD 0',
+                              style: TextStyle(fontSize: 20),
+                              textAlign: TextAlign.start,
+                            ),
+                            Text('Total Income'),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              )
-            ])
+                Card(
+                  color: Color(0xffFDBE90),
+                  child: InkWell(
+                    splashColor: Colors.blue.withAlpha(30),
+                    onTap: () {
+                      debugPrint('Card tapped.');
+                    },
+                    child: const SizedBox(
+                      width: 150,
+                      height: 100,
+                      child: Text('A card that can be tapped'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),

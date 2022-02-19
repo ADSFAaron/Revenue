@@ -1,3 +1,6 @@
+import 'package:Revenue/settings/app_settings.dart';
+import 'package:Revenue/settings/store_settings.dart';
+import 'package:Revenue/settings/user_settings.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -91,8 +94,13 @@ class _StorePageState extends State<StorePage> {
                           ),
                         ),
                         Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
                           children: <Widget>[
                             Card(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15.0),
+                              ),
                               color: const Color(0xff95eeb3),
                               child: InkWell(
                                 splashColor: Colors.blue.withAlpha(30),
@@ -105,13 +113,14 @@ class _StorePageState extends State<StorePage> {
                                   child: Padding(
                                     padding: const EdgeInsets.all(14.0),
                                     child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment: MainAxisAlignment.end,
                                       children: [
                                         Text(
                                           totalIncome,
-                                          style: TextStyle(fontSize: 20),
-                                          textAlign: TextAlign.start,
+                                          style: TextStyle(fontSize: 25),
+                                        ),
+                                        SizedBox(
+                                          height: 15,
                                         ),
                                         Text('Total Income'),
                                       ],
@@ -121,16 +130,104 @@ class _StorePageState extends State<StorePage> {
                               ),
                             ),
                             Card(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15.0),
+                              ),
                               color: Color(0xffFDBE90),
                               child: InkWell(
                                 splashColor: Colors.blue.withAlpha(30),
                                 onTap: () {
-                                  debugPrint('Card tapped.');
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (context) => StoreSettings()),
+                                  );
                                 },
-                                child: const SizedBox(
+                                child: SizedBox(
                                   width: 150,
                                   height: 100,
-                                  child: Text('A card that can be tapped'),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(14.0),
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Icon(
+                                          Icons.storefront_outlined,
+                                          size: 40,
+                                        ),
+                                        Text('Store Settings'),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Card(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15.0),
+                              ),
+                              color: const Color.fromARGB(255, 97, 213, 224),
+                              child: InkWell(
+                                splashColor: Colors.blue.withAlpha(30),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (context) => UserSettings()),
+                                  );
+                                },
+                                child: SizedBox(
+                                  width: 150,
+                                  height: 100,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(14.0),
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Icon(
+                                          Icons.manage_accounts_outlined,
+                                          size: 40,
+                                        ),
+                                        Text('User Settings'),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Card(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15.0),
+                              ),
+                              color: const Color.fromARGB(255, 90, 209, 227),
+                              child: InkWell(
+                                splashColor: Colors.blue.withAlpha(30),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (context) => AppSettings()),
+                                  );
+                                },
+                                child: SizedBox(
+                                  width: 150,
+                                  height: 100,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(14.0),
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Icon(
+                                          Icons.info_outline,
+                                          size: 40,
+                                        ),
+                                        Text('App Settings'),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),

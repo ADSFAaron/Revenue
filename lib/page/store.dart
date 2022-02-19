@@ -1,85 +1,141 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-class StorePage extends StatelessWidget {
+class StorePage extends StatefulWidget {
+  const StorePage({Key? key}) : super(key: key);
+
+  @override
+  State<StorePage> createState() => _StorePageState();
+}
+
+class _StorePageState extends State<StorePage> {
+  User currentUser = FirebaseAuth.instance.currentUser!;
+  late Map<String, dynamic> users, stores;
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 28.0, vertical: 20.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8.0, vertical: 16.0),
-                    child: Text(
-                      "Store name",
-                      style: TextStyle(
-                        fontSize: 28.0,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.logout_outlined),
-                    onPressed: () {
-                      // Firebase User Logout
-                    },
-                  ),
-                ],
-              ),
-            ),
-            Wrap(
-              children: <Widget>[
-                Card(
-                  color: Color(0xff95eeb3),
-                  child: InkWell(
-                    splashColor: Colors.blue.withAlpha(30),
-                    onTap: () {
-                      debugPrint('Card tapped.');
-                    },
-                    child: SizedBox(
-                      width: 150,
-                      height: 100,
-                      child: Padding(
-                        padding: const EdgeInsets.all(14.0),
-                        child: Column(
-                          children: [
-                            Text(
-                              'NTD 0',
-                              style: TextStyle(fontSize: 20),
-                              textAlign: TextAlign.start,
+    return StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .where(currentUser.email!)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Text('Error: ${snapshot.error}');
+          }
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          snapshot.data!.docs.forEach((DocumentSnapshot document) {
+            users = document.data() as Map<String, dynamic>;
+          });
+
+          return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('store')
+                  .where(users['storeID'])
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Text('Error: ${snapshot.error}');
+                }
+
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Center(
+                    child: CircularProgressIndicator(),
+                  );
+                }
+
+                snapshot.data!.docs.forEach((DocumentSnapshot document) {
+                  stores = document.data() as Map<String, dynamic>;
+                });
+
+                print(stores);
+
+                return Scaffold(
+                  body: SafeArea(
+                    child: Column(
+                      children: <Widget>[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 28.0, vertical: 20.0),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8.0, vertical: 16.0),
+                                child: Text(
+                                  "Store name",
+                                  style: TextStyle(
+                                    fontSize: 28.0,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.logout_outlined),
+                                onPressed: () {
+                                  // Firebase User Logout
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        Wrap(
+                          children: <Widget>[
+                            Card(
+                              color: Color(0xff95eeb3),
+                              child: InkWell(
+                                splashColor: Colors.blue.withAlpha(30),
+                                onTap: () {
+                                  debugPrint('Card tapped.');
+                                },
+                                child: SizedBox(
+                                  width: 150,
+                                  height: 100,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(14.0),
+                                    child: Column(
+                                      children: [
+                                        Text(
+                                          'NTD 0',
+                                          style: TextStyle(fontSize: 20),
+                                          textAlign: TextAlign.start,
+                                        ),
+                                        Text('Total Income'),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
-                            Text('Total Income'),
+                            Card(
+                              color: Color(0xffFDBE90),
+                              child: InkWell(
+                                splashColor: Colors.blue.withAlpha(30),
+                                onTap: () {
+                                  debugPrint('Card tapped.');
+                                },
+                                child: const SizedBox(
+                                  width: 150,
+                                  height: 100,
+                                  child: Text('A card that can be tapped'),
+                                ),
+                              ),
+                            ),
                           ],
                         ),
-                      ),
+                      ],
                     ),
                   ),
-                ),
-                Card(
-                  color: Color(0xffFDBE90),
-                  child: InkWell(
-                    splashColor: Colors.blue.withAlpha(30),
-                    onTap: () {
-                      debugPrint('Card tapped.');
-                    },
-                    child: const SizedBox(
-                      width: 150,
-                      height: 100,
-                      child: Text('A card that can be tapped'),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+                );
+              });
+        });
   }
 }

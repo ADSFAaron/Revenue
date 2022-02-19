@@ -56,6 +56,9 @@ class _StorePageState extends State<StorePage> {
                 });
 
                 print(stores);
+                String currency = "NTD";
+                String totalIncome =
+                    currency + " " + stores['totalIncome'].toString();
 
                 return Scaffold(
                   body: SafeArea(
@@ -71,7 +74,7 @@ class _StorePageState extends State<StorePage> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8.0, vertical: 16.0),
                                 child: Text(
-                                  "Store name",
+                                  stores['name'],
                                   style: TextStyle(
                                     fontSize: 28.0,
                                     fontWeight: FontWeight.bold,
@@ -90,7 +93,7 @@ class _StorePageState extends State<StorePage> {
                         Wrap(
                           children: <Widget>[
                             Card(
-                              color: Color(0xff95eeb3),
+                              color: const Color(0xff95eeb3),
                               child: InkWell(
                                 splashColor: Colors.blue.withAlpha(30),
                                 onTap: () {
@@ -102,9 +105,11 @@ class _StorePageState extends State<StorePage> {
                                   child: Padding(
                                     padding: const EdgeInsets.all(14.0),
                                     child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
                                         Text(
-                                          'NTD 0',
+                                          totalIncome,
                                           style: TextStyle(fontSize: 20),
                                           textAlign: TextAlign.start,
                                         ),

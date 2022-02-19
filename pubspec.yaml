@@ -1,4 +1,4 @@
-name: revenue
+name: Revenue
 description: An app for Revenue Statistics and Management
 
 # The following line prevents the package from being accidentally published to
@@ -48,9 +48,13 @@ dependencies:
   # Use for Firebase Realtime DB
   firebase_database: ^9.0.6
 
-dev_dependencies:
+  # Use for App Drawer
   flutter_launcher_icons: ^0.9.2
-  flutter_native_splash: ^2.0.2
+
+  # Use for opening app
+  flutter_native_splash: ^2.0.4
+
+dev_dependencies:
   flutter_test:
     sdk: flutter
 
@@ -62,7 +66,7 @@ flutter_icons:
   image_path: "assets/AppLogo.png"
 
 flutter_native_splash:
-  color: "#e2e2e2"
+  color: "#5B86E5"
   image: assets/AppLogo.png
   android: true
   ios: true

@@ -67,20 +67,38 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      onPressed: () {},
+                      onPressed: () {
+                        edit(index);
+                      },
                       icon: const Icon(Icons.edit_outlined),
                     ),
                     IconButton(
-                      onPressed: () {},
+                      onPressed: () {
+                        remove(index);
+                      },
                       icon: const Icon(Icons.delete_outlined),
                     ),
                   ],
                 ),
               ),
               itemCount: stores['menu'].length,
-              onReorder: (oldIndex, newIndex) => setState(
-                () {},
-              ),
+              onReorder: (oldIndex, newIndex) {
+                if (newIndex >= stores['menu'].length) {
+                  newIndex = stores['menu'].length - 1;
+                }
+
+                print(newIndex.toString() + "  " + oldIndex.toString());
+
+                setState(
+                  () {
+                    var tmp = stores['menu'][oldIndex];
+                    stores['menu'][oldIndex] = stores['menu'][newIndex];
+                    stores['menu'][newIndex] = tmp;
+
+                    updateMenuToFirestore();
+                  },
+                );
+              },
             ),
           );
         },
@@ -92,52 +110,178 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
   Widget _floatAddButton(BuildContext context) {
     return FloatingActionButton(
       onPressed: () {
-        openDialog();
-        final snackBar = SnackBar(
-          content: Text('Update Successful!'),
-          action: SnackBarAction(
-            label: 'OK',
-            onPressed: () {
-              // Some code to undo the change.
-            },
-          ),
-        );
+        Map<String, dynamic> result = {};
 
-        // Show SnackBar.
-        ScaffoldMessenger.of(context).showSnackBar(snackBar);
+        openDialog(result);
+        // print(result);
+        result = {};
       },
       child: const Icon(Icons.add),
     );
   }
 
-  Future<Map<String, int>?> openDialog() => showDialog<Map<String, int>>(
+  Future<Map<String, dynamic>?> openDialog(Map<String, dynamic> result) =>
+      showDialog<Map<String, dynamic>>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text('Menu'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                decoration: InputDecoration(hintText: 'Dishes name'),
-                controller: dishNameController,
-              ),
-              TextField(
-                decoration: InputDecoration(hintText: 'Dishes price'),
-                controller: dishPriceController,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop({
-                    dishNameController.text,
-                    int.parse(dishPriceController.text)
-                  });
-                },
-                child: Text('Cancel')),
-            TextButton(onPressed: () {}, child: Text('Save')),
-          ],
+          title: Text('Add Menu'),
+          content: popupContent(),
+          actions: popupNewAction(context),
         ),
       );
+
+  List<Widget> popupNewAction(BuildContext context) {
+    Map<String, dynamic> result = {};
+    return [
+      TextButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+          child: Text('Cancel')),
+      TextButton(
+          onPressed: () {
+            result['name'] = dishNameController.text;
+            result['price'] = int.parse(dishPriceController.text);
+
+            List<dynamic> originMenu = stores['menu'];
+
+            setState(() {
+              stores['menu'].add(result);
+              updateMenuToFirestore();
+              print(stores['menu']);
+            });
+
+            Navigator.of(context).pop();
+
+            dishNameController.clear();
+            dishPriceController.clear();
+
+            final snackBar = SnackBar(
+              content: Text('Add Dishes Successful!'),
+              action: SnackBarAction(
+                label: 'OK',
+                onPressed: () {
+                  // Some code to undo the change.
+                },
+              ),
+            );
+
+            // Show SnackBar.
+            ScaffoldMessenger.of(context).showSnackBar(snackBar);
+          },
+          child: Text('Save')),
+    ];
+  }
+
+  List<Widget> popupEditAction(BuildContext context, int index) {
+    Map<String, dynamic> result = {};
+    return [
+      TextButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+          child: Text('Cancel')),
+      TextButton(
+          onPressed: () {
+            result['name'] = dishNameController.text;
+            result['price'] = int.parse(dishPriceController.text);
+
+            List<dynamic> originMenu = stores['menu'];
+
+            setState(() {
+              stores['menu'][index] = (result);
+              updateMenuToFirestore();
+              print(stores['menu']);
+            });
+
+            Navigator.of(context).pop();
+
+            dishNameController.clear();
+            dishPriceController.clear();
+
+            final snackBar = SnackBar(
+              content: Text('Edit Dishes Successful!'),
+              action: SnackBarAction(
+                label: 'OK',
+                onPressed: () {
+                  // Some code to undo the change.
+                },
+              ),
+            );
+
+            // Show SnackBar.
+            ScaffoldMessenger.of(context).showSnackBar(snackBar);
+          },
+          child: Text('Save')),
+    ];
+  }
+
+  Column popupContent([Map<String, dynamic>? originItem]) {
+    if (originItem == null) {
+      dishNameController = TextEditingController();
+      dishPriceController = TextEditingController();
+
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            decoration: InputDecoration(hintText: 'Dishes name'),
+            controller: dishNameController,
+          ),
+          TextField(
+            decoration: InputDecoration(hintText: 'Dishes price'),
+            controller: dishPriceController,
+            keyboardType: TextInputType.number,
+          ),
+        ],
+      );
+    } else {
+      dishNameController = TextEditingController(text: originItem['name']);
+      dishPriceController =
+          TextEditingController(text: originItem['price'].toString());
+
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextFormField(
+            decoration: InputDecoration(hintText: 'Dishes name'),
+            controller: dishNameController,
+          ),
+          TextFormField(
+            decoration: InputDecoration(hintText: 'Dishes price'),
+            controller: dishPriceController,
+            keyboardType: TextInputType.number,
+          ),
+        ],
+      );
+    }
+  }
+
+  void remove(int index) {
+    setState(() {
+      stores['menu'].removeAt(index);
+      updateMenuToFirestore();
+    });
+  }
+
+  void edit(int index) {
+    showDialog(
+        context: context,
+        builder: (context) {
+          Map<String, dynamic> item = stores['menu'][index];
+          print(item);
+
+          return AlertDialog(
+              title: const Text("Edit Menu"),
+              content: popupContent(item),
+              actions: popupEditAction(context, index));
+        });
+  }
+
+  void updateMenuToFirestore() {
+    DocumentReference documentReference =
+        FirebaseFirestore.instance.collection('store').doc(widget.storeID);
+
+    documentReference.update({'menu': stores['menu']});
+  }
 }

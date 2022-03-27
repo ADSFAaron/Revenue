@@ -2,6 +2,9 @@ import 'package:Revenue/settings/store_settings_edit_menu.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'store_settings_history_order.dart';
 
 class StoreSettings extends StatelessWidget {
   String storeID;
@@ -50,6 +53,12 @@ class StoreSettings extends StatelessWidget {
                     title: Text('Store ID'),
                     subtitle: Text(storeID),
                     trailing: Icon(Icons.copy_outlined),
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: storeID));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text("Store ID copied to clipboard"),
+                      ));
+                    },
                   ),
                   ListTile(
                     leading: Icon(Icons.group_outlined),
@@ -78,7 +87,14 @@ class StoreSettings extends StatelessWidget {
                     leading: Icon(Icons.history),
                     trailing: Icon(Icons.keyboard_arrow_right_outlined),
                     title: Text('History order'),
-                    onTap: () {},
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) =>
+                                StoreHistoryOrder(this.storeID)),
+                      );
+                    },
                   ),
                 ],
               ),

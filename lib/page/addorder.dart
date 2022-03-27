@@ -11,8 +11,8 @@ class AddOrder extends StatefulWidget {
 }
 
 class _AddOrderState extends State<AddOrder> {
-  DateTime pickDate = DateTime.now(); // 讓使用者可以選取時間
-  GlobalKey<FormState> formKey = GlobalKey<FormState>(); // 取得表單選取內容
+  DateTime pickDate = DateTime.now();                     // 讓使用者可以選取時間
+  GlobalKey<FormState> formKey = GlobalKey<FormState>();  // 取得表單選取內容
   late Map<String, dynamic> users, stores;
   int totalCount = 0;
 

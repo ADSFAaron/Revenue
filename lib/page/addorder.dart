@@ -1,3 +1,5 @@
+// import 'dart:math';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
@@ -11,10 +13,11 @@ class AddOrder extends StatefulWidget {
 }
 
 class _AddOrderState extends State<AddOrder> {
-  DateTime pickDate = DateTime.now();                     // 讓使用者可以選取時間
-  GlobalKey<FormState> formKey = GlobalKey<FormState>();  // 取得表單選取內容
+  DateTime pickDate = DateTime.now(); // 讓使用者可以選取時間
+  GlobalKey<FormState> formKey = GlobalKey<FormState>(); // 取得表單選取內容
   late Map<String, dynamic> users, stores;
   int totalCount = 0;
+  List<dynamic> menuList = [];
 
   void _pickDate() async {
     DateTime? date = await showDatePicker(
@@ -59,6 +62,16 @@ class _AddOrderState extends State<AddOrder> {
             stores = document.data() as Map<String, dynamic>;
           });
 
+          if (menuList.isEmpty) {
+            menuList = stores['menu'];
+            for (int i = 0; i < menuList.length; i++) {
+              menuList[i] = menuList[i] as Map<String, dynamic>;
+              menuList[i]['amount'] = 0;
+            }
+
+            print(menuList);
+          }
+
           // per Row content
           return SizedBox(
             height: MediaQuery.of(context).size.height,
@@ -98,7 +111,7 @@ class _AddOrderState extends State<AddOrder> {
                                 Expanded(
                                   flex: 5,
                                   child: Text(
-                                    stores['menu'][index]['name'].toString(),
+                                    menuList[index]['name'].toString(),
                                     style: TextStyle(fontSize: 16),
                                   ),
                                 ),
@@ -109,21 +122,32 @@ class _AddOrderState extends State<AddOrder> {
                                       icon: const Icon(
                                         Icons.remove,
                                       ),
-                                      onPressed: () {},
+                                      onPressed: () {
+                                        if (menuList[index]['amount'] > 0) {
+                                          setState(() {
+                                            menuList[index]['amount']--;
+                                          });
+                                        }
+                                      },
                                     ),
                                   ),
                                 ),
                                 Expanded(
                                   flex: 1,
                                   child: Center(
-                                    child: Text("0"),
+                                    child: Text(
+                                        menuList[index]['amount'].toString()),
                                   ),
                                 ),
                                 Expanded(
                                   flex: 1,
                                   child: Center(
                                     child: IconButton(
-                                      onPressed: () {},
+                                      onPressed: () {
+                                        setState(() {
+                                          menuList[index]['amount']++;
+                                        });
+                                      },
                                       icon: const Icon(Icons.add),
                                     ),
                                   ),
@@ -133,7 +157,7 @@ class _AddOrderState extends State<AddOrder> {
                           ),
                         );
                       },
-                      itemCount: stores['menu'].length,
+                      itemCount: menuList.length,
                       separatorBuilder: (BuildContext context, int index) {
                         return const Divider(
                           height: 0.5,

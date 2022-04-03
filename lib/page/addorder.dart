@@ -240,7 +240,7 @@ class _AddOrderState extends State<AddOrder> {
                                 child: Text("增加訂單",
                                     style: TextStyle(fontSize: 16)),
                                 onPressed: () {
-                                  updateOrderToFirebase();
+                                  updateOrderToFirebase(stores);
                                 },
                               ),
                             ),
@@ -258,7 +258,7 @@ class _AddOrderState extends State<AddOrder> {
     );
   }
 
-  void updateOrderToFirebase() {
+  void updateOrderToFirebase(Map<String, dynamic> storeInfo) {
     List<dynamic> orderList = [];
     List<dynamic> origin = [];
     int total = 0;
@@ -327,15 +327,22 @@ class _AddOrderState extends State<AddOrder> {
         });
       }
     });
-    // document.update({"orders": menuList}).then((value) {
-    //   print("successful add");
-    // }).catchError((error) {
-    //   print(error);
-    // });
 
     setState(() {
       totalCount = 0;
       menuList = [];
     });
+
+    // update store order no
+    int orderIndex = storeInfo['orderIndex'] + 1;
+    FirebaseFirestore.instance
+        .collection('store')
+        .doc(widget.storeId)
+        .update({
+          "orderIndex": orderIndex,
+          "totalIncome": stores['totalIncome'] + total
+        })
+        .then((value) => print('update orderIndex: $orderIndex'))
+        .catchError((onError) => print('error: $onError'));
   }
 }

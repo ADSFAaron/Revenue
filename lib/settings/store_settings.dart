@@ -6,21 +6,42 @@ import 'package:flutter/services.dart';
 
 import 'store_settings_history_order.dart';
 
-class StoreSettings extends StatelessWidget {
+class StoreSettings extends StatefulWidget {
   String storeID;
   StoreSettings(this.storeID, {Key? key}) : super(key: key);
+
+  @override
+  State<StoreSettings> createState() => _StoreSettingsState();
+}
+
+class _StoreSettingsState extends State<StoreSettings> {
   late Map<String, dynamic> stores;
+
+  late TextEditingController storeNameController;
+
+  @override
+  void initState() {
+    super.initState();
+    storeNameController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    storeNameController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('Store Settings'),
       ),
       body: StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('store')
-              .where(storeID)
+              .where(widget.storeID)
               .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
@@ -47,14 +68,15 @@ class StoreSettings extends StatelessWidget {
                     title: Text('Store Name'),
                     subtitle: Text(stores['name']),
                     trailing: Icon(Icons.mode_edit_outline),
+                    onTap: editStoreName(context),
                   ),
                   ListTile(
                     leading: Icon(Icons.other_houses_outlined),
                     title: Text('Store ID'),
-                    subtitle: Text(storeID),
+                    subtitle: Text(widget.storeID),
                     trailing: Icon(Icons.copy_outlined),
                     onTap: () {
-                      Clipboard.setData(ClipboardData(text: storeID));
+                      Clipboard.setData(ClipboardData(text: widget.storeID));
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                         content: Text("Store ID copied to clipboard"),
                       ));
@@ -79,7 +101,8 @@ class StoreSettings extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (context) => StoreEditMenu(this.storeID)),
+                            builder: (context) =>
+                                StoreEditMenu(this.widget.storeID)),
                       );
                     },
                   ),
@@ -92,7 +115,7 @@ class StoreSettings extends StatelessWidget {
                         context,
                         MaterialPageRoute(
                             builder: (context) =>
-                                StoreHistoryOrder(this.storeID)),
+                                StoreHistoryOrder(this.widget.storeID)),
                       );
                     },
                   ),
@@ -101,5 +124,51 @@ class StoreSettings extends StatelessWidget {
             );
           }),
     );
+  }
+
+  editStoreName(BuildContext context) {
+    storeNameController = TextEditingController(text: stores['name']);
+
+    return () {
+      showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: Text('Edit Store Name'),
+            content: TextField(
+              controller: storeNameController,
+              decoration: InputDecoration(
+                labelText: 'Store Name',
+                hintText: 'Store Name',
+              ),
+            ),
+            actions: [
+              TextButton(
+                child: Text('Cancel'),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+              ),
+              TextButton(
+                child: Text('Save'),
+                onPressed: () {
+                  String newName = storeNameController.text;
+                  print('rename store');
+                  print(newName);
+
+                  if (newName.isNotEmpty) {
+                    FirebaseFirestore.instance
+                        .collection('store')
+                        .doc(widget.storeID)
+                        .update({'name': newName});
+                    Navigator.of(context).pop();
+                  }
+                },
+              ),
+            ],
+          );
+        },
+      );
+    };
   }
 }

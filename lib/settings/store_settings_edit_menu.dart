@@ -59,6 +59,7 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
           return SafeArea(
             child: ReorderableListView.builder(
               itemBuilder: (context, index) => ListTile(
+                leading: Icon(Icons.restaurant),
                 key: ValueKey(index),
                 title: Text(stores['menu'][index]['name']),
                 subtitle:

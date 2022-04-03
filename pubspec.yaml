@@ -54,6 +54,9 @@ dependencies:
   # Use for opening app
   flutter_native_splash: ^2.0.4
 
+  # Use for Date time picker
+  flutter_datetime_picker: ^1.5.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -277,9 +277,18 @@ class _AddOrderState extends State<AddOrder> {
 
     // Check if it has order, not to create null order
     if (orderList.isEmpty) {
-      const snackBar = SnackBar(
-        duration: Duration(milliseconds: 1000),
-        content: Text('No item add in order!'),
+      final snackBar = SnackBar(
+        backgroundColor: Colors.red,
+        duration: Duration(milliseconds: 2000),
+        content: Row(
+          children: [
+            Icon(
+              Icons.warning_outlined,
+              color: Colors.white,
+            ),
+            Text('   No item add in order!'),
+          ],
+        ),
       );
 
       ScaffoldMessenger.of(context).showSnackBar(snackBar);
@@ -326,6 +335,22 @@ class _AddOrderState extends State<AddOrder> {
           'orders': allOrders,
         });
       }
+      final snackBar = SnackBar(
+        duration: Duration(milliseconds: 1000),
+        content: Row(
+          children: [
+            Icon(
+              Icons.check,
+              color: Colors.white,
+            ),
+            Text('   Order added!'),
+          ],
+        ),
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(snackBar);
+    }).catchError((onError) {
+      print(onError);
     });
 
     setState(() {

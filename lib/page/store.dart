@@ -111,13 +111,16 @@ class _StorePageState extends State<StorePage> {
                                   width: 150,
                                   height: 100,
                                   child: Padding(
-                                    padding: const EdgeInsets.all(14.0),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8.0, vertical: 14.0),
                                     child: Column(
                                       mainAxisAlignment: MainAxisAlignment.end,
                                       children: [
                                         Text(
-                                          totalIncome,
-                                          style: TextStyle(fontSize: 25),
+                                          totalIncome.length >= 10
+                                              ? totalIncome.substring(4)
+                                              : totalIncome,
+                                          style: TextStyle(fontSize: 20),
                                         ),
                                         SizedBox(
                                           height: 15,

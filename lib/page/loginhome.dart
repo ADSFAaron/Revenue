@@ -121,8 +121,8 @@ class _HomeContentPageState extends State<HomeContentPage> {
                       builder: (context) => AddOrder(users['storeID'])),
                 );
               },
-              icon: Icon(Icons.add),
-              label: Text('Add Order'),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Order'),
             ),
             body: SafeArea(
               child: Column(

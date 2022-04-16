@@ -1,9 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:excel/excel.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 
 class StatisticsPage extends StatefulWidget {
+  const StatisticsPage({Key? key}) : super(key: key);
+
   @override
   State<StatisticsPage> createState() => _StatisticsPageState();
 }
@@ -17,6 +20,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
   late Map<String, dynamic> users, stores;
   late List<_ChartData> chartData;
   late TooltipBehavior _tooltip;
+  late Map<String, dynamic> orderForOutput = {};
   Map<String, dynamic> allorderSave = {};
 
   @override
@@ -37,6 +41,14 @@ class _StatisticsPageState extends State<StatisticsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          print("create excel");
+          createExcelFile();
+        },
+        icon: const Icon(Icons.save_alt_outlined),
+        label: const Text('Output to Excel'),
+      ),
       body: StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('users')
@@ -72,6 +84,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                     Map<String, dynamic> data =
                         snapshot.data!.data() as Map<String, dynamic>;
                     print(data);
+                    orderForOutput = data;
 
                     return SafeArea(
                       child: SingleChildScrollView(
@@ -80,31 +93,38 @@ class _StatisticsPageState extends State<StatisticsPage> {
                           padding: const EdgeInsets.all(20.0),
                           child: Column(
                             children: <Widget>[
-                              const Text(
-                                'Trending dishes',
-                                style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black),
-                              ),
-                              DropdownButton(
-                                value: dropdownValue,
-                                items: <String>[
-                                  'All orders',
-                                  'Last week',
-                                  'Last month',
-                                  'Custom'
-                                ].map<DropdownMenuItem<String>>((String value) {
-                                  return DropdownMenuItem<String>(
-                                    value: value,
-                                    child: Text(value),
-                                  );
-                                }).toList(),
-                                onChanged: (String? newValue) {
-                                  setState(() {
-                                    dropdownValue = newValue!;
-                                  });
-                                },
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  const Text(
+                                    'Trending dishes',
+                                    style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black),
+                                  ),
+                                  DropdownButton(
+                                    value: dropdownValue,
+                                    items: <String>[
+                                      'All orders',
+                                      'Last week',
+                                      'Last month',
+                                      'Custom'
+                                    ].map<DropdownMenuItem<String>>(
+                                        (String value) {
+                                      return DropdownMenuItem<String>(
+                                        value: value,
+                                        child: Text(value),
+                                      );
+                                    }).toList(),
+                                    onChanged: (String? newValue) {
+                                      setState(() {
+                                        dropdownValue = newValue!;
+                                      });
+                                    },
+                                  ),
+                                ],
                               ),
                               Column(
                                 children: <Widget>[
@@ -215,6 +235,31 @@ class _StatisticsPageState extends State<StatisticsPage> {
         ),
       ],
     );
+  }
+
+  Future<void> createExcelFile() async {
+    if (orderForOutput.isEmpty) {
+      print("empty doc");
+      return;
+    } else {
+      print("not empty");
+      print(orderForOutput['orders']);
+
+      Map<String, dynamic> count = getOrderCount(orderForOutput['orders']);
+      // find one day
+      // show output option
+
+      Excel excel = Excel.createExcel();
+      var defaultSheet = await excel.getDefaultSheet();
+      String firstTitle = "日期 \\ 品項";
+
+      List<String> menuName = [firstTitle];
+
+      // for (int i = 0; i < menu.length; i++) {
+      //   menuName.add(menu[i]['name']);
+      // }
+
+    }
   }
 }
 

@@ -66,6 +66,9 @@ dependencies:
   permission_handler: ^9.2.0
   path_provider: ^2.0.9
 
+  # Use for history order grouped
+  grouped_list: ^4.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

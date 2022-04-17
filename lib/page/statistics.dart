@@ -22,6 +22,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
   late TooltipBehavior _tooltip;
   late Map<String, dynamic> orderForOutput = {};
   Map<String, dynamic> allorderSave = {};
+  late DateTimeRange _date;
 
   @override
   void initState() {
@@ -36,6 +37,12 @@ class _StatisticsPageState extends State<StatisticsPage> {
     // ];
     chartData = [];
     _tooltip = TooltipBehavior(enable: true);
+
+    _date = DateTimeRange(
+      start: DateTime(
+          DateTime.now().year, DateTime.now().month - 1, DateTime.now().day),
+      end: DateTime.now(),
+    );
   }
 
   @override
@@ -43,8 +50,10 @@ class _StatisticsPageState extends State<StatisticsPage> {
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          print("create excel");
-          createExcelFile();
+          openDialog();
+
+          // print("create excel");
+          // createExcelFile();
         },
         icon: const Icon(Icons.save_alt_outlined),
         label: const Text('Output to Excel'),
@@ -260,6 +269,60 @@ class _StatisticsPageState extends State<StatisticsPage> {
       // }
 
     }
+  }
+
+  Future openDialog() {
+    return showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text('Excel option'),
+            content: Column(children: <Widget>[
+              ElevatedButton(
+                onPressed: () {
+                  _selectDate(context);
+                },
+                child: const Text('Choose Date'),
+              ),
+              Center(
+                child: Text(
+                  '選擇區間: \n${_getYMD(_date.start)} ~ ${_getYMD(_date.end)}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  createExcelFile();
+                },
+                child: const Text('Output'),
+              ),
+            ]),
+          );
+        });
+  }
+
+  void _selectDate(BuildContext context) async {
+    DateTimeRange? newDate = await showDateRangePicker(
+      context: context,
+      initialDateRange: _date,
+      firstDate: DateTime(2021, 1),
+      lastDate: DateTime(2022, 7),
+      helpText: 'Select a date range',
+    );
+    if (newDate != null) {
+      setState(() {
+        _date = newDate;
+      });
+    }
+  }
+
+  // 只取得日期 並轉換為 string
+  String _getYMD(DateTime date) {
+    return date.year.toString() +
+        "-" +
+        date.month.toString() +
+        "-" +
+        date.day.toString();
   }
 }
 

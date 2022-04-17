@@ -1,7 +1,13 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:grouped_list/grouped_list.dart';
+import 'package:intl/intl.dart';
+
+import 'store_setting_history_order_detail.dart';
 
 class StoreHistoryOrder extends StatelessWidget {
   String storeID;
+  String currency = "NTD ";
   StoreHistoryOrder(this.storeID, {Key? key}) : super(key: key);
 
   @override
@@ -10,10 +16,70 @@ class StoreHistoryOrder extends StatelessWidget {
       appBar: AppBar(
         title: const Text('History Orders'),
       ),
-      body: SafeArea(
-          child: Column(
-        children: [],
-      )),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('tmporder')
+            .where(storeID)
+            .snapshots(),
+        builder: (BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
+          if (snapshot.hasError) {
+            return Text('Something went wrong');
+          }
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Text("Loading");
+          }
+
+          print("first");
+          print(snapshot.data!.docs
+              .map((e) => e.data()! as Map<String, dynamic>));
+          List<Map<String, dynamic>> tmp = snapshot.data!.docs
+              .map((e) => e.data()! as Map<String, dynamic>)
+              .toList();
+          Map<String, dynamic> data = tmp[0];
+
+          return GroupedListView<dynamic, String>(
+            elements: data['orders'],
+            groupBy: (element) =>
+                DateFormat('yyyy-MM-dd').format(element['time'].toDate()),
+            groupSeparatorBuilder: (String groupByValue) => Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                DateFormat('yyyy-MM-dd (EEEE)')
+                    .format(DateTime.parse(groupByValue)),
+                style: TextStyle(color: Colors.white),
+              ),
+              color: Colors.black,
+            ),
+            itemBuilder: (context, dynamic element) => Card(
+              elevation: 3,
+              child: ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+                leading: const Icon(Icons.list_alt),
+                title: Text(element['no'].toString()),
+                subtitle: Text("contains " +
+                    element['details'].length.toString() +
+                    " dishes"),
+                trailing: Text(currency + element['total'].toString()),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => StoreHistoryOrderDetail(
+                          storeID, element['no'] as int, element),
+                    ),
+                  );
+                },
+              ),
+            ),
+            itemComparator: (item1, item2) =>
+                item1['no'].compareTo(item2['no']),
+            useStickyGroupSeparators: true,
+          );
+        },
+      ),
     );
   }
 }

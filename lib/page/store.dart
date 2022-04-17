@@ -212,7 +212,8 @@ class _StorePageState extends State<StorePage> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                        builder: (context) => AppSettings()),
+                                        builder: (context) =>
+                                            AppSettings(users['storeID'])),
                                   );
                                 },
                                 child: SizedBox(

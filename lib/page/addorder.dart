@@ -6,7 +6,8 @@ import 'package:flutter/material.dart';
 
 class AddOrder extends StatefulWidget {
   final String storeId;
-  const AddOrder(this.storeId);
+  final Map<String, dynamic>? origin;
+  AddOrder(this.storeId, {Key? key, this.origin}) : super(key: key);
 
   @override
   State<AddOrder> createState() => _AddOrderState();
@@ -37,6 +38,15 @@ class _AddOrderState extends State<AddOrder> {
         });
       }
       print(pickDate);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    if (widget.origin != null) {
+      pickDate = widget.origin!['time'].toDate();
     }
   }
 
@@ -74,6 +84,22 @@ class _AddOrderState extends State<AddOrder> {
             for (int i = 0; i < menuList.length; i++) {
               menuList[i] = menuList[i] as Map<String, dynamic>;
               menuList[i]['amount'] = 0;
+            }
+
+            if (widget.origin != null) {
+              List<dynamic> originDetails = widget.origin!['details'];
+              Map<String, dynamic> hmDetails = {};
+              for (var d in originDetails) {
+                hmDetails[d['name']] = d;
+              }
+
+              for (var m in menuList) {
+                if (hmDetails.containsKey(m['name'])) {
+                  m['amount'] = hmDetails[m['name']]['amount'];
+                }
+              }
+
+              totalCount = widget.origin!['total'];
             }
             print('load data from firestore');
             print(menuList);

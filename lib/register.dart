@@ -54,6 +54,7 @@ class RegisterPage extends StatelessWidget {
                           makeInput(label: "Password", obscureText: true),
                           makeInput(
                               label: "Confirm Password", obscureText: true),
+                          makeInput(label: "StoreID"),
                         ],
                       ),
                     ),

@@ -52,6 +52,8 @@ class _AddOrderState extends State<AddOrder> {
 
   @override
   Widget build(BuildContext context) {
+    String _addOrderButtonName = widget.origin == null ? "增加訂單" : "修改訂單";
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Add Order'),
@@ -263,7 +265,7 @@ class _AddOrderState extends State<AddOrder> {
                                 style: ElevatedButton.styleFrom(
                                   shape: const StadiumBorder(),
                                 ),
-                                child: Text("增加訂單",
+                                child: Text(_addOrderButtonName,
                                     style: TextStyle(fontSize: 16)),
                                 onPressed: () {
                                   updateOrderToFirebase(stores);
@@ -338,12 +340,27 @@ class _AddOrderState extends State<AddOrder> {
         print('update');
         // Update
         Map<String, dynamic> allData = value.data() as Map<String, dynamic>;
-        allData['orders'].add({
-          "details": orderList,
-          "time": pickDate,
-          "no": stores['orderIndex'],
-          "total": total
-        });
+        if (widget.origin != null) {
+          // find the origin order
+          var oriOrder = allData['orders'].firstWhere(
+              (element) => element['no'] == widget.origin!['no'], orElse: () {
+            return null;
+          });
+          oriOrder = {
+            "details": orderList,
+            "time": pickDate,
+            "no": widget.origin!['no'],
+            "total": total
+          };
+        } else {
+          allData['orders'].add({
+            "details": orderList,
+            "time": pickDate,
+            "no": stores['orderIndex'],
+            "total": total
+          });
+        }
+
         document.update({
           'orders': allData['orders'],
         });
@@ -384,16 +401,21 @@ class _AddOrderState extends State<AddOrder> {
       menuList = [];
     });
 
-    // update store order no
-    int orderIndex = storeInfo['orderIndex'] + 1;
-    FirebaseFirestore.instance
-        .collection('store')
-        .doc(widget.storeId)
-        .update({
-          "orderIndex": orderIndex,
-          "totalIncome": stores['totalIncome'] + total
-        })
-        .then((value) => print('update orderIndex: $orderIndex'))
-        .catchError((onError) => print('error: $onError'));
+    if (widget.origin != null) {
+      print("order pop");
+      Navigator.pop(context);
+    } else {
+      // update store order no
+      int orderIndex = storeInfo['orderIndex'] + 1;
+      FirebaseFirestore.instance
+          .collection('store')
+          .doc(widget.storeId)
+          .update({
+            "orderIndex": orderIndex,
+            "totalIncome": stores['totalIncome'] + total
+          })
+          .then((value) => print('update orderIndex: $orderIndex'))
+          .catchError((onError) => print('error: $onError'));
+    }
   }
 }

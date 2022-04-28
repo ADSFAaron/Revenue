@@ -48,16 +48,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          openDialog();
-
-          // print("create excel");
-          // createExcelFile();
-        },
-        icon: const Icon(Icons.save_alt_outlined),
-        label: const Text('Output to Excel'),
-      ),
       body: StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('users')
@@ -151,6 +141,12 @@ class _StatisticsPageState extends State<StatisticsPage> {
                                   ),
                                 ],
                               ),
+                              ElevatedButton.icon(
+                                  onPressed: () {
+                                    openExcelDialog();
+                                  },
+                                  icon: Icon(Icons.sheets_add_on),
+                                  label: Text('Output Excel'))
                             ],
                           ),
                         ),
@@ -271,24 +267,44 @@ class _StatisticsPageState extends State<StatisticsPage> {
     }
   }
 
-  Future openDialog() {
+  Future openExcelDialog() {
     return showDialog(
         context: context,
         builder: (BuildContext context) {
           return AlertDialog(
-            title: Text('Excel option'),
+            title: const Text('Excel option'),
             content: Column(children: <Widget>[
-              ElevatedButton(
-                onPressed: () {
-                  _selectDate(context);
-                },
-                child: const Text('Choose Date'),
+              Row(
+                children: [
+                  Text(
+                    'Date Range: \n${_getYMD(_date.start)} ~ ${_getYMD(_date.end)}',
+                    textAlign: TextAlign.center,
+                  ),
+                  IconButton(
+                    onPressed: () {},
+                    icon: Icon(Icons.date_range_outlined),
+                  ),
+                ],
               ),
-              Center(
-                child: Text(
-                  '選擇區間: \n${_getYMD(_date.start)} ~ ${_getYMD(_date.end)}',
-                  textAlign: TextAlign.center,
-                ),
+              Row(
+                children: [
+                  const Text(
+                    'Output Path',
+                    textAlign: TextAlign.center,
+                  ),
+                  IconButton(
+                    onPressed: () {},
+                    icon: Icon(Icons.folder_open_outlined),
+                  ),
+                ],
+              ),
+            ]),
+            actions: [
+              ElevatedButton(
+                child: const Text('Cancel'),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
               ),
               ElevatedButton(
                 onPressed: () {
@@ -296,7 +312,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                 },
                 child: const Text('Output'),
               ),
-            ]),
+            ],
           );
         });
   }
@@ -305,8 +321,8 @@ class _StatisticsPageState extends State<StatisticsPage> {
     DateTimeRange? newDate = await showDateRangePicker(
       context: context,
       initialDateRange: _date,
-      firstDate: DateTime(2021, 1),
-      lastDate: DateTime(2022, 7),
+      firstDate: DateTime(2022, 1),
+      lastDate: DateTime(DateTime.now().year, DateTime.now().month),
       helpText: 'Select a date range',
     );
     if (newDate != null) {

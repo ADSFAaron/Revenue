@@ -1,7 +1,12 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:excel/excel.dart';
+import 'package:filesystem_picker/filesystem_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 
 class StatisticsPage extends StatefulWidget {
@@ -22,27 +27,16 @@ class _StatisticsPageState extends State<StatisticsPage> {
   late TooltipBehavior _tooltip;
   late Map<String, dynamic> orderForOutput = {};
   Map<String, dynamic> allorderSave = {};
-  late DateTimeRange _date;
+  late Directory rootPath;
+  String? dirPath;
 
   @override
   void initState() {
+    _prepareStorage();
     super.initState();
 
-    // data = [
-    //   _ChartData('CHN', 12),
-    //   _ChartData('GER', 15),
-    //   _ChartData('RUS', 30),
-    //   _ChartData('BRZ', 6.4),
-    //   _ChartData('IND', 14)
-    // ];
     chartData = [];
     _tooltip = TooltipBehavior(enable: true);
-
-    _date = DateTimeRange(
-      start: DateTime(
-          DateTime.now().year, DateTime.now().month - 1, DateTime.now().day),
-      end: DateTime.now(),
-    );
   }
 
   @override
@@ -142,11 +136,12 @@ class _StatisticsPageState extends State<StatisticsPage> {
                                 ],
                               ),
                               ElevatedButton.icon(
-                                  onPressed: () {
-                                    openExcelDialog();
-                                  },
-                                  icon: Icon(Icons.sheets_add_on),
-                                  label: Text('Output Excel'))
+                                onPressed: () {
+                                  openExcelDialog();
+                                },
+                                icon: const Icon(Icons.output_outlined),
+                                label: const Text('Output Excel'),
+                              ),
                             ],
                           ),
                         ),
@@ -268,68 +263,117 @@ class _StatisticsPageState extends State<StatisticsPage> {
   }
 
   Future openExcelDialog() {
+    DateTimeRange _date = DateTimeRange(
+      start: DateTime(
+          DateTime.now().year, DateTime.now().month - 1, DateTime.now().day),
+      end: DateTime.now(),
+    );
     return showDialog(
         context: context,
         builder: (BuildContext context) {
-          return AlertDialog(
-            title: const Text('Excel option'),
-            content: Column(children: <Widget>[
-              Row(
-                children: [
-                  Text(
-                    'Date Range: \n${_getYMD(_date.start)} ~ ${_getYMD(_date.end)}',
-                    textAlign: TextAlign.center,
+          return StatefulBuilder(
+            builder: (context, StateSetter setState) {
+              return AlertDialog(
+                title: const Text('Excel option'),
+                content:
+                    Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+                  Row(
+                    children: [
+                      Text(
+                        'Date Range: \n\n${_getYMD(_date.start)} ~ ${_getYMD(_date.end)} \n',
+                        textAlign: TextAlign.start,
+                      ),
+                      Spacer(),
+                      IconButton(
+                        onPressed: () {
+                          _selectDate(context, _date).then((value) => {
+                                setState(() {
+                                  print(value);
+                                  _date = value!;
+                                })
+                              });
+                        },
+                        icon: const Icon(Icons.date_range_outlined),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    onPressed: () {},
-                    icon: Icon(Icons.date_range_outlined),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Output Path: \n\n$dirPath',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      Spacer(),
+                      IconButton(
+                        onPressed: () async {
+                          if (await _requestPermission(Permission.storage)) {
+                            String? path = await FilesystemPicker.open(
+                              title: 'Save to folder',
+                              context: context,
+                              rootDirectory: rootPath,
+                              fsType: FilesystemType.folder,
+                              pickText: 'Save file to this folder',
+                              folderIconColor: Colors.teal,
+                              requestPermission: () async =>
+                                  await Permission.storage.request().isGranted,
+                            );
+
+                            print('path: ${path}');
+
+                            setState(() {
+                              dirPath = path;
+                            });
+                          } else {
+                            const snackBar = SnackBar(
+                              content: Text('Sorry! No permission'),
+                            );
+                            ScaffoldMessenger.of(context)
+                                .showSnackBar(snackBar);
+                          }
+                        },
+                        icon: const Icon(Icons.folder_open_outlined),
+                      ),
+                    ],
+                  ),
+                ]),
+                actions: [
+                  TextButton(
+                    child: const Text('Cancel'),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      createExcelFile();
+                    },
+                    child: const Text('Output'),
                   ),
                 ],
-              ),
-              Row(
-                children: [
-                  const Text(
-                    'Output Path',
-                    textAlign: TextAlign.center,
-                  ),
-                  IconButton(
-                    onPressed: () {},
-                    icon: Icon(Icons.folder_open_outlined),
-                  ),
-                ],
-              ),
-            ]),
-            actions: [
-              ElevatedButton(
-                child: const Text('Cancel'),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  createExcelFile();
-                },
-                child: const Text('Output'),
-              ),
-            ],
+              );
+            },
           );
         });
   }
 
-  void _selectDate(BuildContext context) async {
+  Future<DateTimeRange?> _selectDate(
+      BuildContext context, DateTimeRange _date) async {
     DateTimeRange? newDate = await showDateRangePicker(
       context: context,
       initialDateRange: _date,
       firstDate: DateTime(2022, 1),
-      lastDate: DateTime(DateTime.now().year, DateTime.now().month),
+      lastDate: DateTime(2100, 12),
       helpText: 'Select a date range',
     );
-    if (newDate != null) {
-      setState(() {
-        _date = newDate;
-      });
-    }
+
+    return newDate;
+    // if (newDate != null) {
+    //   setState(() {
+    //     _date = newDate;
+    //   });
+    // }
   }
 
   // 只取得日期 並轉換為 string
@@ -339,6 +383,35 @@ class _StatisticsPageState extends State<StatisticsPage> {
         date.month.toString() +
         "-" +
         date.day.toString();
+  }
+
+  Future<void> _prepareStorage() async {
+    rootPath = await getApplicationDocumentsDirectory();
+
+    print(rootPath);
+    String newPath = rootPath.path.substring(0, 5);
+    print(newPath);
+
+    // Create sample directory if not exists
+    Directory sampleFolder = Directory('${newPath}');
+    if (!sampleFolder.existsSync()) {
+      sampleFolder.createSync();
+    }
+
+    setState(() {});
+  }
+
+  Future<bool> _requestPermission(Permission permission) async {
+    if (await permission.isGranted) {
+      return true;
+    } else {
+      var result = await permission.request();
+      if (result == PermissionStatus.granted) {
+        return true;
+      } else {
+        return false;
+      }
+    }
   }
 }
 

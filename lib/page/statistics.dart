@@ -1,5 +1,5 @@
 import 'dart:io';
-
+import 'package:path/path.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:excel/excel.dart';
 import 'package:filesystem_picker/filesystem_picker.dart';
@@ -137,7 +137,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                               ),
                               ElevatedButton.icon(
                                 onPressed: () {
-                                  openExcelDialog();
+                                  openExcelDialog(context);
                                 },
                                 icon: const Icon(Icons.output_outlined),
                                 label: const Text('Output Excel'),
@@ -237,32 +237,85 @@ class _StatisticsPageState extends State<StatisticsPage> {
     );
   }
 
-  Future<void> createExcelFile() async {
-    if (orderForOutput.isEmpty) {
-      print("empty doc");
-      return;
-    } else {
-      print("not empty");
-      print(orderForOutput['orders']);
+  Future<void> createExcelFile(DateTimeRange dateRange) async {
+    // Check data exist
+    if (orderForOutput.isNotEmpty) {
+      // Get all date
+      final daysToGenerate = dateRange.end.difference(dateRange.start).inDays;
+      List<DateTime> days = List.generate(
+          daysToGenerate,
+          (i) => DateTime(dateRange.start.year, dateRange.start.month,
+              dateRange.start.day + (i)));
 
-      Map<String, dynamic> count = getOrderCount(orderForOutput['orders']);
-      // find one day
-      // show output option
+      List<dynamic> rangeData = [];
+      Map<DateTime, dynamic> daysHM = {};
+      for (int i = 0; i < days.length; i++) {
+        daysHM.putIfAbsent(days[i], () => {});
+      }
 
+      for (int i = 0; i < orderForOutput['orders'].length; i++) {
+        DateTime orderDate = orderForOutput['orders'][i]['time'].toDate();
+        orderDate = DateTime(orderDate.year, orderDate.month, orderDate.day);
+        if (daysHM.containsKey(orderDate)) {
+          rangeData.add(orderForOutput['orders'][i]);
+        }
+      }
+
+      // Create excel file
       Excel excel = Excel.createExcel();
-      var defaultSheet = await excel.getDefaultSheet();
-      String firstTitle = "日期 \\ 品項";
 
-      List<String> menuName = [firstTitle];
+      // Output First Row
+      String? defaultSheet = excel.getDefaultSheet();
+      List<String> menuName = ["日期 \\ 品項"];
 
-      // for (int i = 0; i < menu.length; i++) {
-      //   menuName.add(menu[i]['name']);
-      // }
+      // Get the shop's menu
+      getOrderCount(orderForOutput['orders']).forEach((key, value) {
+        menuName.add(key);
+      });
 
+      excel.appendRow(defaultSheet.toString(), menuName);
+
+      for (int i = 0; i < rangeData.length; i++) {
+        Map<String, dynamic> tmp = rangeData[i];
+        List<String> row = [tmp['time'].toDate().toString()];
+
+        for (int j = 1; j < menuName.length; j++) {
+          String name = menuName[j];
+          bool hasData = false;
+
+          for (int k = 0; k < tmp['details'].length; k++) {
+            if (tmp['details'][k]['name'] == name) {
+              row.add(tmp['details'][k]['amount'].toString());
+              hasData = true;
+              break;
+            }
+          }
+
+          if (hasData == false) {
+            row.add("0");
+          }
+        }
+        excel.appendRow(defaultSheet.toString(), row);
+      }
+
+      var fileBytes = excel.save();
+
+      File(join(
+          dirPath!,
+          "Revenue"
+              " - ",
+          _getYMD(dateRange.start),
+          " - ",
+          _getYMD(dateRange.end),
+          ".xlsx"))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(excel.encode()!);
+
+      print("output finish");
     }
   }
 
-  Future openExcelDialog() {
+  Future openExcelDialog(context) {
     DateTimeRange _date = DateTimeRange(
       start: DateTime(
           DateTime.now().year, DateTime.now().month - 1, DateTime.now().day),
@@ -347,7 +400,8 @@ class _StatisticsPageState extends State<StatisticsPage> {
                   ),
                   ElevatedButton(
                     onPressed: () {
-                      createExcelFile();
+                      createExcelFile(_date);
+                      Navigator.of(context).pop();
                     },
                     child: const Text('Output'),
                   ),
@@ -369,11 +423,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
     );
 
     return newDate;
-    // if (newDate != null) {
-    //   setState(() {
-    //     _date = newDate;
-    //   });
-    // }
   }
 
   // 只取得日期 並轉換為 string

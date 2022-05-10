@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
+import 'dart:math' as math;
 
 class StatisticsPage extends StatefulWidget {
   const StatisticsPage({Key? key}) : super(key: key);
@@ -121,11 +122,12 @@ class _StatisticsPageState extends State<StatisticsPage> {
                               ),
                               Column(
                                 children: <Widget>[
+                                  createChart(data['orders']),
+                                  createPieChart(data['orders']),
                                   SingleChildScrollView(
                                     scrollDirection: Axis.horizontal,
                                     child: getAllOrder(data['orders']),
                                   ),
-                                  createChart(data['orders']),
                                   const Text(
                                     'Income',
                                     style: TextStyle(
@@ -400,8 +402,10 @@ class _StatisticsPageState extends State<StatisticsPage> {
                   ),
                   ElevatedButton(
                     onPressed: () {
-                      createExcelFile(_date);
-                      Navigator.of(context).pop();
+                      if (dirPath != null) {
+                        createExcelFile(_date);
+                        Navigator.of(context).pop();
+                      }
                     },
                     child: const Text('Output'),
                   ),
@@ -462,11 +466,57 @@ class _StatisticsPageState extends State<StatisticsPage> {
       }
     }
   }
+
+  SfCircularChart createPieChart(List<dynamic> data) {
+    chartData = [];
+    Map<String, dynamic> allorders = getOrderCount(data);
+    int findMax = 0;
+
+    double total = 0.0;
+    for (int i = 0; i < allorders.length; i++) {
+      total += double.parse(allorders.values.elementAt(i)['amount'].toString());
+    }
+
+    for (int i = allorders.length - 1; i >= 0; i--) {
+      if (int.parse(allorders.values.elementAt(i)['amount'].toString()) >
+          findMax) {
+        findMax = int.parse(allorders.values.elementAt(i)['amount'].toString());
+      }
+
+      double percentDouble =
+          double.parse(allorders.values.elementAt(i)['amount'].toString()) /
+              total;
+      double percent = (percentDouble * 100).round().toDouble();
+
+      chartData.add(_ChartData(allorders.keys.elementAt(i), percent,
+          color: Color((math.Random().nextDouble() * 0xFFFFFF).toInt())
+              .withOpacity(1.0)));
+    }
+
+    return SfCircularChart(
+        title: ChartTitle(text: 'Pie Chart Dishes Property'),
+        tooltipBehavior: _tooltip,
+        legend:
+            Legend(isVisible: true, overflowMode: LegendItemOverflowMode.wrap),
+        series: <CircularSeries>[
+          // Render pie chart
+          PieSeries<_ChartData, String>(
+              dataSource: chartData,
+              pointColorMapper: (_ChartData data, _) => data.color,
+              xValueMapper: (_ChartData data, _) => data.x,
+              yValueMapper: (_ChartData data, _) => data.y,
+              dataLabelSettings: DataLabelSettings(
+                isVisible: true,
+              ),
+              enableTooltip: true),
+        ]);
+  }
 }
 
 class _ChartData {
-  _ChartData(this.x, this.y);
+  _ChartData(this.x, this.y, {this.color = Colors.blue});
 
   final String x;
   final double y;
+  final Color color;
 }

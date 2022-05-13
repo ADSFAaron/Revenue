@@ -88,6 +88,7 @@ class _StorePageState extends State<StorePage> {
                                 icon: const Icon(Icons.logout_outlined),
                                 onPressed: () {
                                   // Firebase User Logout
+                                  FirebaseAuth.instance.signOut();
                                 },
                               ),
                             ],
@@ -178,7 +179,8 @@ class _StorePageState extends State<StorePage> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                        builder: (context) => UserSettings()),
+                                        builder: (context) => UserSettings(
+                                            currentUser.email.toString())),
                                   );
                                 },
                                 child: SizedBox(

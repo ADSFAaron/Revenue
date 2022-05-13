@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import 'login.dart';
+
 class RegisterPage extends StatelessWidget {
   const RegisterPage({Key? key}) : super(key: key);
 
@@ -23,10 +25,11 @@ class RegisterPage extends StatelessWidget {
         ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Container(
-            height: MediaQuery.of(context).size.height - 100,
-            width: double.infinity,
+        child: Container(
+          height: MediaQuery.of(context).size.height - 100,
+          width: double.infinity,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.vertical,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: <Widget>[
@@ -71,7 +74,11 @@ class RegisterPage extends StatelessWidget {
                         child: MaterialButton(
                           height: 60,
                           minWidth: MediaQuery.of(context).size.width,
-                          onPressed: () {},
+                          onPressed: () {
+                            // Determine the mail is exist or not
+                            // If exist, show error message
+                            // Check Store ID is exist or new generated
+                          },
                           color: Colors.greenAccent,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
@@ -89,12 +96,21 @@ class RegisterPage extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text("Already have an account? "),
-                        Text(
-                          "Login",
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 20,
+                        TextButton(
+                          child: const Text(
+                            "Login",
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 20,
+                            ),
                           ),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) => LoginPage()),
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -126,6 +142,9 @@ class RegisterPage extends StatelessWidget {
                 OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
             enabledBorder:
                 OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+            suffixIcon: label == "StoreID"
+                ? TextButton(onPressed: () {}, child: Text("Generate"))
+                : null,
           ),
         ),
         SizedBox(height: 20),

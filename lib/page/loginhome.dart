@@ -90,12 +90,13 @@ class _HomeContentPageState extends State<HomeContentPage> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
+    return StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('users')
-            .where(currentUser.email!)
+            .doc(currentUser.email)
             .snapshots(),
-        builder: (BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
+        builder:
+            (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
           if (snapshot.hasError) {
             return Text('Error: ${snapshot.error}');
           }
@@ -106,11 +107,14 @@ class _HomeContentPageState extends State<HomeContentPage> {
             );
           }
           String greet = "";
-          snapshot.data!.docs.forEach((DocumentSnapshot document) {
-            users = document.data() as Map<String, dynamic>;
+          print(currentUser.email);
+          if (snapshot.hasData) {
+            print(snapshot.data?.data());
+          }
+          print(snapshot.data);
+          users = snapshot.data?.data() as Map<String, dynamic>;
 
-            greet = greetingText() + ", " + users['name'];
-          });
+          greet = greetingText() + ", " + users['name'];
 
           return Scaffold(
             floatingActionButton: FloatingActionButton.extended(

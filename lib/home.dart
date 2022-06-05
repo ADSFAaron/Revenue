@@ -7,6 +7,8 @@ import 'page/statistics.dart';
 import 'page/store.dart';
 
 class LoginHomePage extends StatefulWidget {
+  const LoginHomePage({Key? key}) : super(key: key);
+
   @override
   State<LoginHomePage> createState() => _LoginHomePageState();
 }

@@ -1,9 +1,11 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:uuid/uuid.dart';
 
+import 'home.dart';
 import 'login.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -17,12 +19,16 @@ class _RegisterPageState extends State<RegisterPage> {
   late TextEditingController emailController,
       passwordController,
       rePasswordController,
-      storeIDController;
+      storeIDController,
+      nameController,
+      storeNameController;
   bool _validate = false, showPassword = false;
   String passwordErrorMsg = "",
       mailErrorMsg = "",
       storeIDMsg = "",
-      rePasswordErrorMsg = "";
+      rePasswordErrorMsg = "",
+      nameErrorMsg = "",
+      storeNameErrorMsg = "";
 
   @override
   void initState() {
@@ -31,6 +37,8 @@ class _RegisterPageState extends State<RegisterPage> {
     passwordController = TextEditingController();
     rePasswordController = TextEditingController();
     storeIDController = TextEditingController();
+    nameController = TextEditingController();
+    storeNameController = TextEditingController();
   }
 
   @override
@@ -39,6 +47,8 @@ class _RegisterPageState extends State<RegisterPage> {
     passwordController.dispose();
     rePasswordController.dispose();
     storeIDController.dispose();
+    nameController.dispose();
+    storeNameController.dispose();
     super.dispose();
   }
 
@@ -138,6 +148,14 @@ class _RegisterPageState extends State<RegisterPage> {
                               SizedBox(height: 20),
                             ],
                           ),
+                          makeInput(
+                              label: "Name",
+                              Controller: nameController,
+                              errorDescription: nameErrorMsg),
+                          makeInput(
+                              label: "Store Name",
+                              Controller: storeNameController,
+                              errorDescription: storeNameErrorMsg),
                         ],
                       ),
                     ),
@@ -189,14 +207,25 @@ class _RegisterPageState extends State<RegisterPage> {
                               });
                             }
 
+                            if (nameController.text.isEmpty) {
+                              setState(() {
+                                nameErrorMsg = 'Enter the store ID';
+                              });
+                              return;
+                            } else {
+                              setState(() {
+                                nameErrorMsg = '';
+                              });
+                            }
+
                             if (passwordController.text ==
                                 rePasswordController.text) {
+                              UserCredential? userCredential = null;
                               try {
-                                UserCredential userCredential =
-                                    await FirebaseAuth.instance
-                                        .createUserWithEmailAndPassword(
-                                            email: emailController.text,
-                                            password: passwordController.text);
+                                userCredential = await FirebaseAuth.instance
+                                    .createUserWithEmailAndPassword(
+                                        email: emailController.text,
+                                        password: passwordController.text);
                               } on FirebaseAuthException catch (e) {
                                 if (e.code == 'weak-password') {
                                   print('The password provided is too weak.');
@@ -212,6 +241,58 @@ class _RegisterPageState extends State<RegisterPage> {
                                 }
                               } catch (e) {
                                 print(e);
+                              }
+
+                              // add user data to Firestore
+                              CollectionReference users = FirebaseFirestore
+                                  .instance
+                                  .collection('users');
+                              users
+                                  .doc(emailController.text)
+                                  .set({
+                                    'joinDate': FieldValue.serverTimestamp(),
+                                    'name': nameController.text,
+                                    'storeID': storeIDController.text,
+                                  })
+                                  .then((value) => print("User Added"))
+                                  .catchError((error) =>
+                                      print("Failed to add user: $error"));
+
+                              // build a new store data
+                              CollectionReference stores = FirebaseFirestore
+                                  .instance
+                                  .collection('store');
+
+                              stores.doc(storeIDController.text).set({
+                                'name': storeNameController,
+                                'joinDate': FieldValue.serverTimestamp(),
+                                'menu': [],
+                                'orderIndex': 1,
+                                'totalIncome': 0,
+                                'users': [emailController.text],
+                                'expense': {
+                                  '水費': 0,
+                                  '租金': 0,
+                                  '電費': 0,
+                                }
+                              });
+
+                              // build new order firebase collection
+                              CollectionReference orders = FirebaseFirestore
+                                  .instance
+                                  .collection('tmporder');
+
+                              orders
+                                  .doc(storeIDController.text)
+                                  .set({'orders': []});
+
+                              // navigate to home page
+                              if (userCredential?.user != null) {
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (context) => LoginHomePage()),
+                                );
                               }
                             } else {
                               setState(() {

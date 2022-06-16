@@ -43,12 +43,13 @@ class _StatisticsPageState extends State<StatisticsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: StreamBuilder<QuerySnapshot>(
+      body: StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance
               .collection('users')
-              .where(currentUser.email!)
+              .doc(currentUser.email)
               .snapshots(),
-          builder: (context, snapshot) {
+          builder:
+              (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
             if (snapshot.hasError) {
               return Text('Error: ${snapshot.error}');
             }
@@ -59,9 +60,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
               );
             }
 
-            snapshot.data!.docs.forEach((DocumentSnapshot document) {
-              users = document.data() as Map<String, dynamic>;
-            });
+            users = snapshot.data?.data() as Map<String, dynamic>;
 
             return FutureBuilder<DocumentSnapshot>(
                 future: orderReference.doc(users['storeID']).get(),
@@ -79,6 +78,14 @@ class _StatisticsPageState extends State<StatisticsPage> {
                         snapshot.data!.data() as Map<String, dynamic>;
                     print(data);
                     orderForOutput = data;
+
+                    // check for empty order
+                    if (data['orders'].length == 0) {
+                      return SafeArea(
+                          child: Center(
+                        child: Text('No Order'),
+                      ));
+                    }
 
                     return SafeArea(
                       child: SingleChildScrollView(

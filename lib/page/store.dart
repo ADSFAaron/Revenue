@@ -18,12 +18,13 @@ class _StorePageState extends State<StorePage> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
+    return StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('users')
-            .where(currentUser.email!)
+            .doc(currentUser.email)
             .snapshots(),
-        builder: (context, snapshot) {
+        builder:
+            (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
           if (snapshot.hasError) {
             return Text('Error: ${snapshot.error}');
           }
@@ -34,16 +35,16 @@ class _StorePageState extends State<StorePage> {
             );
           }
 
-          snapshot.data!.docs.forEach((DocumentSnapshot document) {
-            users = document.data() as Map<String, dynamic>;
-          });
+          users = snapshot.data?.data() as Map<String, dynamic>;
+          print(users);
 
-          return StreamBuilder<QuerySnapshot>(
+          return StreamBuilder<DocumentSnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('store')
-                  .where(users['storeID'])
+                  .doc(users['storeID'])
                   .snapshots(),
-              builder: (context, snapshot) {
+              builder: (BuildContext context,
+                  AsyncSnapshot<DocumentSnapshot> snapshot) {
                 if (snapshot.hasError) {
                   return Text('Error: ${snapshot.error}');
                 }
@@ -54,9 +55,7 @@ class _StorePageState extends State<StorePage> {
                   );
                 }
 
-                snapshot.data!.docs.forEach((DocumentSnapshot document) {
-                  stores = document.data() as Map<String, dynamic>;
-                });
+                stores = snapshot.data?.data() as Map<String, dynamic>;
 
                 print(stores);
                 String currency = "NTD";

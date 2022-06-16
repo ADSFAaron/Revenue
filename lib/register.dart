@@ -263,19 +263,28 @@ class _RegisterPageState extends State<RegisterPage> {
                                   .instance
                                   .collection('store');
 
-                              stores.doc(storeIDController.text).set({
-                                'name': storeNameController,
-                                'joinDate': FieldValue.serverTimestamp(),
-                                'menu': [],
-                                'orderIndex': 1,
-                                'totalIncome': 0,
-                                'users': [emailController.text],
-                                'expense': {
-                                  '水費': 0,
-                                  '租金': 0,
-                                  '電費': 0,
-                                }
-                              });
+                              stores
+                                  .doc(storeIDController.text)
+                                  .set(
+                                    {
+                                      'name': storeNameController.text,
+                                      'joinDate': FieldValue.serverTimestamp(),
+                                      'menu': [],
+                                      'orderIndex': 1,
+                                      'totalIncome': 0,
+                                      'users': [emailController.text],
+                                      'expense': {
+                                        '水費': 0,
+                                        '租金': 0,
+                                        '電費': 0,
+                                      }
+                                    },
+                                    SetOptions(merge: true),
+                                  )
+                                  .then((value) => print('Store Add finish'))
+                                  .catchError((error) =>
+                                      print("Failed to merge data: $error"));
+                              ;
 
                               // build new order firebase collection
                               CollectionReference orders = FirebaseFirestore

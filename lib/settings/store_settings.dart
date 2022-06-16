@@ -38,12 +38,13 @@ class _StoreSettingsState extends State<StoreSettings> {
       appBar: AppBar(
         title: const Text('Store Settings'),
       ),
-      body: StreamBuilder<QuerySnapshot>(
+      body: StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance
               .collection('store')
-              .where(widget.storeID)
+              .doc(widget.storeID)
               .snapshots(),
-          builder: (context, snapshot) {
+          builder:
+              (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
             if (snapshot.hasError) {
               return Text('Error: ${snapshot.error}');
             }
@@ -54,9 +55,7 @@ class _StoreSettingsState extends State<StoreSettings> {
               );
             }
 
-            snapshot.data!.docs.forEach((DocumentSnapshot document) {
-              stores = document.data() as Map<String, dynamic>;
-            });
+            stores = snapshot.data?.data() as Map<String, dynamic>;
 
             print(stores);
 

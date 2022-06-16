@@ -76,6 +76,9 @@ dependencies:
   # Use for register generate uuid
   uuid: 3.0.6
 
+  # Use for app name
+  rename: ^2.0.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

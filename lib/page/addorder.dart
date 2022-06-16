@@ -61,9 +61,10 @@ class _AddOrderState extends State<AddOrder> {
       body: StreamBuilder(
         stream: FirebaseFirestore.instance
             .collection('store')
-            .where(widget.storeId)
+            .doc(widget.storeId)
             .snapshots(),
-        builder: (BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
+        builder:
+            (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
           if (!snapshot.hasData) {
             return Center(
               child: CircularProgressIndicator(),
@@ -77,9 +78,7 @@ class _AddOrderState extends State<AddOrder> {
           }
 
           // Get Data from Firestore
-          snapshot.data!.docs.forEach((DocumentSnapshot document) {
-            stores = document.data() as Map<String, dynamic>;
-          });
+          stores = snapshot.data?.data() as Map<String, dynamic>;
 
           if (menuList.isEmpty) {
             menuList = stores['menu'];

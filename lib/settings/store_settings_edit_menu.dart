@@ -34,12 +34,13 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
       appBar: AppBar(
         title: const Text('Edit Menu'),
       ),
-      body: StreamBuilder<QuerySnapshot>(
+      body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('store')
-            .where(widget.storeID)
+            .doc(widget.storeID)
             .snapshots(),
-        builder: (context, snapshot) {
+        builder:
+            (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
           if (snapshot.hasError) {
             return Text('Error: ${snapshot.error}');
           }
@@ -50,9 +51,7 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
             );
           }
 
-          snapshot.data!.docs.forEach((DocumentSnapshot document) {
-            stores = document.data() as Map<String, dynamic>;
-          });
+          stores = snapshot.data?.data() as Map<String, dynamic>;
 
           print(stores['menu']);
 

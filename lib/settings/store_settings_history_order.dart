@@ -16,12 +16,13 @@ class StoreHistoryOrder extends StatelessWidget {
       appBar: AppBar(
         title: const Text('History Orders'),
       ),
-      body: StreamBuilder<QuerySnapshot>(
+      body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('tmporder')
-            .where(storeID)
+            .doc(storeID)
             .snapshots(),
-        builder: (BuildContext context, AsyncSnapshot<QuerySnapshot> snapshot) {
+        builder:
+            (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
           if (snapshot.hasError) {
             return Text('Something went wrong');
           }
@@ -31,13 +32,11 @@ class StoreHistoryOrder extends StatelessWidget {
           }
 
           print("first");
-          print(snapshot.data!.docs
-              .map((e) => e.data()! as Map<String, dynamic>));
-          List<Map<String, dynamic>> tmp = snapshot.data!.docs
-              .map((e) => e.data()! as Map<String, dynamic>)
-              .toList();
-          Map<String, dynamic> data = tmp[0];
 
+          Map<String, dynamic> data =
+              snapshot.data?.data() as Map<String, dynamic>;
+
+          print(data);
           return GroupedListView<dynamic, String>(
             elements: data['orders'],
             groupBy: (element) =>

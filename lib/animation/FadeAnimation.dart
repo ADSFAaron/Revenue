@@ -11,12 +11,12 @@ class FadeAnimation extends StatelessWidget {
   Widget build(BuildContext context) {
     final customTween = Tween<double>(begin: -50.0, end: 0.0);
 
-    return PlayAnimation<double>(
+    return PlayAnimationBuilder<double>(
       tween: customTween,
       duration: const Duration(milliseconds: 1000),
       delay: Duration(milliseconds: delay),
       curve: Curves.easeOut,
-      builder: (context, child, value) {
+      builder: (context, value, child) {
         return AnimatedOpacity(
           duration: const Duration(milliseconds: 500),
           opacity: (value + 50.0) / 50.0,

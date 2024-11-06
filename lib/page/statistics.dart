@@ -2,10 +2,10 @@ import 'dart:io';
 import 'package:path/path.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:excel/excel.dart';
-import 'package:filesystem_picker/filesystem_picker.dart';
+// import 'package:filesystem_picker/filesystem_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
+// import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'dart:math' as math;
@@ -146,7 +146,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                               ),
                               ElevatedButton.icon(
                                 onPressed: () {
-                                  openExcelDialog(context);
+                                  // openExcelDialog(context);
                                 },
                                 icon: const Icon(Icons.output_outlined),
                                 label: const Text('Output Excel'),
@@ -282,7 +282,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
         menuName.add(key);
       });
 
-      excel.appendRow(defaultSheet.toString(), menuName);
+      // excel.appendRow(defaultSheet.toString(), menuName);
 
       for (int i = 0; i < rangeData.length; i++) {
         Map<String, dynamic> tmp = rangeData[i];
@@ -304,21 +304,21 @@ class _StatisticsPageState extends State<StatisticsPage> {
             row.add("0");
           }
         }
-        excel.appendRow(defaultSheet.toString(), row);
+        // excel.appendRow(defaultSheet.toString(), row);
       }
 
       var fileBytes = excel.save();
 
-      File(join(
-          dirPath!,
-          "Revenue"
-              " - ",
-          _getYMD(dateRange.start),
-          " - ",
-          _getYMD(dateRange.end),
-          ".xlsx"))
-        ..createSync(recursive: true)
-        ..writeAsBytesSync(excel.encode()!);
+      // File(join(
+      //     dirPath!,
+      //     "Revenue"
+      //         " - ",
+      //     _getYMD(dateRange.start),
+      //     " - ",
+      //     _getYMD(dateRange.end),
+      //     ".xlsx"))
+      //   ..createSync(recursive: true)
+      //   ..writeAsBytesSync(excel.encode()!);
 
       print("output finish");
     }
@@ -371,22 +371,22 @@ class _StatisticsPageState extends State<StatisticsPage> {
                       IconButton(
                         onPressed: () async {
                           if (await _requestPermission(Permission.storage)) {
-                            String? path = await FilesystemPicker.open(
-                              title: 'Save to folder',
-                              context: context,
-                              rootDirectory: rootPath,
-                              fsType: FilesystemType.folder,
-                              pickText: 'Save file to this folder',
-                              folderIconColor: Colors.teal,
-                              requestPermission: () async =>
-                                  await Permission.storage.request().isGranted,
-                            );
+                            // String? path = await FilesystemPicker.open(
+                            //   title: 'Save to folder',
+                            //   context: context,
+                            //   rootDirectory: rootPath,
+                            //   fsType: FilesystemType.folder,
+                            //   pickText: 'Save file to this folder',
+                            //   folderIconColor: Colors.teal,
+                            //   requestPermission: () async =>
+                            //       await Permission.storage.request().isGranted,
+                            // );
 
-                            print('path: ${path}');
+                            // print('path: ${path}');
 
-                            setState(() {
-                              dirPath = path;
-                            });
+                            // setState(() {
+                            //   dirPath = path;
+                            // });
                           } else {
                             const snackBar = SnackBar(
                               content: Text('Sorry! No permission'),
@@ -410,7 +410,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                   ElevatedButton(
                     onPressed: () {
                       if (dirPath != null) {
-                        createExcelFile(_date);
+                        // createExcelFile(_date);
                         Navigator.of(context).pop();
                       }
                     },
@@ -438,25 +438,21 @@ class _StatisticsPageState extends State<StatisticsPage> {
 
   // 只取得日期 並轉換為 string
   String _getYMD(DateTime date) {
-    return date.year.toString() +
-        "-" +
-        date.month.toString() +
-        "-" +
-        date.day.toString();
+    return "${date.year}-${date.month}-${date.day}";
   }
 
   Future<void> _prepareStorage() async {
-    rootPath = await getApplicationDocumentsDirectory();
+    // rootPath = await getApplicationDocumentsDirectory();
 
-    print(rootPath);
-    String newPath = rootPath.path.substring(0, 5);
-    print(newPath);
+    // print(rootPath);
+    // String newPath = rootPath.path.substring(0, 5);
+    // print(newPath);
 
     // Create sample directory if not exists
-    Directory sampleFolder = Directory('${newPath}');
-    if (!sampleFolder.existsSync()) {
-      sampleFolder.createSync();
-    }
+    // Directory sampleFolder = Directory('${newPath}');
+    // if (!sampleFolder.existsSync()) {
+    //   sampleFolder.createSync();
+    // }
 
     setState(() {});
   }

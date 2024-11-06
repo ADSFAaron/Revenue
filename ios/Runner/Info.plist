@@ -47,5 +47,9 @@
 		<false/>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>This app need to output excel file</string>
-	</dict>
+		<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+</dict>
 </plist>

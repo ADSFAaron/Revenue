@@ -79,7 +79,7 @@ dependencies:
   uuid: ^4.5.1
 
   # Use for app name
-  rename: ^2.0.1
+  rename: ^3.0.2
 
 dev_dependencies:
   flutter_test:

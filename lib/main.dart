@@ -21,6 +21,8 @@ Future<void> main() async {
 final navigatorKey = GlobalKey<NavigatorState>();
 
 class HomePage extends StatelessWidget {
+  const HomePage({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

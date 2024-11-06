@@ -6,12 +6,14 @@ import 'dart:async';
 
 import 'addorder.dart';
 
-class HomeContentPage extends StatefulWidget {
+class OverviewPage extends StatefulWidget {
+  const OverviewPage({super.key});
+
   @override
-  State<HomeContentPage> createState() => _HomeContentPageState();
+  State<OverviewPage> createState() => _OverviewPageState();
 }
 
-class _HomeContentPageState extends State<HomeContentPage> {
+class _OverviewPageState extends State<OverviewPage> {
   DateTime now = DateTime.now();
   String _timeString = "";
   User currentUser = FirebaseAuth.instance.currentUser!;
@@ -35,34 +37,6 @@ class _HomeContentPageState extends State<HomeContentPage> {
     return greeting;
   }
 
-  // Future<void> getUserData(DocumentReference userRef) async {
-  //   Map<String, dynamic> result;
-
-  //   userRef.get().then((value) {
-  //     result = value.data() as Map<String, dynamic>;
-
-  //     setState(() {
-  //       user = result;
-  //     });
-  //   });
-  // }
-
-  // Future<void> getStoreData(String storeId) async {
-  //   Map<String, dynamic> result;
-
-  //   FirebaseFirestore.instance
-  //       .collection("store")
-  //       .doc(storeId)
-  //       .get()
-  //       .then((value) {
-  //     result = value.data() as Map<String, dynamic>;
-
-  //     setState(() {
-  //       store = result;
-  //     });
-  //   });
-  // }
-
   void _getTime() {
     final DateTime now = DateTime.now();
     final String formattedDateTime = _formatDateTime(now);
@@ -81,11 +55,6 @@ class _HomeContentPageState extends State<HomeContentPage> {
     Timer.periodic(Duration(minutes: 1), (Timer t) => _getTime());
 
     super.initState();
-
-    // Get User Data
-    // FirebaseFirestore firestore = FirebaseFirestore.instance;
-    // CollectionReference usersDB = firestore.collection('users');
-    // DocumentReference userRef = usersDB.doc(currentUser.email);
   }
 
   @override
@@ -114,7 +83,7 @@ class _HomeContentPageState extends State<HomeContentPage> {
           print(snapshot.data);
           users = snapshot.data?.data() as Map<String, dynamic>;
 
-          greet = greetingText() + ", " + users['name'];
+          greet = "${greetingText()}, " + users['name'];
 
           return Scaffold(
             floatingActionButton: FloatingActionButton.extended(

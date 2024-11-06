@@ -2,63 +2,62 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'main.dart';
-import 'page/loginhome.dart';
+import 'page/overview.dart';
 import 'page/statistics.dart';
 import 'page/store.dart';
+import 'page/transaction.dart';
 
 class LoginHomePage extends StatefulWidget {
-  const LoginHomePage({Key? key}) : super(key: key);
+  const LoginHomePage({super.key});
 
   @override
   State<LoginHomePage> createState() => _LoginHomePageState();
 }
 
 class _LoginHomePageState extends State<LoginHomePage> {
-  // final user = FirebaseAuth.instance.currentUser!;
   int pageIndex = 0;
 
-  final screen = [
-    HomeContentPage(),
+  final screens = [
+    OverviewPage(),
+    TransactionPage(),
     StatisticsPage(),
     StorePage(),
   ];
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        bottomNavigationBar: NavigationBarTheme(
-          data: NavigationBarThemeData(
-            indicatorColor: Colors.blue.shade100,
-            labelTextStyle: MaterialStateProperty.all(
-              TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
+  Widget build(BuildContext context) {
+    return Scaffold(
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(),
+        child: NavigationBar(
+          selectedIndex: pageIndex,
+          onDestinationSelected: (index) => setState(() => pageIndex = index),
+          animationDuration: Duration(milliseconds: 800),
+          destinations: [
+            NavigationDestination(
+              icon: Icon(Icons.grid_view_rounded),
+              selectedIcon: Icon(Icons.grid_view_rounded),
+              label: 'Overview',
             ),
-          ),
-          child: NavigationBar(
-            selectedIndex: pageIndex,
-            onDestinationSelected: (index) => setState(() => pageIndex = index),
-            labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-            animationDuration: Duration(seconds: 1),
-            destinations: [
-              NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home),
-                label: 'Home',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.assessment_outlined),
-                selectedIcon: Icon(Icons.assessment),
-                label: 'Statistics',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.store_outlined),
-                selectedIcon: Icon(Icons.store),
-                label: 'Store',
-              ),
-            ],
-          ),
+            NavigationDestination(
+              icon: Icon(Icons.bar_chart_rounded),
+              selectedIcon: Icon(Icons.bar_chart_rounded),
+              label: 'Trans',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.analytics_rounded),
+              selectedIcon: Icon(Icons.analytics_rounded),
+              label: 'Stats',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.storefront_rounded),
+              selectedIcon: Icon(Icons.storefront_rounded),
+              label: 'Store',
+            ),
+          ],
         ),
-        body: screen[pageIndex],
-      );
+      ),
+      body: screens[pageIndex],
+    );
+  }
 }

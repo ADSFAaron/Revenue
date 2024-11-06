@@ -3,10 +3,11 @@ import 'package:Revenue/settings/store_settings.dart';
 import 'package:Revenue/settings/user_settings.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 class StorePage extends StatefulWidget {
-  const StorePage({Key? key}) : super(key: key);
+  const StorePage({super.key});
 
   @override
   State<StorePage> createState() => _StorePageState();
@@ -36,7 +37,9 @@ class _StorePageState extends State<StorePage> {
           }
 
           users = snapshot.data?.data() as Map<String, dynamic>;
-          print(users);
+          if (kDebugMode) {
+            print(users);
+          }
 
           return StreamBuilder<DocumentSnapshot>(
               stream: FirebaseFirestore.instance
@@ -57,10 +60,12 @@ class _StorePageState extends State<StorePage> {
 
                 stores = snapshot.data?.data() as Map<String, dynamic>;
 
-                print(stores);
+                if (kDebugMode) {
+                  print(stores);
+                }
                 String currency = "NTD";
                 String totalIncome =
-                    currency + " " + stores['totalIncome'].toString();
+                    "${stores['totalIncome']}";
 
                 return Scaffold(
                   body: SafeArea(
@@ -125,7 +130,7 @@ class _StorePageState extends State<StorePage> {
                                         SizedBox(
                                           height: 15,
                                         ),
-                                        Text('Total Income'),
+                                        Text('Assets'),
                                       ],
                                     ),
                                   ),

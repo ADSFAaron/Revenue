@@ -7,11 +7,17 @@ import 'animation/FadeAnimation.dart';
 import 'home.dart';
 import 'login.dart';
 import 'register.dart';
+import 'theme.dart';
+
+
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   runApp(MaterialApp(
+    themeMode: ThemeMode.light,
+    theme: const MaterialTheme(TextTheme()).light(),
+    darkTheme: const MaterialTheme(TextTheme()).dark(),
     navigatorKey: navigatorKey,
     debugShowCheckedModeBanner: false,
     home: HomePage(),

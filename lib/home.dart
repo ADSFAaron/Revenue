@@ -26,35 +26,29 @@ class _LoginHomePageState extends State<LoginHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final icons = [
+      Icons.grid_view_rounded,
+      Icons.bar_chart_rounded,
+      Icons.analytics_rounded,
+      Icons.storefront_rounded,
+    ];
+
+    final labels = ['Overview', 'Trans', 'Stats', 'Store'];
+
     return Scaffold(
       bottomNavigationBar: NavigationBarTheme(
-        data: NavigationBarThemeData(),
+        data: NavigationBarThemeData(indicatorColor: Theme.of(context).colorScheme.onPrimaryContainer),
         child: NavigationBar(
           selectedIndex: pageIndex,
           onDestinationSelected: (index) => setState(() => pageIndex = index),
           animationDuration: Duration(milliseconds: 800),
-          destinations: [
-            NavigationDestination(
-              icon: Icon(Icons.grid_view_rounded),
-              selectedIcon: Icon(Icons.grid_view_rounded),
-              label: 'Overview',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.bar_chart_rounded),
-              selectedIcon: Icon(Icons.bar_chart_rounded),
-              label: 'Trans',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.analytics_rounded),
-              selectedIcon: Icon(Icons.analytics_rounded),
-              label: 'Stats',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.storefront_rounded),
-              selectedIcon: Icon(Icons.storefront_rounded),
-              label: 'Store',
-            ),
-          ],
+          destinations: List.generate(icons.length, (index) {
+            return NavigationDestination(
+              icon: Icon(icons[index]),
+              selectedIcon: Icon(icons[index], color: Theme.of(context).colorScheme.onPrimary),
+              label: labels[index],
+            );
+          }),
         ),
       ),
       body: screens[pageIndex],

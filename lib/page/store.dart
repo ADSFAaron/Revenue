@@ -14,241 +14,273 @@ class StorePage extends StatefulWidget {
 }
 
 class _StorePageState extends State<StorePage> {
-  User currentUser = FirebaseAuth.instance.currentUser!;
-  late Map<String, dynamic> users, stores;
+  final User currentUser = FirebaseAuth.instance.currentUser!;
+  late Future<Map<String, dynamic>> _storeDataFuture;
+  late String storeID;
+
+  @override
+  void initState() {
+    super.initState();
+    _storeDataFuture = _loadStoreData();
+  }
+
+  Future<Map<String, dynamic>> _loadStoreData() async {
+    try {
+      // 取得使用者數據
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.email)
+          .get();
+
+      final userData = userDoc.data();
+
+      if (userData == null || !userData.containsKey('storeID')) {
+        throw Exception('User data or storeID is missing');
+      }
+
+      storeID = userData['storeID'];
+
+      // 取得商店數據
+      final storeDoc = await FirebaseFirestore.instance
+          .collection('store')
+          .doc(userData['storeID'])
+          .get();
+
+      final storeData = storeDoc.data();
+      if (storeData == null) {
+        throw Exception('Store data is missing');
+      }
+
+      return storeData;
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error loading store data: $e');
+      }
+      rethrow;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(currentUser.email)
-            .snapshots(),
-        builder:
-            (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
-          if (snapshot.hasError) {
-            return Text('Error: ${snapshot.error}');
-          }
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _storeDataFuture,
+      builder:
+          (BuildContext context, AsyncSnapshot<Map<String, dynamic>> snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        } else if (snapshot.hasError) {
+          return Center(
+            child: Text('Error: ${snapshot.error}'),
+          );
+        } else if (!snapshot.hasData) {
+          return const Center(
+            child: Text('No data available'),
+          );
+        }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(
-              child: CircularProgressIndicator(),
-            );
-          }
+        final stores = snapshot.data!;
+        return _buildStorePage(stores);
+      },
+    );
+  }
 
-          users = snapshot.data?.data() as Map<String, dynamic>;
-          if (kDebugMode) {
-            print(users);
-          }
+  Widget _buildStorePage(Map<String, dynamic> stores) {
+    String currency = "NTD";
+    String totalIncome = "${stores['totalIncome']}";
+    List<String> users = ["user1", "user2", "user3"];
+    // String storeName = stores['name'];
+    // String storeID = stores['id'];
+    print(stores);
 
-          return StreamBuilder<DocumentSnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('store')
-                  .doc(users['storeID'])
-                  .snapshots(),
-              builder: (BuildContext context,
-                  AsyncSnapshot<DocumentSnapshot> snapshot) {
-                if (snapshot.hasError) {
-                  return Text('Error: ${snapshot.error}');
-                }
-
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
-
-                stores = snapshot.data?.data() as Map<String, dynamic>;
-
-                if (kDebugMode) {
-                  print(stores);
-                }
-                String currency = "NTD";
-                String totalIncome =
-                    "${stores['totalIncome']}";
-
-                return Scaffold(
-                  body: SafeArea(
-                    child: Column(
-                      children: <Widget>[
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 28.0, vertical: 20.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8.0, vertical: 16.0),
-                                child: Text(
-                                  stores['name'],
-                                  style: TextStyle(
-                                    fontSize: 28.0,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.logout_outlined),
-                                onPressed: () {
-                                  // Firebase User Logout
-                                  FirebaseAuth.instance.signOut();
-                                },
-                              ),
-                            ],
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Store Page'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout_outlined),
+            onPressed: () => FirebaseAuth.instance.signOut(),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: <Widget>[
+              Card(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const SizedBox(width: 10),
+                          Text(
+                            stores['name'],
+                            style: const TextStyle(
+                                fontSize: 28, fontWeight: FontWeight.bold),
                           ),
-                        ),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: <Widget>[
-                            Card(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(15.0),
-                              ),
-                              color: const Color(0xff95eeb3),
-                              child: InkWell(
-                                splashColor: Colors.blue.withAlpha(30),
-                                onTap: () {
-                                  debugPrint('Card tapped.');
-                                },
-                                child: SizedBox(
-                                  width: 150,
-                                  height: 100,
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8.0, vertical: 14.0),
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          totalIncome.length >= 10
-                                              ? totalIncome.substring(4)
-                                              : totalIncome,
-                                          style: TextStyle(fontSize: 20),
-                                        ),
-                                        SizedBox(
-                                          height: 15,
-                                        ),
-                                        Text('Assets'),
-                                      ],
-                                    ),
+                          const Spacer(),
+                          TextButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => StoreSettings(stores['id']),
                                   ),
-                                ),
-                              ),
+                                );
+                              }, child: const Text('Edit'))
+                        ],
+                      ),
+                      SizedBox(height: 10),
+                      ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: users.length,
+                        itemBuilder: (context, index) {
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.blue,
+                              child: const Text('AH'),
                             ),
-                            Card(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(15.0),
-                              ),
-                              color: Color(0xffFDBE90),
-                              child: InkWell(
-                                splashColor: Colors.blue.withAlpha(30),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (context) =>
-                                            StoreSettings(users['storeID'])),
-                                  );
-                                },
-                                child: SizedBox(
-                                  width: 150,
-                                  height: 100,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(14.0),
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Icon(
-                                          Icons.storefront_outlined,
-                                          size: 40,
-                                        ),
-                                        Text('Store Settings'),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Card(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(15.0),
-                              ),
-                              color: const Color.fromARGB(255, 97, 213, 224),
-                              child: InkWell(
-                                splashColor: Colors.blue.withAlpha(30),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (context) => UserSettings(
-                                            currentUser.email.toString())),
-                                  );
-                                },
-                                child: SizedBox(
-                                  width: 150,
-                                  height: 100,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(14.0),
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Icon(
-                                          Icons.manage_accounts_outlined,
-                                          size: 40,
-                                        ),
-                                        Text('User Settings'),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Card(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(15.0),
-                              ),
-                              color: const Color.fromARGB(255, 90, 209, 227),
-                              child: InkWell(
-                                splashColor: Colors.blue.withAlpha(30),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (context) =>
-                                            AppSettings(users['storeID'])),
-                                  );
-                                },
-                                child: SizedBox(
-                                  width: 150,
-                                  height: 100,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(14.0),
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Icon(
-                                          Icons.info_outline,
-                                          size: 40,
-                                        ),
-                                        Text('App Settings'),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                            title: Text(users[index]),
+                            subtitle: const Text('Manager'),
+                          );
+                        },
+                        separatorBuilder: (BuildContext context, int index) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 0.0, horizontal: 16),
+                            child: const Divider(),
+                          );
+                        },
+                      ),
+                    ],
                   ),
-                );
-              });
-        });
+                ),
+              ),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: <Widget>[
+                  _buildCard(
+                    color: const Color(0xff95eeb3),
+                    title: 'Assets',
+                    value: totalIncome.length >= 10
+                        ? totalIncome.substring(4)
+                        : totalIncome,
+                    onTap: () => debugPrint('Assets Card tapped'),
+                  ),
+                  _buildCard(
+                    color: const Color(0xffFDBE90),
+                    title: 'Store',
+                    icon: Icons.storefront_outlined,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => StoreSettings(storeID),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildCard(
+                    color: const Color.fromARGB(255, 97, 213, 224),
+                    title: 'User Settings',
+                    icon: Icons.manage_accounts_outlined,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              UserSettings(currentUser.email!),
+                        ),
+                      );
+                    },
+                  ),
+                  _buildCard(
+                    color: const Color.fromARGB(255, 90, 209, 227),
+                    title: 'App Settings',
+                    icon: Icons.info_outline,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AppSettings(storeID),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCard({
+    required Color color,
+    required String title,
+    String? value,
+    IconData? icon,
+    required VoidCallback onTap,
+  }) {
+    return Card(
+      color: color,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          width: MediaQuery.of(context).size.width / 2 - 30,
+          height: MediaQuery.of(context).size.height/7,
+          child: Padding(
+            padding: const EdgeInsets.all(14.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(48),
+                      ),
+                      height: 48,
+                      width: 48,
+                      child: Icon(
+                          icon
+                      ),
+                    ),
+                    SizedBox(width: 10),
+                    Text(title),
+
+                  ],
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(
+                      value ?? '',
+                      style: const TextStyle(fontSize: 24),
+                    ),
+                  ],
+                ),
+                // if (icon != null)
+                //   Icon(
+                //     icon,
+                //     size: 40,
+                //   )
+                // else if (value != null)
+                //   Text(
+                //     value,
+                //     style: const TextStyle(fontSize: 20),
+                //   ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

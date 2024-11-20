@@ -4,19 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 class StoreHistoryOrderDetail extends StatelessWidget {
-  String storeID;
-  String currency = "NTD ";
-  int index;
-  Map<String, dynamic> order;
-  StoreHistoryOrderDetail(this.storeID, this.index, this.order, {Key? key})
-      : super(key: key);
+  final String storeID;
+  final String currency = "NTD ";
+  final int index;
+  final Map<String, dynamic> order;
+
+  const StoreHistoryOrderDetail(this.storeID, this.index, this.order, {super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white70,
       appBar: AppBar(
-        title: const Text('Transaction details'),
+        title: const Text('Transaction Details'),
       ),
       body: SafeArea(
         child: Padding(
@@ -26,101 +26,14 @@ class StoreHistoryOrderDetail extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  Text(
-                    'Order no : ' + order['no'].toString().padLeft(10, '0'),
-                    style: TextStyle(color: Colors.black, fontSize: 24),
-                  ),
-                  Divider(
-                    color: Colors.black,
-                    height: 20,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16.0),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Order time : ' +
-                            DateFormat('yyyy-MM-dd (EEEE)').format(
-                                DateTime.parse(
-                                    order['time'].toDate().toString())),
-                        style: TextStyle(color: Colors.black, fontSize: 18),
-                      ),
-                    ),
-                  ),
-                  Divider(
-                    color: Colors.black,
-                    height: 20,
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16.0),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Total : ' + currency + order['total'].toString(),
-                        style: TextStyle(color: Colors.black, fontSize: 18),
-                      ),
-                    ),
-                  ),
-                  const Divider(
-                    color: Colors.black,
-                    height: 20,
-                  ),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Items : ',
-                      style: TextStyle(color: Colors.black, fontSize: 18),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: Column(
-                      children: order['details']
-                          .map<Widget>(
-                            (dynamic element) => Card(
-                              elevation: 0,
-                              child: ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                    vertical: 3, horizontal: 24),
-                                title: Text(element['name'].toString()),
-                                subtitle: Text("contains " +
-                                    element['amount'].toString() +
-                                    " pieces"),
-                                trailing: Text(
-                                    currency + element['price'].toString()),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                  ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        minimumSize: Size.fromHeight(
-                            40), // fromHeight use double.infinity as width and 40 is the height
-                      ),
-                      onPressed: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => AddOrder(
-                                    storeID,
-                                    origin: order,
-                                  )),
-                        );
-                      },
-                      icon: Icon(Icons.edit_outlined),
-                      label: Text("Edit")),
-                  OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                          minimumSize: Size.fromHeight(40)),
-                      onPressed: () {
-                        reconfirm(context);
-                      },
-                      icon: Icon(Icons.delete_outline),
-                      label: Text("Delete")),
+                children: [
+                  _buildOrderHeader(),
+                  const Divider(color: Colors.black, height: 20),
+                  _buildOrderDetails(),
+                  const Divider(color: Colors.black, height: 20),
+                  _buildOrderItems(),
+                  const SizedBox(height: 20),
+                  _buildActionButtons(context),
                 ],
               ),
             ),
@@ -130,31 +43,126 @@ class StoreHistoryOrderDetail extends StatelessWidget {
     );
   }
 
-  void reconfirm(BuildContext context) {
+  Widget _buildOrderHeader() {
+    return Text(
+      'Order no: ${order['no'].toString().padLeft(10, '0')}',
+      style: const TextStyle(color: Colors.black, fontSize: 24),
+    );
+  }
+
+  Widget _buildOrderDetails() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Order time: ${DateFormat('yyyy-MM-dd (EEEE)').format(order['time'].toDate())}',
+          style: const TextStyle(color: Colors.black, fontSize: 18),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Total: $currency${order['total']}',
+          style: const TextStyle(color: Colors.black, fontSize: 18),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOrderItems() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Items:',
+          style: TextStyle(color: Colors.black, fontSize: 18),
+        ),
+        const SizedBox(height: 8),
+        Column(
+          children: order['details'].map<Widget>(
+                (dynamic element) {
+              return Card(
+                elevation: 0,
+                child: ListTile(
+                  contentPadding:
+                  const EdgeInsets.symmetric(vertical: 3, horizontal: 24),
+                  title: Text(element['name'].toString()),
+                  subtitle: Text("Quantity: ${element['amount']}"),
+                  trailing: Text('$currency${element['price']}'),
+                ),
+              );
+            },
+          ).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButtons(BuildContext context) {
+    return Column(
+      children: [
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size.fromHeight(40),
+          ),
+          onPressed: () => _navigateToEditOrder(context),
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text("Edit"),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(40),
+          ),
+          onPressed: () => _confirmDeleteOrder(context),
+          icon: const Icon(Icons.delete_outline),
+          label: const Text("Delete"),
+        ),
+      ],
+    );
+  }
+
+  void _navigateToEditOrder(BuildContext context) {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddOrder(storeID, origin: order),
+      ),
+    );
+  }
+
+  void _confirmDeleteOrder(BuildContext context) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Confirm Delete'),
-          content: const Text('Are you sure you want to delete this order?'),
+          content: Text(
+              'Are you sure you want to delete order no: ${order['no']}?'),
           actions: [
             TextButton(
-              child: Text('Cancel'),
-              onPressed: () {
-                Navigator.pop(context);
-              },
+              child: const Text('Cancel'),
+              onPressed: () => Navigator.pop(context),
             ),
             TextButton(
-              child: Text('Delete'),
-              onPressed: () {
-                FirebaseFirestore.instance
-                    .collection('tmporder')
-                    .doc(storeID)
-                    .update({
-                  'orders': FieldValue.arrayRemove([order])
-                });
-                Navigator.pop(context);
-                Navigator.pop(context);
+              child: const Text('Delete'),
+              onPressed: () async {
+                try {
+                  await FirebaseFirestore.instance
+                      .collection('tmporder')
+                      .doc(storeID)
+                      .update({
+                    'orders': FieldValue.arrayRemove([order]),
+                  });
+                  Navigator.pop(context); // Close dialog
+                  Navigator.pop(context); // Return to previous screen
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Order deleted successfully')),
+                  );
+                } catch (error) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to delete order: $error')),
+                  );
+                }
               },
             ),
           ],

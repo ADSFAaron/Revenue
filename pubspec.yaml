@@ -53,11 +53,8 @@ dependencies:
   # Use for App Drawer
   flutter_launcher_icons: ^0.14.1
 
-  # Use for opening app
+  # Use for opening app splash screen
   flutter_native_splash: ^2.4.3
-
-  # Use for edit menu icon
-#  flutter_iconpicker: ^4.0.1
 
   # Use for statistics graph
   charts_flutter: ^0.12.0
@@ -66,7 +63,7 @@ dependencies:
   # Use for output Excel file
   excel: ^4.0.6
   permission_handler: ^11.3.1
-#  path_provider: ^2.1.5
+  #  path_provider: ^2.1.5
   filesystem_picker: ^4.0.0
 
   # Use for history order grouped
@@ -80,6 +77,8 @@ dependencies:
 
   # Use for app name
   rename: ^3.0.2
+
+  # Use for edit menu icon
   flutter_iconpicker: ^3.3.3
 
 dev_dependencies:
@@ -88,18 +87,41 @@ dev_dependencies:
 
   flutter_lints: ^5.0.0
 
-flutter_icons:
+# App Icon
+flutter_launcher_icons:
   android: "launcher_icon"
+  image_path: "assets/icon/AppLogo.png"
+  min_sdk_android: 27 # android min sdk min:16, default 21
+  adaptive_icon_background: "#eae9e4"
+  adaptive_icon_foreground: "assets/icon/AppLogo.png"
+  adaptive_icon_monochrome: "assets/icon/AppLogoMonochrome.png"
+  adaptive_icon_foreground_inset: 64
   ios: true
-  image_path: "assets/Statistics.png"
-  adaptive_icon_background: "#54EFEF"
+  remove_alpha_ios: false
+  image_path_ios_dark_transparent: "assets/icon/AppLogo.png"
+  image_path_ios_tinted_grayscale: "assets/icon/AppLogo.png"
+  desaturate_tinted_to_grayscale_ios: true
+  background_color_ios: "#eae9e4"
+  web:
+    generate: true
+    image_path: "assets/icon/AppLogo.png"
+    background_color: "#eae9e4"
+    theme_color: "#395917"
+  windows:
+    generate: true
+    image_path: "assets/icon/AppLogo.png"
+    icon_size: 48 # min:48, max:256, default: 48
+  macos:
+    generate: true
+    image_path: "assets/icon/AppLogo.png"
+
 
 flutter_native_splash:
-  color: "#54EFEF"
-  image: assets/Statistics.png
-  android: true
-  ios: true
-  web: true
+  color: "#eae9e4"
+  image: "assets/icon/AppLogo.png"
+  android_12:
+    image: "assets/icon/AppLogo.png"
+    color: "#eae9e4"
 
 # The following section is specific to Flutter.
 flutter:

@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 class AddOrder extends StatefulWidget {
   final String storeId;
   final Map<String, dynamic>? origin;
-  AddOrder(this.storeId, {Key? key, this.origin}) : super(key: key);
+  const AddOrder(this.storeId, {super.key, this.origin});
 
   @override
   State<AddOrder> createState() => _AddOrderState();

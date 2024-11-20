@@ -6,9 +6,10 @@ import 'package:intl/intl.dart';
 import 'store_setting_history_order_detail.dart';
 
 class StoreHistoryOrder extends StatelessWidget {
-  String storeID;
-  String currency = "NTD ";
-  StoreHistoryOrder(this.storeID, {Key? key}) : super(key: key);
+  final String storeId;
+  final String currency = "NTD ";
+
+  StoreHistoryOrder(this.storeId, {super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -19,65 +20,83 @@ class StoreHistoryOrder extends StatelessWidget {
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('tmporder')
-            .doc(storeID)
+            .doc(storeId)
             .snapshots(),
         builder:
             (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
           if (snapshot.hasError) {
-            return Text('Something went wrong');
+            return const Center(child: Text('Something went wrong.'));
           }
 
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Text("Loading");
+            return const Center(child: CircularProgressIndicator());
           }
 
-          print("first");
+          final Map<String, dynamic>? orderData =
+          snapshot.data?.data() as Map<String, dynamic>?;
 
-          Map<String, dynamic> data =
-              snapshot.data?.data() as Map<String, dynamic>;
+          if (orderData == null || orderData['orders'] == null) {
+            return const Center(child: Text('No orders available.'));
+          }
 
-          print(data);
+          final List<dynamic> orders = orderData['orders'];
+
           return GroupedListView<dynamic, String>(
-            elements: data['orders'],
+            elements: orders,
             groupBy: (element) =>
                 DateFormat('yyyy-MM-dd').format(element['time'].toDate()),
-            groupSeparatorBuilder: (String groupByValue) => Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              child: Text(
-                DateFormat('yyyy-MM-dd (EEEE)')
-                    .format(DateTime.parse(groupByValue)),
-                style: TextStyle(color: Colors.white),
-              ),
-              color: Colors.black,
-            ),
-            itemBuilder: (context, dynamic element) => Card(
-              elevation: 3,
-              child: ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-                leading: const Icon(Icons.list_alt),
-                title: Text(element['no'].toString()),
-                subtitle: Text("contains " +
-                    element['details'].length.toString() +
-                    " dishes"),
-                trailing: Text(currency + element['total'].toString()),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => StoreHistoryOrderDetail(
-                          storeID, element['no'] as int, element),
-                    ),
-                  );
-                },
-              ),
-            ),
+            groupSeparatorBuilder: (String groupByValue) => _buildGroupSeparator(groupByValue),
+            itemBuilder: (context, dynamic element) => _buildOrderCard(context, element),
             itemComparator: (item1, item2) =>
                 item1['no'].compareTo(item2['no']),
             useStickyGroupSeparators: true,
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildGroupSeparator(String groupByValue) {
+    final DateTime date = DateTime.parse(groupByValue);
+    final String formattedDate =
+    DateFormat('yyyy-MM-dd (EEEE)').format(date);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      color: Colors.black,
+      child: Text(
+        formattedDate,
+        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _buildOrderCard(BuildContext context, dynamic element) {
+    return Card(
+      elevation: 3,
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+      child: ListTile(
+        contentPadding:
+        const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+        leading: const Icon(Icons.list_alt),
+        title: Text('Order #${element['no']}'),
+        subtitle: Text('Contains ${element['details'].length} dishes'),
+        trailing: Text('$currency${element['total']}'),
+        onTap: () => _navigateToOrderDetail(context, element),
+      ),
+    );
+  }
+
+  void _navigateToOrderDetail(BuildContext context, dynamic element) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => StoreHistoryOrderDetail(
+          storeId,
+          element['no'] as int,
+          element,
+        ),
       ),
     );
   }

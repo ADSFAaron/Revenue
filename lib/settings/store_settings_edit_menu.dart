@@ -2,21 +2,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 class StoreEditMenu extends StatefulWidget {
-  String storeID;
-  StoreEditMenu(this.storeID, {Key? key}) : super(key: key);
+  final String storeID; // 加上 final，保持不可變
+  const StoreEditMenu(this.storeID, {super.key});
 
   @override
   State<StoreEditMenu> createState() => _StoreEditMenuState();
 }
 
 class _StoreEditMenuState extends State<StoreEditMenu> {
-  late Map<String, dynamic> stores;
   late TextEditingController dishNameController, dishPriceController;
+  List<dynamic> menu = []; // 本地菜單列表
 
   @override
   void initState() {
     super.initState();
-
     dishNameController = TextEditingController();
     dishPriceController = TextEditingController();
   }
@@ -39,249 +38,147 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
             .collection('store')
             .doc(widget.storeID)
             .snapshots(),
-        builder:
-            (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
+        builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Text('Error: ${snapshot.error}');
+            return Center(child: Text('Error: ${snapshot.error}'));
           }
-
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(
-              child: CircularProgressIndicator(),
-            );
+            return const Center(child: CircularProgressIndicator());
+          }
+          // 更新本地菜單
+          final data = snapshot.data?.data() as Map<String, dynamic>?;
+          if (data != null && data.containsKey('menu')) {
+            menu = List.from(data['menu']);
           }
 
-          stores = snapshot.data?.data() as Map<String, dynamic>;
-
-          print(stores['menu']);
-
-          return SafeArea(
-            child: ReorderableListView.builder(
-              itemBuilder: (context, index) => ListTile(
-                leading: Icon(Icons.restaurant),
-                key: ValueKey(index),
-                title: Text(stores['menu'][index]['name']),
-                subtitle:
-                    Text("NTD " + stores['menu'][index]['price'].toString()),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      onPressed: () {
-                        edit(index);
-                      },
-                      icon: const Icon(Icons.edit_outlined),
-                    ),
-                    IconButton(
-                      onPressed: () {
-                        remove(index);
-                      },
-                      icon: const Icon(Icons.delete_outlined),
-                    ),
-                  ],
-                ),
-              ),
-              itemCount: stores['menu'].length,
-              onReorder: (oldIndex, newIndex) {
-                if (newIndex >= stores['menu'].length) {
-                  newIndex = stores['menu'].length - 1;
-                }
-
-                print(newIndex.toString() + "  " + oldIndex.toString());
-
-                setState(
-                  () {
-                    var tmp = stores['menu'][oldIndex];
-                    stores['menu'][oldIndex] = stores['menu'][newIndex];
-                    stores['menu'][newIndex] = tmp;
-
-                    updateMenuToFirestore();
-                  },
-                );
-              },
-            ),
+          return ReorderableListView.builder(
+            itemBuilder: (context, index) => buildMenuTile(index),
+            itemCount: menu.length,
+            onReorder: (oldIndex, newIndex) {
+              setState(() {
+                if (newIndex > oldIndex) newIndex--;
+                final item = menu.removeAt(oldIndex);
+                menu.insert(newIndex, item);
+                updateMenuToFirestore();
+              });
+            },
           );
         },
       ),
-      floatingActionButton: _floatAddButton(context),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => openDialog(isEdit: false),
+        child: const Icon(Icons.add),
+      ),
     );
   }
 
-  Widget _floatAddButton(BuildContext context) {
-    return FloatingActionButton(
-      onPressed: () {
-        Map<String, dynamic> result = {};
-
-        openDialog(result);
-        // print(result);
-        result = {};
-      },
-      child: const Icon(Icons.add),
-    );
-  }
-
-  Future<Map<String, dynamic>?> openDialog(Map<String, dynamic> result) =>
-      showDialog<Map<String, dynamic>>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('Add Menu'),
-          content: popupContent(),
-          actions: popupNewAction(context),
-        ),
-      );
-
-  List<Widget> popupNewAction(BuildContext context) {
-    Map<String, dynamic> result = {};
-    return [
-      TextButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
-          child: Text('Cancel')),
-      TextButton(
-          onPressed: () {
-            result['name'] = dishNameController.text;
-            result['price'] = int.parse(dishPriceController.text);
-
-            List<dynamic> originMenu = stores['menu'];
-
-            setState(() {
-              stores['menu'].add(result);
-              updateMenuToFirestore();
-              print(stores['menu']);
-            });
-
-            Navigator.of(context).pop();
-
-            dishNameController.clear();
-            dishPriceController.clear();
-
-            final snackBar = SnackBar(
-              content: Text('Add Dishes Successful!'),
-              action: SnackBarAction(
-                label: 'OK',
-                onPressed: () {
-                  // Some code to undo the change.
-                },
-              ),
-            );
-
-            // Show SnackBar.
-            ScaffoldMessenger.of(context).showSnackBar(snackBar);
-          },
-          child: Text('Save')),
-    ];
-  }
-
-  List<Widget> popupEditAction(BuildContext context, int index) {
-    Map<String, dynamic> result = {};
-    return [
-      TextButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
-          child: Text('Cancel')),
-      TextButton(
-          onPressed: () {
-            result['name'] = dishNameController.text;
-            result['price'] = int.parse(dishPriceController.text);
-
-            List<dynamic> originMenu = stores['menu'];
-
-            setState(() {
-              stores['menu'][index] = (result);
-              updateMenuToFirestore();
-              print(stores['menu']);
-            });
-
-            Navigator.of(context).pop();
-
-            dishNameController.clear();
-            dishPriceController.clear();
-
-            final snackBar = SnackBar(
-              content: Text('Edit Dishes Successful!'),
-              action: SnackBarAction(
-                label: 'OK',
-                onPressed: () {
-                  // Some code to undo the change.
-                },
-              ),
-            );
-
-            // Show SnackBar.
-            ScaffoldMessenger.of(context).showSnackBar(snackBar);
-          },
-          child: Text('Save')),
-    ];
-  }
-
-  Column popupContent([Map<String, dynamic>? originItem]) {
-    if (originItem == null) {
-      dishNameController = TextEditingController();
-      dishPriceController = TextEditingController();
-
-      return Column(
+  Widget buildMenuTile(int index) {
+    final item = menu[index];
+    return ListTile(
+      key: ValueKey(index),
+      leading: const Icon(Icons.restaurant),
+      title: Text(item['name']),
+      subtitle: Text("NTD ${item['price']}"),
+      trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(
-            decoration: InputDecoration(hintText: 'Dishes name'),
-            controller: dishNameController,
+          IconButton(
+            onPressed: () => openDialog(isEdit: true, index: index),
+            icon: const Icon(Icons.edit_outlined),
           ),
-          TextField(
-            decoration: InputDecoration(hintText: 'Dishes price'),
-            controller: dishPriceController,
-            keyboardType: TextInputType.number,
+          IconButton(
+            onPressed: () => removeMenuItem(index),
+            icon: const Icon(Icons.delete_outlined),
           ),
         ],
-      );
+      ),
+    );
+  }
+
+  Future<void> openDialog({required bool isEdit, int? index}) async {
+    if (isEdit && index != null) {
+      final item = menu[index];
+      dishNameController.text = item['name'];
+      dishPriceController.text = item['price'].toString();
     } else {
-      dishNameController = TextEditingController(text: originItem['name']);
-      dishPriceController =
-          TextEditingController(text: originItem['price'].toString());
+      dishNameController.clear();
+      dishPriceController.clear();
+    }
 
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextFormField(
-            decoration: InputDecoration(hintText: 'Dishes name'),
-            controller: dishNameController,
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isEdit ? 'Edit Dish' : 'Add Dish'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              decoration: const InputDecoration(labelText: 'Dish Name'),
+              controller: dishNameController,
+            ),
+            TextField(
+              decoration: const InputDecoration(labelText: 'Dish Price'),
+              controller: dishPriceController,
+              keyboardType: TextInputType.number,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
           ),
-          TextFormField(
-            decoration: InputDecoration(hintText: 'Dishes price'),
-            controller: dishPriceController,
-            keyboardType: TextInputType.number,
+          TextButton(
+            onPressed: () {
+              if (dishNameController.text.isEmpty ||
+                  dishPriceController.text.isEmpty ||
+                  int.tryParse(dishPriceController.text) == null) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Invalid input!'),
+                ));
+                return;
+              }
+
+              final newDish = {
+                'name': dishNameController.text,
+                'price': int.parse(dishPriceController.text),
+              };
+
+              setState(() {
+                if (isEdit && index != null) {
+                  menu[index] = newDish;
+                } else {
+                  menu.add(newDish);
+                }
+                updateMenuToFirestore();
+              });
+
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(isEdit ? 'Dish Edited' : 'Dish Added'),
+              ));
+            },
+            child: const Text('Save'),
           ),
         ],
-      );
-    }
+      ),
+    );
   }
 
-  void remove(int index) {
+  void removeMenuItem(int index) {
     setState(() {
-      stores['menu'].removeAt(index);
+      menu.removeAt(index);
       updateMenuToFirestore();
     });
-  }
-
-  void edit(int index) {
-    showDialog(
-        context: context,
-        builder: (context) {
-          Map<String, dynamic> item = stores['menu'][index];
-          print(item);
-
-          return AlertDialog(
-              title: const Text("Edit Menu"),
-              content: popupContent(item),
-              actions: popupEditAction(context, index));
-        });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Dish Removed'),
+    ));
   }
 
   void updateMenuToFirestore() {
-    DocumentReference documentReference =
-        FirebaseFirestore.instance.collection('store').doc(widget.storeID);
-
-    documentReference.update({'menu': stores['menu']});
+    FirebaseFirestore.instance
+        .collection('store')
+        .doc(widget.storeID)
+        .update({'menu': menu});
   }
 }

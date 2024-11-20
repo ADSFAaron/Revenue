@@ -1,26 +1,28 @@
-# revenue
+<!-- # Revenue
 
-> An app for Revenue Statistics and Management
+> App for Revenue Statistics and Management
+
+
 
 ## Target
 - [ ] Dynamic manage menu
 - [ ] Input multiple menu items
 - [ ] Show Graph with result
 - [ ] Export Excel for all revenue
-- [ ] Add/Edit/Remove Each order
+- [ ] Add/Edit/Remove Each order -->
 
 
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
   <a href="https://github.com/ADSFAaron/Revenue">
-    <img src="images/logo.png" alt="Logo" width="80" height="80">
+    <img src="assets/Logo.png" alt="Logo" width="80" height="80">
   </a>
 
-<h3 align="center">project_title</h3>
+<h3 align="center">Revenue</h3>
 
   <p align="center">
-    project_description
+    App for Revenue Statistics and Management
     <br />
     <a href="https://github.com/ADSFAaron/Revenue"><strong>Explore the docs »</strong></a>
     <br />
@@ -65,8 +67,7 @@
 
 <!-- ABOUT THE PROJECT -->
 ## About The Project
-
-[![Product Name Screen Shot][product-screenshot]](https://example.com)
+![Cover Image](markdown/images/Cover%20for%20Github.png)
 
 Here's a blank template to get started: To avoid retyping too much info. Do a search and replace with your text editor for the following: `ADSFAaron`, `Revenue`, `twitter_handle`, `linkedin_username`, `email_client`, `email`, `project_title`, `project_description`
 

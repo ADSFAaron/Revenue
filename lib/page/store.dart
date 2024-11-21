@@ -89,153 +89,132 @@ class _StorePageState extends State<StorePage> {
   Widget _buildStorePage(Map<String, dynamic> stores) {
     String currency = "NTD";
     String totalIncome = "${stores['totalIncome']}";
-    List<String> users = ["user1", "user2", "user3"];
-    // String storeName = stores['name'];
-    // String storeID = stores['id'];
     print(stores);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Store Page'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout_outlined),
-            onPressed: () => FirebaseAuth.instance.signOut(),
-          ),
-        ],
-      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: <Widget>[
-              Card(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          const SizedBox(width: 10),
-                          Text(
-                            stores['name'],
-                            style: const TextStyle(
-                                fontSize: 28, fontWeight: FontWeight.bold),
-                          ),
-                          const Spacer(),
-                          TextButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => StoreSettings(stores['id']),
-                                  ),
-                                );
-                              }, child: const Text('Edit'))
-                        ],
-                      ),
-                      SizedBox(height: 10),
-                      ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: users.length,
-                        itemBuilder: (context, index) {
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: Colors.blue,
-                              child: const Text('AH'),
-                            ),
-                            title: Text(users[index]),
-                            subtitle: const Text('Manager'),
-                          );
-                        },
-                        separatorBuilder: (BuildContext context, int index) {
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 0.0, horizontal: 16),
-                            child: const Divider(),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
+          child: SingleChildScrollView(
+            child: Column(
+              children: <Widget>[
+                _buildStoreCard(stores),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: <Widget>[
+                    _buildCard(
+                      title: 'Revenue',
+                      icon: Icons.savings_rounded,
+                      value:
+                          "$currency ${totalIncome.length >= 10 ? totalIncome.substring(4) : totalIncome}",
+                      onTap: () => debugPrint('Revenue Card tapped'),
+                    ),
+                    _buildCard(
+                      title: 'Orders',
+                      icon: Icons.grading_rounded,
+                      value: stores['orderIndex'].toString(),
+                      onTap: () => debugPrint('Orders Card tapped'),
+                    ),
+                  ],
                 ),
-              ),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: <Widget>[
-                  _buildCard(
-                    color: const Color(0xff95eeb3),
-                    title: 'Assets',
-                    value: totalIncome.length >= 10
-                        ? totalIncome.substring(4)
-                        : totalIncome,
-                    onTap: () => debugPrint('Assets Card tapped'),
-                  ),
-                  _buildCard(
-                    color: const Color(0xffFDBE90),
-                    title: 'Store',
-                    icon: Icons.storefront_outlined,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => StoreSettings(storeID),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildCard(
-                    color: const Color.fromARGB(255, 97, 213, 224),
-                    title: 'User Settings',
-                    icon: Icons.manage_accounts_outlined,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              UserSettings(currentUser.email!),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildCard(
-                    color: const Color.fromARGB(255, 90, 209, 227),
-                    title: 'App Settings',
-                    icon: Icons.info_outline,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => AppSettings(storeID),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ],
+                const SizedBox(height: 10),
+                _buildListTile(
+                  title: 'Store Settings',
+                  subtitle: 'Menu editing, History orders',
+                  icon: Icons.storefront_outlined,
+                  onTap: () => _navigateTo(context, StoreSettings(storeID)),
+                ),
+                _buildListTile(
+                  title: 'User Settings',
+                  subtitle: 'User name, Change password',
+                  icon: Icons.manage_accounts_outlined,
+                  onTap: () =>
+                      _navigateTo(context, UserSettings(currentUser.email!)),
+                ),
+                _buildListTile(
+                  title: 'App Settings',
+                  subtitle: 'App version, Privacy policy, Feedback',
+                  icon: Icons.info_outline,
+                  onTap: () => _navigateTo(context, AppSettings(storeID)),
+                ),
+                _buildListTile(
+                  title: 'Logout',
+                  icon: Icons.logout_outlined,
+                  onTap: () => FirebaseAuth.instance.signOut(),
+                )
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
+  Widget _buildStoreCard(Map<String, dynamic> stores) {
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                const SizedBox(width: 10),
+                Text(
+                  stores['name'],
+                  style: const TextStyle(
+                      fontSize: 28, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => _navigateTo(context, StoreSettings(storeID)),
+                  child: const Text('Edit'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ListView.separated(
+              shrinkWrap: true,
+              itemCount: stores['users'].length,
+              itemBuilder: (context, index) {
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Theme.of(context).splashColor,
+                    child: Text(
+                      stores['users2'][index]['name']
+                          .substring(0, 2)
+                          .toUpperCase(),
+                    ),
+                  ),
+                  title: Text(stores['users2'][index]['mail']),
+                  subtitle: Text(stores['users2'][index]['role']),
+                );
+              },
+              separatorBuilder: (context, index) => const Divider(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCard({
-    required Color color,
     required String title,
     String? value,
     IconData? icon,
     required VoidCallback onTap,
   }) {
     return Card(
-      color: color,
+      elevation: 0,
       child: InkWell(
         onTap: onTap,
         child: SizedBox(
           width: MediaQuery.of(context).size.width / 2 - 30,
-          height: MediaQuery.of(context).size.height/7,
+          height: MediaQuery.of(context).size.height / 7,
           child: Padding(
-            padding: const EdgeInsets.all(14.0),
+            padding: const EdgeInsets.all(20),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -243,18 +222,16 @@ class _StorePageState extends State<StorePage> {
                   children: [
                     Container(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: Theme.of(context).splashColor,
                         borderRadius: BorderRadius.circular(48),
                       ),
                       height: 48,
                       width: 48,
-                      child: Icon(
-                          icon
-                      ),
+                      child:
+                          Icon(icon, color: Theme.of(context).iconTheme.color),
                     ),
-                    SizedBox(width: 10),
+                    const SizedBox(width: 10),
                     Text(title),
-
                   ],
                 ),
                 Row(
@@ -266,21 +243,29 @@ class _StorePageState extends State<StorePage> {
                     ),
                   ],
                 ),
-                // if (icon != null)
-                //   Icon(
-                //     icon,
-                //     size: 40,
-                //   )
-                // else if (value != null)
-                //   Text(
-                //     value,
-                //     style: const TextStyle(fontSize: 20),
-                //   ),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildListTile({
+    required String title,
+    String? subtitle,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      title: Text(title),
+      subtitle: subtitle != null ? Text(subtitle) : null,
+      leading: Icon(icon),
+      onTap: onTap,
+    );
+  }
+
+  void _navigateTo(BuildContext context, Widget page) {
+    Navigator.push(context, MaterialPageRoute(builder: (context) => page));
   }
 }

@@ -16,6 +16,8 @@ class _AddOrderState extends State<AddOrder> {
   final _firestore = FirebaseFirestore.instance;
   List<Map<String, dynamic>> _menuList = [];
   int _totalCount = 0;
+  String _paymentMethod = 'Cash'; // Default payment method
+  int _taxRate = 0;
 
   @override
   void initState() {
@@ -269,7 +271,7 @@ class _AddOrderState extends State<AddOrder> {
         'NTD ${_menuList[index]['price']}',
         style: const TextStyle(fontSize: 14),
       ),
-      leading: const Icon(Icons.fastfood),
+      leading: Icon(_menuList[index]['icon'] ?? Icons.restaurant_rounded),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -292,36 +294,41 @@ class _AddOrderState extends State<AddOrder> {
 
   Widget _buildTotalAndSubmitSection(
       String addOrderButtonName, Map<String, dynamic> stores) {
-    List<Widget> buttonList = <Widget>[
-      IconButton(onPressed: () {}, icon: const Icon(Icons.money_rounded)),
-      IconButton(onPressed: () {}, icon: const Icon(Icons.credit_card_rounded)),
-      IconButton(onPressed: () {}, icon: const Icon(Icons.contactless_rounded)),
+
+    List<Map<String, dynamic>> paymentMethods = [
+      {'label': 'Cash', 'icon': Icons.money_rounded},
+      {'label': 'Credit Card', 'icon': Icons.credit_card_rounded},
+      {'label': 'Line Pay', 'icon': Icons.contactless_rounded},
     ];
 
-    List<Text> labelList = const <Text>[
-      Text('Cash'),
-      Text('Credit Card'),
-      Text('Line Pay'),
-    ];
+    List<Widget> buttonList = List.generate(
+      paymentMethods.length,
+          (index) => Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.start,
+          children: [
+            IconButton(
+              onPressed: () {
+                setState(() {
+                  _paymentMethod = paymentMethods[index]['label'];
+                });
+                Navigator.pop(context);
+              },
+              icon: Icon(paymentMethods[index]['icon']),
+            ),
+            Text(paymentMethods[index]['label']),
+          ],
+        ),
+      ),
+    );
 
-    buttonList = List.generate(
-        buttonList.length,
-        (index) => Padding(
-              padding: const EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 20.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.start,
-                children: [
-                  buttonList[index],
-                  labelList[index],
-                ],
-              ),
-            ));
 
     return Column(
       children: [
         ListTile(
           title: Text(
-            'Payment method',
+            'Payment Method: $_paymentMethod',
             style: const TextStyle(fontSize: 16),
           ),
           leading: const Icon(Icons.payments_rounded),
@@ -348,7 +355,7 @@ class _AddOrderState extends State<AddOrder> {
           },
         ),
         ListTile(
-          title: Text("Included tax: 0%"),
+          title: Text("Included tax: $_taxRate%"),
           leading: const Icon(Icons.euro_rounded),
         ),
         ListTile(

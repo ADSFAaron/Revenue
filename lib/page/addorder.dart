@@ -1,420 +1,369 @@
-// import 'dart:math';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
 class AddOrder extends StatefulWidget {
   final String storeId;
   final Map<String, dynamic>? origin;
+
   const AddOrder(this.storeId, {super.key, this.origin});
 
   @override
-  State<AddOrder> createState() => _AddOrderState();
+  _AddOrderState createState() => _AddOrderState();
 }
 
 class _AddOrderState extends State<AddOrder> {
-  DateTime pickDate = DateTime.now(); // 讓使用者可以選取時間
-  GlobalKey<FormState> formKey = GlobalKey<FormState>(); // 取得表單選取內容
-  late Map<String, dynamic> users, stores;
-  int totalCount = 0;
-  List<dynamic> menuList = [];
-
-  void _pickDate() async {
-    DateTime? date = await showDatePicker(
-        context: context,
-        initialDate: pickDate,
-        firstDate: DateTime(DateTime.now().year - 5),
-        lastDate: DateTime(DateTime.now().year + 5));
-
-    if (date != null) {
-      TimeOfDay pickTime = TimeOfDay.now();
-      final tmp = await showTimePicker(context: context, initialTime: pickTime);
-
-      if (tmp != null) {
-        setState(() {
-          pickDate = new DateTime(
-              date.year, date.month, date.day, tmp.hour, tmp.minute);
-        });
-      }
-      print(pickDate);
-    }
-  }
+  DateTime _pickDate = DateTime.now();
+  final _firestore = FirebaseFirestore.instance;
+  List<Map<String, dynamic>> _menuList = [];
+  int _totalCount = 0;
 
   @override
   void initState() {
     super.initState();
+    _pickDate = widget.origin?['time']?.toDate() ?? DateTime.now();
+  }
+
+  Future<void> _selectDateTime() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _pickDate,
+      firstDate: DateTime.now().subtract(Duration(days: 365 * 5)),
+      lastDate: DateTime.now().add(Duration(days: 365 * 5)),
+    );
+
+    if (date != null) {
+      final time = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.fromDateTime(_pickDate),
+      );
+
+      if (time != null) {
+        setState(() {
+          _pickDate =
+              DateTime(date.year, date.month, date.day, time.hour, time.minute);
+        });
+      }
+    }
+  }
+
+  void _updateItemCount(int index, bool isIncreasing) {
+    setState(() {
+      final price = int.parse(_menuList[index]['price'].toString());
+      _menuList[index]['amount'] += isIncreasing ? 1 : -1;
+      _totalCount += isIncreasing ? price : -price;
+    });
+  }
+
+  void _submitOrder(Map<String, dynamic> storeInfo) {
+    final validOrderList =
+        _menuList.where((item) => item['amount'] > 0).toList();
+    final total = validOrderList.fold(
+        0,
+        (sum, item) =>
+            sum +
+            (int.parse(item['price'].toString()) *
+                int.parse(item['amount'].toString())));
+
+    if (validOrderList.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red,
+          content: Row(
+            children: const [
+              Icon(Icons.warning_outlined, color: Colors.white),
+              Text('   No items in order!'),
+            ],
+          ),
+        ),
+      );
+      return;
+    }
+
+    _processFirebaseOrder(storeInfo, validOrderList, total);
+  }
+
+  void _processFirebaseOrder(
+      Map<String, dynamic> storeInfo, List<dynamic> orderList, int total) {
+    final orderRef = _firestore.collection('tmporder').doc(widget.storeId);
+
+    orderRef.get().then((snapshot) {
+      if (snapshot.exists) {
+        _updateExistingOrder(snapshot.data()!, orderList, total);
+      } else {
+        _createNewOrder(orderList, total);
+      }
+      _showSuccessSnackBar();
+      _resetOrderState(storeInfo, total);
+    }).catchError((error) => print('Order submission error: $error'));
+  }
+
+  void _updateExistingOrder(
+      Map<String, dynamic> data, List<dynamic> orderList, int total) {
+    if (widget.origin != null) {
+      final orders = data['orders'] as List<dynamic>;
+      final index =
+          orders.indexWhere((order) => order['no'] == widget.origin!['no']);
+      if (index != -1) {
+        orders[index] = {
+          "details": orderList,
+          "time": _pickDate,
+          "no": widget.origin!['no'],
+          "total": total
+        };
+      }
+      _firestore
+          .collection('tmporder')
+          .doc(widget.storeId)
+          .update({'orders': orders});
+    } else {
+      _firestore.collection('tmporder').doc(widget.storeId).update({
+        'orders': FieldValue.arrayUnion([
+          {
+            "details": orderList,
+            "time": _pickDate,
+            "no": data['orderIndex'],
+            "total": total
+          }
+        ])
+      });
+    }
+  }
+
+  void _createNewOrder(List<dynamic> orderList, int total) {
+    _firestore.collection('tmporder').doc(widget.storeId).set({
+      'orders': [
+        {
+          "details": orderList,
+          "time": _pickDate,
+          "no": widget.origin?['no'] ?? 0,
+          "total": total
+        }
+      ]
+    });
+  }
+
+  void _showSuccessSnackBar() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 1),
+        content: Row(
+          children: const [
+            Icon(Icons.check, color: Colors.white),
+            Text('   Order added!'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _resetOrderState(Map<String, dynamic> storeInfo, int total) {
+    setState(() {
+      _totalCount = 0;
+      _menuList.clear();
+    });
+
+    if (widget.origin == null) {
+      _firestore.collection('store').doc(widget.storeId).update({
+        "orderIndex": storeInfo['orderIndex'] + 1,
+        "totalIncome": storeInfo['totalIncome'] + total
+      });
+    }
 
     if (widget.origin != null) {
-      pickDate = widget.origin!['time'].toDate();
+      Navigator.pop(context);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    String _addOrderButtonName = widget.origin == null ? "增加訂單" : "修改訂單";
-
     return Scaffold(
       appBar: AppBar(
-        title: Text('Add Order'),
-      ),
-      body: StreamBuilder(
-        stream: FirebaseFirestore.instance
-            .collection('store')
-            .doc(widget.storeId)
-            .snapshots(),
-        builder:
-            (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
+          title: Text(widget.origin == null ? 'Add Order' : 'Edit Order')),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: _firestore.collection('store').doc(widget.storeId).snapshots(),
+        builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return Center(
-              child: CircularProgressIndicator(),
-            );
+            return const Center(child: CircularProgressIndicator());
           }
-
           if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}'),
-            );
+            return Center(child: Text('Error: ${snapshot.error}'));
           }
 
-          // Get Data from Firestore
-          stores = snapshot.data?.data() as Map<String, dynamic>;
+          final stores = snapshot.data!.data() as Map<String, dynamic>;
 
-          if (menuList.isEmpty) {
-            menuList = stores['menu'];
-            for (int i = 0; i < menuList.length; i++) {
-              menuList[i] = menuList[i] as Map<String, dynamic>;
-              menuList[i]['amount'] = 0;
-            }
-
-            if (widget.origin != null) {
-              List<dynamic> originDetails = widget.origin!['details'];
-              Map<String, dynamic> hmDetails = {};
-              for (var d in originDetails) {
-                hmDetails[d['name']] = d;
-              }
-
-              for (var m in menuList) {
-                if (hmDetails.containsKey(m['name'])) {
-                  m['amount'] = hmDetails[m['name']]['amount'];
-                }
-              }
-
-              totalCount = widget.origin!['total'];
-            }
-            print('load data from firestore');
-            print(menuList);
+          if (_menuList.isEmpty) {
+            _menuList = _initializeMenuList(stores, widget.origin);
           }
 
-          // per Row content
-          return SizedBox(
-            height: MediaQuery.of(context).size.height,
-            child: SafeArea(
-              child: Column(
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0, vertical: 8.0),
-                    child: ListTile(
-                      title: Text(
-                          "日期 :  ${pickDate.year}  / ${pickDate.month}  / ${pickDate.day}" +
-                              "  ${pickDate.hour.toString().padLeft(2, '0')}:${pickDate.minute.toString().padLeft(2, '0')}"),
-                      trailing: Icon(
-                        Icons.calendar_today,
-                        color: Colors.grey[700],
-                      ),
-                      onTap: _pickDate,
-                    ),
-                  ),
-                  SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.65,
-                    child: ListView.separated(
-                      itemBuilder: (BuildContext context, int index) {
-                        return Card(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 30, vertical: 10),
-                            child: Row(
-                              children: <Widget>[
-                                Expanded(
-                                  flex: 1,
-                                  child: Icon(Icons.account_circle_outlined),
-                                ),
-                                Spacer(
-                                  flex: 1,
-                                ),
-                                Expanded(
-                                  flex: 5,
-                                  child: Text(
-                                    menuList[index]['name'].toString(),
-                                    style: TextStyle(fontSize: 16),
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 2,
-                                  child: Center(
-                                    child: IconButton(
-                                      icon: const Icon(
-                                        Icons.remove,
-                                      ),
-                                      onPressed: () {
-                                        if (menuList[index]['amount'] > 0) {
-                                          setState(() {
-                                            menuList[index]['amount']--;
-                                            totalCount -= int.parse(
-                                                menuList[index]['price']
-                                                    .toString());
-                                          });
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 1,
-                                  child: Center(
-                                    child: Text(
-                                        menuList[index]['amount'].toString()),
-                                  ),
-                                ),
-                                Expanded(
-                                  flex: 1,
-                                  child: Center(
-                                    child: IconButton(
-                                      onPressed: () {
-                                        setState(() {
-                                          menuList[index]['amount']++;
-                                          totalCount += int.parse(
-                                              menuList[index]['price']
-                                                  .toString());
-                                        });
-                                      },
-                                      icon: const Icon(Icons.add),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                      itemCount: menuList.length,
-                      separatorBuilder: (BuildContext context, int index) {
-                        return const Divider(
-                          height: 0.5,
-                        );
-                      },
-                    ),
-                  ),
-                  SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.1,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            flex: 6,
-                            child: Container(
-                              child: Center(
-                                child: RichText(
-                                  text: TextSpan(
-                                    text: "小計 : ",
-                                    style: TextStyle(
-                                        color: Colors.black, fontSize: 16),
-                                    children: <TextSpan>[
-                                      TextSpan(
-                                        text: ' NTD ${totalCount.toString()}',
-                                        style: TextStyle(color: Colors.red),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              decoration: BoxDecoration(
-                                // 背景
-                                color: Colors.white,
-                                // 設定圓角
-                                borderRadius:
-                                    BorderRadius.all(Radius.circular(36.0)),
-                                // 設定邊框
-                                // border: new Border.all(width: 1, color: Colors.black38),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.grey.withOpacity(0.16),
-                                    spreadRadius: 5,
-                                    blurRadius: 7,
-                                    offset: Offset(
-                                        0, 3), // changes position of shadow
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          Spacer(
-                            flex: 1,
-                          ),
-                          Expanded(
-                            flex: 4,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints.tightFor(
-                                  width: 200, height: 200),
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  shape: const StadiumBorder(),
-                                ),
-                                child: Text(_addOrderButtonName,
-                                    style: TextStyle(fontSize: 16)),
-                                onPressed: () {
-                                  updateOrderToFirebase(stores);
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
+          return _buildOrderContent(stores);
         },
       ),
     );
   }
 
-  void updateOrderToFirebase(Map<String, dynamic> storeInfo) {
-    List<dynamic> orderList = [];
-    List<dynamic> origin = [];
-    int total = 0;
+  List<Map<String, dynamic>> _initializeMenuList(
+      Map<String, dynamic> stores, Map<String, dynamic>? origin) {
+    var menuList = (stores['menu'] as List)
+        .map((item) => Map<String, dynamic>.from(item)..['amount'] = 0)
+        .toList();
 
-    // Filter current order which is zero
-    for (int i = 0; i < menuList.length; i++) {
-      if (menuList[i]['amount'] != 0) {
-        orderList.add(menuList[i]);
-        total += (int.parse(menuList[i]['price'].toString()) *
-            int.parse(menuList[i]['amount'].toString()));
-      }
-    }
+    if (origin != null) {
+      final originDetails = origin['details'] as List<dynamic>;
+      final detailMap = {for (var d in originDetails) d['name']: d};
 
-    print(orderList);
-    print(menuList);
-
-    // Check if it has order, not to create null order
-    if (orderList.isEmpty) {
-      final snackBar = SnackBar(
-        backgroundColor: Colors.red,
-        duration: Duration(milliseconds: 2000),
-        content: Row(
-          children: [
-            Icon(
-              Icons.warning_outlined,
-              color: Colors.white,
-            ),
-            Text('   No item add in order!'),
-          ],
-        ),
-      );
-
-      ScaffoldMessenger.of(context).showSnackBar(snackBar);
-
-      return;
-    }
-
-    // Check if Document is exist
-    CollectionReference order =
-        FirebaseFirestore.instance.collection('tmporder');
-
-    DocumentReference document = order.doc(widget.storeId);
-    document.get().then((DocumentSnapshot value) {
-      print('get data');
-      print(value.data());
-      print(value.data().runtimeType);
-      print('total count:');
-      print(total);
-
-      if (value.exists) {
-        print('update');
-        // Update
-        Map<String, dynamic> allData = value.data() as Map<String, dynamic>;
-        if (widget.origin != null) {
-          // find the origin order
-          var oriOrder = allData['orders'].firstWhere(
-              (element) => element['no'] == widget.origin!['no'], orElse: () {
-            return null;
-          });
-          oriOrder = {
-            "details": orderList,
-            "time": pickDate,
-            "no": widget.origin!['no'],
-            "total": total
-          };
-        } else {
-          allData['orders'].add({
-            "details": orderList,
-            "time": pickDate,
-            "no": stores['orderIndex'],
-            "total": total
-          });
+      for (var m in menuList) {
+        if (detailMap.containsKey(m['name'])) {
+          m['amount'] = detailMap[m['name']]['amount'];
         }
-
-        document.update({
-          'orders': allData['orders'],
-        });
-      } else {
-        print('create');
-        // Create
-        List<dynamic> allOrders = [];
-        allOrders.add({
-          "details": orderList,
-          "time": pickDate,
-          "no": stores['orderIndex'],
-          "total": total
-        });
-        document.set({
-          'orders': allOrders,
-        });
       }
-      final snackBar = SnackBar(
-        duration: Duration(milliseconds: 1000),
-        content: Row(
-          children: [
-            Icon(
-              Icons.check,
-              color: Colors.white,
-            ),
-            Text('   Order added!'),
-          ],
-        ),
-      );
-
-      ScaffoldMessenger.of(context).showSnackBar(snackBar);
-    }).catchError((onError) {
-      print(onError);
-    });
-
-    setState(() {
-      totalCount = 0;
-      menuList = [];
-    });
-
-    if (widget.origin != null) {
-      print("order pop");
-      Navigator.pop(context);
-    } else {
-      // update store order no
-      int orderIndex = storeInfo['orderIndex'] + 1;
-      FirebaseFirestore.instance
-          .collection('store')
-          .doc(widget.storeId)
-          .update({
-            "orderIndex": orderIndex,
-            "totalIncome": stores['totalIncome'] + total
-          })
-          .then((value) => print('update orderIndex: $orderIndex'))
-          .catchError((onError) => print('error: $onError'));
+      _totalCount = origin['total'];
     }
+
+    return menuList;
+  }
+
+  Widget _buildOrderContent(Map<String, dynamic> stores) {
+    final addOrderButtonName = widget.origin == null ? "增加訂單" : "修改訂單";
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          _buildDatePicker(),
+          SizedBox(height: 20),
+          _buildMenuList(),
+          Spacer(),
+          _buildTotalAndSubmitSection(addOrderButtonName, stores),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDatePicker() {
+    return ListTile(
+      title: Text("${_pickDate.year} / ${_pickDate.month} / ${_pickDate.day}\n"
+          "${_pickDate.hour.toString().padLeft(2, '0')}:${_pickDate.minute.toString().padLeft(2, '0')}"),
+      leading: const Icon(Icons.calendar_today),
+      onTap: _selectDateTime,
+    );
+  }
+
+  Widget _buildMenuList() {
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.5,
+      child: ListView.separated(
+        itemBuilder: (context, index) => _buildMenuItemCard(index),
+        itemCount: _menuList.length,
+        separatorBuilder: (context, index) => const Divider(),
+      ),
+    );
+  }
+
+  Widget _buildMenuItemCard(int index) {
+    return ListTile(
+      title: Text(
+        _menuList[index]['name'].toString(),
+        style: const TextStyle(fontSize: 16),
+      ),
+      subtitle: Text(
+        'NTD ${_menuList[index]['price']}',
+        style: const TextStyle(fontSize: 14),
+      ),
+      leading: const Icon(Icons.fastfood),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.remove),
+            onPressed: () => _updateItemCount(index, false),
+          ),
+          SizedBox(width: 4),
+          Text(_menuList[index]['amount'].toString(),
+              style: const TextStyle(fontSize: 16)),
+          SizedBox(width: 4),
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: () => _updateItemCount(index, true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTotalAndSubmitSection(
+      String addOrderButtonName, Map<String, dynamic> stores) {
+    List<Widget> buttonList = <Widget>[
+      IconButton(onPressed: () {}, icon: const Icon(Icons.money_rounded)),
+      IconButton(onPressed: () {}, icon: const Icon(Icons.credit_card_rounded)),
+      IconButton(onPressed: () {}, icon: const Icon(Icons.contactless_rounded)),
+    ];
+
+    List<Text> labelList = const <Text>[
+      Text('Cash'),
+      Text('Credit Card'),
+      Text('Line Pay'),
+    ];
+
+    buttonList = List.generate(
+        buttonList.length,
+        (index) => Padding(
+              padding: const EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 20.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  buttonList[index],
+                  labelList[index],
+                ],
+              ),
+            ));
+
+    return Column(
+      children: [
+        ListTile(
+          title: Text(
+            'Payment method',
+            style: const TextStyle(fontSize: 16),
+          ),
+          leading: const Icon(Icons.payments_rounded),
+          trailing: const Icon(Icons.arrow_forward_rounded),
+          onTap: () {
+            // Payment choosing use bottom sheet
+            showModalBottomSheet<void>(
+              showDragHandle: true,
+              context: context,
+              builder: (context) {
+                return SizedBox(
+                  height: 150,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                    child: ListView(
+                      shrinkWrap: true,
+                      scrollDirection: Axis.horizontal,
+                      children: buttonList,
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
+        ListTile(
+          title: Text("Included tax: 0%"),
+          leading: const Icon(Icons.euro_rounded),
+        ),
+        ListTile(
+          title: Text(
+            'Total: NTD $_totalCount',
+            style: const TextStyle(fontSize: 16),
+          ),
+          leading: const Icon(Icons.attach_money),
+          trailing: FilledButton.tonalIcon(
+            onPressed: () => _submitOrder(stores),
+            label: Text(addOrderButtonName),
+            icon: const Icon(Icons.check_rounded),
+          ),
+        ),
+      ],
+    );
   }
 }

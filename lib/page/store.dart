@@ -89,7 +89,6 @@ class _StorePageState extends State<StorePage> {
   Widget _buildStorePage(Map<String, dynamic> stores) {
     String currency = "NTD";
     String totalIncome = "${stores['totalIncome']}";
-    print(stores);
 
     return Scaffold(
       body: SafeArea(

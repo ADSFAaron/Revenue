@@ -6,10 +6,10 @@ import 'package:intl/intl.dart';
 import 'store_setting_history_order_detail.dart';
 
 class StoreHistoryOrder extends StatelessWidget {
-  final String storeId;
+  final String storeID;
   final String currency = "NTD ";
 
-  StoreHistoryOrder(this.storeId, {super.key});
+  const StoreHistoryOrder(this.storeID, {super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +20,7 @@ class StoreHistoryOrder extends StatelessWidget {
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('tmporder')
-            .doc(storeId)
+            .doc(storeID)
             .snapshots(),
         builder:
             (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
@@ -93,7 +93,7 @@ class StoreHistoryOrder extends StatelessWidget {
       context,
       MaterialPageRoute(
         builder: (context) => StoreHistoryOrderDetail(
-          storeId,
+          storeID,
           element['no'] as int,
           element,
         ),

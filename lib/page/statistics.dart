@@ -1,16 +1,15 @@
 import 'dart:io';
-import 'package:path/path.dart';
+import 'dart:math' as math;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:excel/excel.dart';
-
 // import 'package:filesystem_picker/filesystem_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-
 // import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
-import 'dart:math' as math;
+import 'package:syncfusion_flutter_gauges/gauges.dart';
 
 class StatisticsPage extends StatefulWidget {
   const StatisticsPage({super.key});
@@ -23,7 +22,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
   String dropdownValue = 'All orders';
   CollectionReference orderReference =
       FirebaseFirestore.instance.collection('tmporder');
-
   User currentUser = FirebaseAuth.instance.currentUser!;
   late Map<String, dynamic> users, stores;
   late List<_ChartData> chartData;
@@ -32,11 +30,63 @@ class _StatisticsPageState extends State<StatisticsPage> {
   Map<String, dynamic> allorderSave = {};
   late Directory rootPath;
   String? dirPath;
+  bool isDark = false;
+
+  List<ChartSampleData>? _internetUsersDataIn2016;
+  TooltipBehavior? _tooltipBehavior;
 
   @override
   void initState() {
     _prepareStorage();
     super.initState();
+
+    _internetUsersDataIn2016 = <ChartSampleData>[
+      ChartSampleData(
+        x: 'South\nKorea',
+        yValue: 39,
+        pointColor: Colors.teal[300],
+      ),
+      ChartSampleData(
+        x: 'India',
+        yValue: 20,
+        pointColor: const Color.fromRGBO(53, 124, 210, 1),
+      ),
+      ChartSampleData(
+        x: 'South\nAfrica',
+        yValue: 61,
+        pointColor: Colors.pink,
+      ),
+      ChartSampleData(
+        x: 'China',
+        yValue: 65,
+        pointColor: Colors.orange,
+      ),
+      ChartSampleData(
+        x: 'France',
+        yValue: 45,
+        pointColor: Colors.green,
+      ),
+      ChartSampleData(
+        x: 'Saudi\nArabia',
+        yValue: 10,
+        pointColor: Colors.pink[300],
+      ),
+      ChartSampleData(
+        x: 'Japan',
+        yValue: 16,
+        pointColor: Colors.purple[300],
+      ),
+      ChartSampleData(
+        x: 'Mexico',
+        yValue: 31,
+        pointColor: const Color.fromRGBO(127, 132, 232, 1),
+      ),
+    ];
+    _tooltipBehavior = TooltipBehavior(
+      enable: true,
+      header: '',
+      canShowMarker: false,
+    );
 
     chartData = [];
     _tooltip = TooltipBehavior(enable: true);
@@ -46,125 +96,235 @@ class _StatisticsPageState extends State<StatisticsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('users')
-              .doc(currentUser.email)
-              .snapshots(),
-          builder:
-              (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
-            if (snapshot.hasError) {
-              return Text('Error: ${snapshot.error}');
-            }
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.email)
+            .snapshots(),
+        builder:
+            (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
+          if (snapshot.hasError) {
+            return Text('Error: ${snapshot.error}');
+          }
 
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return Center(
-                child: CircularProgressIndicator(),
-              );
-            }
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(
+              child: CircularProgressIndicator(),
+            );
+          }
 
-            users = snapshot.data?.data() as Map<String, dynamic>;
+          users = snapshot.data?.data() as Map<String, dynamic>;
 
-            return FutureBuilder<DocumentSnapshot>(
-                future: orderReference.doc(users['storeID']).get(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Text("Something went wrong");
-                  }
+          return FutureBuilder<DocumentSnapshot>(
+            future: orderReference.doc(users['storeID']).get(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Text("Something went wrong");
+              }
 
-                  if (snapshot.hasData && !snapshot.data!.exists) {
-                    return Text("Document does not exist");
-                  }
+              if (snapshot.hasData && !snapshot.data!.exists) {
+                return Text("Document does not exist");
+              }
 
-                  if (snapshot.connectionState == ConnectionState.done) {
-                    Map<String, dynamic> data =
-                        snapshot.data!.data() as Map<String, dynamic>;
-                    print(data);
-                    orderForOutput = data;
+              if (snapshot.connectionState == ConnectionState.done) {
+                Map<String, dynamic> data =
+                    snapshot.data!.data() as Map<String, dynamic>;
+                print(data);
+                orderForOutput = data;
 
-                    // check for empty order
-                    if (data['orders'].length == 0) {
-                      return SafeArea(
-                          child: Center(
-                        child: Text('No Order'),
-                      ));
-                    }
+                // check for empty order
+                if (data['orders'].length == 0) {
+                  return SafeArea(
+                      child: Center(
+                    child: Text('No Order'),
+                  ));
+                }
 
-                    return SafeArea(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.vertical,
-                        child: Padding(
-                          padding: const EdgeInsets.all(20.0),
-                          child: Column(
-                            children: <Widget>[
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  const Text(
-                                    'Trending dishes',
-                                    style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.black),
-                                  ),
-                                  DropdownButton(
-                                    value: dropdownValue,
-                                    items: <String>[
-                                      'All orders',
-                                      'Last week',
-                                      'Last month',
-                                      'Custom'
-                                    ].map<DropdownMenuItem<String>>(
-                                        (String value) {
-                                      return DropdownMenuItem<String>(
-                                        value: value,
-                                        child: Text(value),
-                                      );
-                                    }).toList(),
-                                    onChanged: (String? newValue) {
-                                      setState(() {
-                                        dropdownValue = newValue!;
-                                      });
-                                    },
-                                  ),
-                                ],
+                return SafeArea(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.vertical,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        children: <Widget>[
+                          buildSearchAnchor(),
+                          SizedBox(height: 20),
+                          SingleChoice(),
+                          SizedBox(height: 20),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              ElevatedButton(
+                                onPressed: () {},
+                                style: ElevatedButton.styleFrom(
+                                  elevation: 0,
+                                ),
+                                child: Icon(Icons.arrow_back),
                               ),
-                              Column(
-                                children: <Widget>[
-                                  createChart(data['orders']),
-                                  createPieChart(data['orders']),
-                                  SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: getAllOrder(data['orders']),
-                                  ),
-                                  const Text(
-                                    'Income',
-                                    style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.black),
-                                  ),
-                                ],
+                              Text(
+                                'Today',
+                                style: TextStyle(fontSize: 20),
                               ),
-                              ElevatedButton.icon(
-                                onPressed: () {
-                                  // openExcelDialog(context);
-                                },
-                                icon: const Icon(Icons.output_outlined),
-                                label: const Text('Output Excel'),
+                              ElevatedButton(
+                                onPressed: () {},
+                                style: ElevatedButton.styleFrom(
+                                  elevation: 0,
+                                ),
+                                child: Icon(Icons.arrow_forward),
                               ),
                             ],
                           ),
-                        ),
+                          SizedBox(height: 20),
+                          _buildRangePointerExampleGauge(),
+                          _buildCartesianChart(),
+                          createPieChart(data['orders']),
+                          SizedBox(height: 20),
+                          Row(
+                            children: [
+                              _buildCard(
+                                title: 'money',
+                                icon: Icons.grading_rounded,
+                                value: '2000',
+                                onTap: () => debugPrint('money Card tapped'),
+                              ),
+                              _buildCard(
+                                title: 'add more',
+                                icon: Icons.grading_rounded,
+                                value: '+',
+                                onTap: () {
+                                  showModalBottomSheet<void>(
+                                    context: context,
+                                    builder: (BuildContext context) {
+                                      return SizedBox(
+                                        height: 250,
+                                        child: Center(
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 16.0),
+                                            child: Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: <Widget>[
+                                                ListTile(
+                                                  leading:
+                                                      Icon(Icons.check_rounded),
+                                                  title: const Text('money'),
+                                                  subtitle:
+                                                      const Text('Select Date'),
+                                                  onTap: () => {},
+                                                ),
+                                                ListTile(
+                                                  leading:
+                                                      Icon(Icons.check_rounded),
+                                                  title:
+                                                      const Text('peak time'),
+                                                  subtitle: const Text(
+                                                      'most people come here'),
+                                                  onTap: () => {},
+                                                ),
+                                                Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.end,
+                                                  children: [
+                                                    ElevatedButton(
+                                                      child:
+                                                          const Text('Close'),
+                                                      onPressed: () =>
+                                                          Navigator.pop(
+                                                              context),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 20),
+                          const Text(
+                            'Income',
+                            style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              // openExcelDialog(context);
+                            },
+                            icon: const Icon(Icons.output_outlined),
+                            label: const Text('Output Excel'),
+                          ),
+                        ],
                       ),
-                    );
-                  }
-                  return Center(
-                    child: CircularProgressIndicator(),
-                  );
-                });
-          }),
+                    ),
+                  ),
+                );
+              }
+              return Center(
+                child: CircularProgressIndicator(),
+              );
+            },
+          );
+        },
+      ),
     );
+  }
+
+  SearchAnchor buildSearchAnchor() {
+    return SearchAnchor(
+        builder: (BuildContext context, SearchController controller) {
+      return SearchBar(
+        controller: controller,
+        elevation: WidgetStateProperty.all(0),
+        padding: const WidgetStatePropertyAll<EdgeInsets>(
+            EdgeInsets.symmetric(horizontal: 16.0)),
+        onTap: () {
+          controller.openView();
+        },
+        onChanged: (_) {
+          controller.openView();
+        },
+        leading: const Icon(
+          Icons.psychology_alt_outlined,
+          color: Colors.grey,
+        ),
+        hintText: 'Ask Gemini',
+        trailing: <Widget>[
+          Tooltip(
+            message: 'Search for a statistic suggestion',
+            child: IconButton(
+              isSelected: isDark,
+              onPressed: () {
+                setState(() {
+                  isDark = !isDark;
+                });
+              },
+              icon: const Icon(Icons.search_outlined),
+              selectedIcon: const Icon(Icons.brightness_2_outlined),
+            ),
+          )
+        ],
+      );
+    }, suggestionsBuilder: (BuildContext context, SearchController controller) {
+      return List<ListTile>.generate(5, (int index) {
+        final String item = 'item $index';
+        return ListTile(
+          title: Text(item),
+          onTap: () {
+            setState(() {
+              controller.closeView(item);
+            });
+          },
+        );
+      });
+    });
   }
 
   DataTable getAllOrder(List<dynamic> data) {
@@ -182,7 +342,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
       int subtotal =
           int.parse(allorders.values.elementAt(i)['amount'].toString()) *
               int.parse(allorders.values.elementAt(i)['price'].toString());
-      print(subtotal);
       row.add(DataRow(cells: [
         DataCell(Text(allorders.keys.elementAt(i))),
         DataCell(Text(allorders.values.elementAt(i)['price'].toString())),
@@ -214,38 +373,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
     } else {
       return allorderSave;
     }
-  }
-
-  SfCartesianChart createChart(List<dynamic> data) {
-    chartData = [];
-    Map<String, dynamic> allorders = getOrderCount(data);
-    int findMax = 0;
-    for (int i = allorders.length - 1; i >= 0; i--) {
-      if (int.parse(allorders.values.elementAt(i)['amount'].toString()) >
-          findMax) {
-        findMax = int.parse(allorders.values.elementAt(i)['amount'].toString());
-      }
-      chartData.add(_ChartData(allorders.keys.elementAt(i),
-          double.parse(allorders.values.elementAt(i)['amount'].toString())));
-    }
-
-    return SfCartesianChart(
-      title: ChartTitle(text: 'Amount of all Dishes'),
-      primaryXAxis: CategoryAxis(),
-      primaryYAxis: NumericAxis(
-          minimum: 0, maximum: (findMax + 5).toDouble(), interval: 10),
-      tooltipBehavior: _tooltip,
-      series: <ChartSeries<_ChartData, String>>[
-        BarSeries<_ChartData, String>(
-          dataSource: chartData,
-          xValueMapper: (_ChartData data, _) => data.x,
-          yValueMapper: (_ChartData data, _) => data.y,
-          name: 'Dish',
-          dataLabelSettings: DataLabelSettings(isVisible: true),
-          color: Color.fromRGBO(8, 142, 255, 1),
-        ),
-      ],
-    );
   }
 
   Future<void> createExcelFile(DateTimeRange dateRange) async {
@@ -322,7 +449,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
       //   ..createSync(recursive: true)
       //   ..writeAsBytesSync(excel.encode()!);
 
-      print("output finish");
+      // print("output finish");
     }
   }
 
@@ -516,6 +643,182 @@ class _StatisticsPageState extends State<StatisticsPage> {
               enableTooltip: true),
         ]);
   }
+
+  /// Return the Cartesian Chart with Column series.
+  SfCartesianChart _buildCartesianChart() {
+    bool isCardView = false;
+    return SfCartesianChart(
+      plotAreaBorderWidth: 0,
+      title: ChartTitle(
+        text: isCardView ? '' : 'Internet Users - 2016',
+      ),
+      primaryXAxis: const CategoryAxis(
+        majorGridLines: MajorGridLines(width: 0),
+      ),
+      primaryYAxis: const NumericAxis(
+        minimum: 0,
+        maximum: 80,
+        isVisible: false,
+        labelFormat: '{value}M',
+      ),
+      series: _buildColumnSeries(),
+      tooltipBehavior: _tooltipBehavior,
+    );
+  }
+
+  /// Returns the list of Cartesian Column series.
+  List<ColumnSeries<ChartSampleData, String>> _buildColumnSeries() {
+    return <ColumnSeries<ChartSampleData, String>>[
+      ColumnSeries<ChartSampleData, String>(
+        dataSource: _internetUsersDataIn2016,
+        xValueMapper: (ChartSampleData data, int index) => data.x,
+        yValueMapper: (ChartSampleData data, int index) => data.yValue,
+        pointColorMapper: (ChartSampleData data, int index) => data.pointColor,
+        dataLabelSettings: const DataLabelSettings(
+          isVisible: true,
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildCard({
+    required String title,
+    String? value,
+    IconData? icon,
+    required VoidCallback onTap,
+  }) {
+    return Card(
+      elevation: 0,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          width: MediaQuery.of(context).size.width / 2 - 30,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).splashColor,
+                        borderRadius: BorderRadius.circular(48),
+                      ),
+                      height: 48,
+                      width: 48,
+                      child:
+                          Icon(icon, color: Theme.of(context).iconTheme.color),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(title),
+                  ],
+                ),
+                SizedBox(
+                  height: 16,
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(
+                      value ?? '',
+                      style: const TextStyle(fontSize: 24),
+                    ),
+                    Spacer(),
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.green[100],
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.trending_up_rounded,
+                            size: 16,
+                            color: Colors.green,
+                          ),
+                          const Text(
+                            (' 5%'),
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+///Chart sample data
+class ChartSampleData {
+  /// Holds the datapoint values like x, y, etc.,
+  ChartSampleData(
+      {this.x,
+      this.y,
+      this.xValue,
+      this.yValue,
+      this.secondSeriesYValue,
+      this.thirdSeriesYValue,
+      this.pointColor,
+      this.size,
+      this.text,
+      this.open,
+      this.close,
+      this.low,
+      this.high,
+      this.volume});
+
+  /// Holds x value of the datapoint
+  final dynamic x;
+
+  /// Holds y value of the datapoint
+  final num? y;
+
+  /// Holds x value of the datapoint
+  final dynamic xValue;
+
+  /// Holds y value of the datapoint
+  final num? yValue;
+
+  /// Holds y value of the datapoint(for 2nd series)
+  final num? secondSeriesYValue;
+
+  /// Holds y value of the datapoint(for 3nd series)
+  final num? thirdSeriesYValue;
+
+  /// Holds point color of the datapoint
+  final Color? pointColor;
+
+  /// Holds size of the datapoint
+  final num? size;
+
+  /// Holds datalabel/text value mapper of the datapoint
+  final String? text;
+
+  /// Holds open value of the datapoint
+  final num? open;
+
+  /// Holds close value of the datapoint
+  final num? close;
+
+  /// Holds low value of the datapoint
+  final num? low;
+
+  /// Holds high value of the datapoint
+  final num? high;
+
+  /// Holds open value of the datapoint
+  final num? volume;
 }
 
 class _ChartData {
@@ -524,4 +827,112 @@ class _ChartData {
   final String x;
   final double y;
   final Color color;
+}
+
+enum Calendar { day, week, month, year }
+
+class SingleChoice extends StatefulWidget {
+  const SingleChoice({super.key});
+
+  @override
+  State<SingleChoice> createState() => _SingleChoiceState();
+}
+
+class _SingleChoiceState extends State<SingleChoice> {
+  Calendar calendarView = Calendar.day;
+
+  @override
+  Widget build(BuildContext context) {
+    return SegmentedButton<Calendar>(
+      segments: const <ButtonSegment<Calendar>>[
+        ButtonSegment<Calendar>(
+            value: Calendar.day,
+            label: Text('Day'),
+            icon: Icon(Icons.calendar_view_day)),
+        ButtonSegment<Calendar>(
+            value: Calendar.week,
+            label: Text('Week'),
+            icon: Icon(Icons.calendar_view_week)),
+        ButtonSegment<Calendar>(
+            value: Calendar.month,
+            label: Text('Month'),
+            icon: Icon(Icons.calendar_view_month)),
+        ButtonSegment<Calendar>(
+            value: Calendar.year,
+            label: Text('Year'),
+            icon: Icon(Icons.calendar_today)),
+      ],
+      selected: <Calendar>{calendarView},
+      onSelectionChanged: (Set<Calendar> newSelection) {
+        setState(() {
+          // By default there is only a single segment that can be
+          // selected at one time, so its value is always the first
+          // item in the selected set.
+          calendarView = newSelection.first;
+        });
+      },
+    );
+  }
+}
+
+SfRadialGauge _buildRangePointerExampleGauge() {
+  bool isCardView = false;
+  return SfRadialGauge(
+    axes: <RadialAxis>[
+      RadialAxis(
+        showLabels: true,
+        showTicks: false,
+        startAngle: 270,
+        endAngle: 270,
+        radiusFactor: 0.8,
+        axisLineStyle: const AxisLineStyle(
+          thicknessUnit: GaugeSizeUnit.factor,
+          thickness: 0.15,
+        ),
+        annotations: <GaugeAnnotation>[
+          GaugeAnnotation(
+            angle: 180,
+            widget: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  'today orders',
+                  style: TextStyle(
+                    fontFamily: 'Times',
+                    fontSize: isCardView ? 18 : 22,
+                    fontWeight: FontWeight.w400,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+                Text(
+                  ' / expect orders',
+                  style: TextStyle(
+                    fontFamily: 'Times',
+                    fontSize: isCardView ? 18 : 22,
+                    fontWeight: FontWeight.w400,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        pointers: <GaugePointer>[
+          RangePointer(
+            value: 50,
+            // cornerStyle: CornerStyle.bothCurve,
+            enableAnimation: true,
+            animationDuration: 1000,
+            sizeUnit: GaugeSizeUnit.factor,
+            gradient: const SweepGradient(
+              colors: <Color>[Color(0xFF6A6EF6), Color(0xFFDB82F5)],
+              stops: <double>[0.25, 0.75],
+            ),
+            color: const Color(0xFF00A8B5),
+            width: 0.15,
+          ),
+        ],
+      ),
+    ],
+  );
 }

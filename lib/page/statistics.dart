@@ -176,15 +176,21 @@ class _StatisticsPageState extends State<StatisticsPage> {
                           SizedBox(height: 20),
                           _buildRangePointerExampleGauge(),
                           _buildCartesianChart(),
-                          createPieChart(data['orders']),
+                          // createPieChart(data['orders']),
                           SizedBox(height: 20),
-                          Row(
+                          Wrap(
                             children: [
                               _buildCard(
                                 title: 'money',
                                 icon: Icons.grading_rounded,
                                 value: '2000',
                                 onTap: () => debugPrint('money Card tapped'),
+                              ),
+                              _buildCard(
+                                title: 'excel',
+                                icon: Icons.download_outlined,
+                                value: '2000',
+                                onTap: () => {openExcelDialog(context)},
                               ),
                               _buildCard(
                                 title: 'add more',
@@ -195,7 +201,9 @@ class _StatisticsPageState extends State<StatisticsPage> {
                                     context: context,
                                     builder: (BuildContext context) {
                                       return SizedBox(
-                                        height: 250,
+                                        height:
+                                            MediaQuery.of(context).size.height *
+                                                0.5,
                                         child: Center(
                                           child: Padding(
                                             padding: const EdgeInsets.symmetric(
@@ -205,6 +213,11 @@ class _StatisticsPageState extends State<StatisticsPage> {
                                                   MainAxisAlignment.center,
                                               mainAxisSize: MainAxisSize.min,
                                               children: <Widget>[
+                                                Text(
+                                                  'Add more feature',
+                                                  style:
+                                                      TextStyle(fontSize: 20),
+                                                ),
                                                 ListTile(
                                                   leading:
                                                       Icon(Icons.check_rounded),
@@ -220,6 +233,24 @@ class _StatisticsPageState extends State<StatisticsPage> {
                                                       const Text('peak time'),
                                                   subtitle: const Text(
                                                       'most people come here'),
+                                                  onTap: () => {},
+                                                ),
+                                                ListTile(
+                                                  leading:
+                                                      Icon(Icons.check_rounded),
+                                                  title: const Text(
+                                                      'export excel'),
+                                                  subtitle: const Text(
+                                                      'export data to excel'),
+                                                  onTap: () => {},
+                                                ),
+                                                ListTile(
+                                                  leading:
+                                                      Icon(Icons.check_rounded),
+                                                  title: const Text(
+                                                      'export sheet'),
+                                                  subtitle: const Text(
+                                                      'export data to sheet'),
                                                   onTap: () => {},
                                                 ),
                                                 Row(
@@ -245,21 +276,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
                                 },
                               ),
                             ],
-                          ),
-                          SizedBox(height: 20),
-                          const Text(
-                            'Income',
-                            style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black),
-                          ),
-                          ElevatedButton.icon(
-                            onPressed: () {
-                              // openExcelDialog(context);
-                            },
-                            icon: const Icon(Icons.output_outlined),
-                            label: const Text('Output Excel'),
                           ),
                         ],
                       ),
@@ -356,7 +372,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
 
   Map<String, dynamic> getOrderCount(List<dynamic> data) {
     if (allorderSave.isEmpty) {
-      Map<String, dynamic> allorders = Map();
+      Map<String, dynamic> allorders = {};
 
       for (int i = 0; i < data.length; i++) {
         List<dynamic> perData = data[i]['details'];

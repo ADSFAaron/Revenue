@@ -57,7 +57,7 @@ dependencies:
   flutter_native_splash: ^2.4.3
 
   # Use for statistics graph
-#  charts_flutter: ^0.12.0
+  syncfusion_flutter_gauges: ^28.1.35
   syncfusion_flutter_charts: ^28.1.35
 
   # Use for output Excel file
@@ -80,7 +80,6 @@ dependencies:
 
   # Use for edit menu icon
   flutter_iconpicker: ^3.3.3
-  syncfusion_flutter_gauges: ^28.1.35
 
 dev_dependencies:
   flutter_test:

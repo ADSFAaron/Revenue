@@ -1,13 +1,8 @@
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:excel/excel.dart';
-// import 'package:filesystem_picker/filesystem_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-// import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart';
 
@@ -25,7 +20,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
   User currentUser = FirebaseAuth.instance.currentUser!;
   late Map<String, dynamic> users, stores;
   late List<_ChartData> chartData;
-  late TooltipBehavior _tooltip;
   late Map<String, dynamic> orderForOutput = {};
   Map<String, dynamic> allorderSave = {};
   late Directory rootPath;
@@ -37,10 +31,20 @@ class _StatisticsPageState extends State<StatisticsPage> {
 
   @override
   void initState() {
-    _prepareStorage();
     super.initState();
 
-    _internetUsersDataIn2016 = <ChartSampleData>[
+    _internetUsersDataIn2016 = _initializeChartData();
+    _tooltipBehavior = TooltipBehavior(
+      enable: true,
+      header: '',
+      canShowMarker: false,
+    );
+
+    chartData = [];
+  }
+
+  List<ChartSampleData> _initializeChartData() {
+    return <ChartSampleData>[
       ChartSampleData(
         x: 'South\nKorea',
         yValue: 39,
@@ -82,14 +86,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
         pointColor: const Color.fromRGBO(127, 132, 232, 1),
       ),
     ];
-    _tooltipBehavior = TooltipBehavior(
-      enable: true,
-      header: '',
-      canShowMarker: false,
-    );
-
-    chartData = [];
-    _tooltip = TooltipBehavior(enable: true);
   }
 
   @override
@@ -103,13 +99,11 @@ class _StatisticsPageState extends State<StatisticsPage> {
         builder:
             (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
           if (snapshot.hasError) {
-            return Text('Error: ${snapshot.error}');
+            return _buildErrorWidget(snapshot.error.toString());
           }
 
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(
-              child: CircularProgressIndicator(),
-            );
+            return _buildLoadingWidget();
           }
 
           users = snapshot.data?.data() as Map<String, dynamic>;
@@ -118,178 +112,166 @@ class _StatisticsPageState extends State<StatisticsPage> {
             future: orderReference.doc(users['storeID']).get(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
-                return Text("Something went wrong");
+                return _buildErrorWidget("Something went wrong");
               }
 
               if (snapshot.hasData && !snapshot.data!.exists) {
-                return Text("Document does not exist");
+                return _buildErrorWidget("Document does not exist");
               }
 
               if (snapshot.connectionState == ConnectionState.done) {
-                Map<String, dynamic> data =
-                    snapshot.data!.data() as Map<String, dynamic>;
-                print(data);
-                orderForOutput = data;
-
-                // check for empty order
-                if (data['orders'].length == 0) {
-                  return SafeArea(
-                      child: Center(
-                    child: Text('No Order'),
-                  ));
-                }
-
-                return SafeArea(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        children: <Widget>[
-                          buildSearchAnchor(),
-                          SizedBox(height: 20),
-                          SingleChoice(),
-                          SizedBox(height: 20),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              ElevatedButton(
-                                onPressed: () {},
-                                style: ElevatedButton.styleFrom(
-                                  elevation: 0,
-                                ),
-                                child: Icon(Icons.arrow_back),
-                              ),
-                              Text(
-                                'Today',
-                                style: TextStyle(fontSize: 20),
-                              ),
-                              ElevatedButton(
-                                onPressed: () {},
-                                style: ElevatedButton.styleFrom(
-                                  elevation: 0,
-                                ),
-                                child: Icon(Icons.arrow_forward),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: 20),
-                          _buildRangePointerExampleGauge(),
-                          _buildCartesianChart(),
-                          // createPieChart(data['orders']),
-                          SizedBox(height: 20),
-                          Wrap(
-                            children: [
-                              _buildCard(
-                                title: 'money',
-                                icon: Icons.grading_rounded,
-                                value: '2000',
-                                onTap: () => debugPrint('money Card tapped'),
-                              ),
-                              _buildCard(
-                                title: 'excel',
-                                icon: Icons.download_outlined,
-                                value: '2000',
-                                onTap: () => {openExcelDialog(context)},
-                              ),
-                              _buildCard(
-                                title: 'add more',
-                                icon: Icons.grading_rounded,
-                                value: '+',
-                                onTap: () {
-                                  showModalBottomSheet<void>(
-                                    context: context,
-                                    builder: (BuildContext context) {
-                                      return SizedBox(
-                                        height:
-                                            MediaQuery.of(context).size.height *
-                                                0.5,
-                                        child: Center(
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 16.0),
-                                            child: Column(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: <Widget>[
-                                                Text(
-                                                  'Add more feature',
-                                                  style:
-                                                      TextStyle(fontSize: 20),
-                                                ),
-                                                ListTile(
-                                                  leading:
-                                                      Icon(Icons.check_rounded),
-                                                  title: const Text('money'),
-                                                  subtitle:
-                                                      const Text('Select Date'),
-                                                  onTap: () => {},
-                                                ),
-                                                ListTile(
-                                                  leading:
-                                                      Icon(Icons.check_rounded),
-                                                  title:
-                                                      const Text('peak time'),
-                                                  subtitle: const Text(
-                                                      'most people come here'),
-                                                  onTap: () => {},
-                                                ),
-                                                ListTile(
-                                                  leading:
-                                                      Icon(Icons.check_rounded),
-                                                  title: const Text(
-                                                      'export excel'),
-                                                  subtitle: const Text(
-                                                      'export data to excel'),
-                                                  onTap: () => {},
-                                                ),
-                                                ListTile(
-                                                  leading:
-                                                      Icon(Icons.check_rounded),
-                                                  title: const Text(
-                                                      'export sheet'),
-                                                  subtitle: const Text(
-                                                      'export data to sheet'),
-                                                  onTap: () => {},
-                                                ),
-                                                Row(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.end,
-                                                  children: [
-                                                    ElevatedButton(
-                                                      child:
-                                                          const Text('Close'),
-                                                      onPressed: () =>
-                                                          Navigator.pop(
-                                                              context),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
+                return _buildContent(snapshot.data!);
               }
-              return Center(
-                child: CircularProgressIndicator(),
-              );
+              return _buildLoadingWidget();
             },
           );
         },
       ),
+    );
+  }
+
+  Widget _buildErrorWidget(String errorMessage) {
+    return Center(child: Text('Error: $errorMessage'));
+  }
+
+  Widget _buildLoadingWidget() {
+    return Center(child: CircularProgressIndicator());
+  }
+
+  Widget _buildContent(DocumentSnapshot snapshot) {
+    Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
+    print(data);
+    orderForOutput = data;
+
+    if (data['orders'].isEmpty) {
+      return SafeArea(
+        child: Center(
+          child: Text('No Order'),
+        ),
+      );
+    }
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.vertical,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: <Widget>[
+              buildSearchAnchor(),
+              SizedBox(height: 20),
+              SingleChoice(),
+              SizedBox(height: 20),
+              _buildHeaderRow(),
+              SizedBox(height: 20),
+              _buildRangePointerExampleGauge(),
+              _buildCartesianChart(),
+              SizedBox(height: 20),
+              Wrap(
+                children: [
+                  _buildCard(
+                    title: 'money',
+                    icon: Icons.grading_rounded,
+                    value: '2000',
+                    onTap: () => debugPrint('money Card tapped'),
+                  ),
+                  _buildCard(
+                    title: 'excel',
+                    icon: Icons.download_outlined,
+                    value: '2000',
+                    onTap: () => {print('excel tapped')},
+                  ),
+                  _buildAddMoreCard(context),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderRow() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        ElevatedButton(
+          onPressed: () {},
+          style: ElevatedButton.styleFrom(elevation: 0),
+          child: Icon(Icons.arrow_back),
+        ),
+        Text(
+          'Today',
+          style: TextStyle(fontSize: 20),
+        ),
+        ElevatedButton(
+          onPressed: () {},
+          style: ElevatedButton.styleFrom(elevation: 0),
+          child: Icon(Icons.arrow_forward),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAddMoreCard(BuildContext context) {
+    return _buildCard(
+      title: 'add more',
+      icon: Icons.grading_rounded,
+      value: '+',
+      onTap: () {
+        showModalBottomSheet<void>(
+          context: context,
+          builder: (BuildContext context) {
+            return _buildAddMoreSheet(context);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAddMoreSheet(BuildContext context) {
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.5,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                'Add more feature',
+                style: TextStyle(fontSize: 20),
+              ),
+              _buildListTile('money', 'Select Date', Icons.check_rounded),
+              _buildListTile(
+                  'peak time', 'most people come here', Icons.check_rounded),
+              _buildListTile(
+                  'export excel', 'export data to excel', Icons.check_rounded),
+              _buildListTile(
+                  'export sheet', 'export data to sheet', Icons.check_rounded),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  ElevatedButton(
+                    child: const Text('Close'),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListTile(String title, String subtitle, IconData icon) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      onTap: () => {},
     );
   }
 
@@ -343,33 +325,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
     });
   }
 
-  DataTable getAllOrder(List<dynamic> data) {
-    List<DataColumn> col = [];
-    List<DataRow> row = [];
-    Map<String, dynamic> allorders = getOrderCount(data);
-
-    // create table
-    col.add(DataColumn(label: Text('Name')));
-    col.add(DataColumn(label: Text('Price'), numeric: true));
-    col.add(DataColumn(label: Text('Amount'), numeric: true));
-    col.add(DataColumn(label: Text('Subtotal')));
-
-    for (var i = 0; i < allorders.length; i++) {
-      int subtotal =
-          int.parse(allorders.values.elementAt(i)['amount'].toString()) *
-              int.parse(allorders.values.elementAt(i)['price'].toString());
-      row.add(DataRow(cells: [
-        DataCell(Text(allorders.keys.elementAt(i))),
-        DataCell(Text(allorders.values.elementAt(i)['price'].toString())),
-        DataCell(Text(allorders.values.elementAt(i)['amount'].toString())),
-        DataCell(Text(subtotal.toString()))
-      ]));
-    }
-
-    return DataTable(
-        columns: col, rows: row, sortColumnIndex: 2, sortAscending: true);
-  }
-
   Map<String, dynamic> getOrderCount(List<dynamic> data) {
     if (allorderSave.isEmpty) {
       Map<String, dynamic> allorders = {};
@@ -389,275 +344,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
     } else {
       return allorderSave;
     }
-  }
-
-  Future<void> createExcelFile(DateTimeRange dateRange) async {
-    // Check data exist
-    if (orderForOutput.isNotEmpty) {
-      // Get all date
-      final daysToGenerate = dateRange.end.difference(dateRange.start).inDays;
-      List<DateTime> days = List.generate(
-          daysToGenerate,
-          (i) => DateTime(dateRange.start.year, dateRange.start.month,
-              dateRange.start.day + (i)));
-
-      List<dynamic> rangeData = [];
-      Map<DateTime, dynamic> daysHM = {};
-      for (int i = 0; i < days.length; i++) {
-        daysHM.putIfAbsent(days[i], () => {});
-      }
-
-      for (int i = 0; i < orderForOutput['orders'].length; i++) {
-        DateTime orderDate = orderForOutput['orders'][i]['time'].toDate();
-        orderDate = DateTime(orderDate.year, orderDate.month, orderDate.day);
-        if (daysHM.containsKey(orderDate)) {
-          rangeData.add(orderForOutput['orders'][i]);
-        }
-      }
-
-      // Create excel file
-      Excel excel = Excel.createExcel();
-
-      // Output First Row
-      String? defaultSheet = excel.getDefaultSheet();
-      List<String> menuName = ["日期 \\ 品項"];
-
-      // Get the shop's menu
-      getOrderCount(orderForOutput['orders']).forEach((key, value) {
-        menuName.add(key);
-      });
-
-      // excel.appendRow(defaultSheet.toString(), menuName);
-
-      for (int i = 0; i < rangeData.length; i++) {
-        Map<String, dynamic> tmp = rangeData[i];
-        List<String> row = [tmp['time'].toDate().toString()];
-
-        for (int j = 1; j < menuName.length; j++) {
-          String name = menuName[j];
-          bool hasData = false;
-
-          for (int k = 0; k < tmp['details'].length; k++) {
-            if (tmp['details'][k]['name'] == name) {
-              row.add(tmp['details'][k]['amount'].toString());
-              hasData = true;
-              break;
-            }
-          }
-
-          if (hasData == false) {
-            row.add("0");
-          }
-        }
-        // excel.appendRow(defaultSheet.toString(), row);
-      }
-
-      var fileBytes = excel.save();
-
-      // File(join(
-      //     dirPath!,
-      //     "Revenue"
-      //         " - ",
-      //     _getYMD(dateRange.start),
-      //     " - ",
-      //     _getYMD(dateRange.end),
-      //     ".xlsx"))
-      //   ..createSync(recursive: true)
-      //   ..writeAsBytesSync(excel.encode()!);
-
-      // print("output finish");
-    }
-  }
-
-  Future openExcelDialog(context) {
-    DateTimeRange _date = DateTimeRange(
-      start: DateTime(
-          DateTime.now().year, DateTime.now().month - 1, DateTime.now().day),
-      end: DateTime.now(),
-    );
-    return showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return StatefulBuilder(
-            builder: (context, StateSetter setState) {
-              return AlertDialog(
-                title: const Text('Excel option'),
-                content:
-                    Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
-                  Row(
-                    children: [
-                      Text(
-                        'Date Range: \n\n${_getYMD(_date.start)} ~ ${_getYMD(_date.end)} \n',
-                        textAlign: TextAlign.start,
-                      ),
-                      Spacer(),
-                      IconButton(
-                        onPressed: () {
-                          _selectDate(context, _date).then((value) => {
-                                setState(() {
-                                  print(value);
-                                  _date = value!;
-                                })
-                              });
-                        },
-                        icon: const Icon(Icons.date_range_outlined),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          'Output Path: \n\n$dirPath',
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      Spacer(),
-                      IconButton(
-                        onPressed: () async {
-                          if (await _requestPermission(Permission.storage)) {
-                            // String? path = await FilesystemPicker.open(
-                            //   title: 'Save to folder',
-                            //   context: context,
-                            //   rootDirectory: rootPath,
-                            //   fsType: FilesystemType.folder,
-                            //   pickText: 'Save file to this folder',
-                            //   folderIconColor: Colors.teal,
-                            //   requestPermission: () async =>
-                            //       await Permission.storage.request().isGranted,
-                            // );
-
-                            // print('path: ${path}');
-
-                            // setState(() {
-                            //   dirPath = path;
-                            // });
-                          } else {
-                            const snackBar = SnackBar(
-                              content: Text('Sorry! No permission'),
-                            );
-                            ScaffoldMessenger.of(context)
-                                .showSnackBar(snackBar);
-                          }
-                        },
-                        icon: const Icon(Icons.folder_open_outlined),
-                      ),
-                    ],
-                  ),
-                ]),
-                actions: [
-                  TextButton(
-                    child: const Text('Cancel'),
-                    onPressed: () {
-                      Navigator.of(context).pop();
-                    },
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      if (dirPath != null) {
-                        // createExcelFile(_date);
-                        Navigator.of(context).pop();
-                      }
-                    },
-                    child: const Text('Output'),
-                  ),
-                ],
-              );
-            },
-          );
-        });
-  }
-
-  Future<DateTimeRange?> _selectDate(
-      BuildContext context, DateTimeRange _date) async {
-    DateTimeRange? newDate = await showDateRangePicker(
-      context: context,
-      initialDateRange: _date,
-      firstDate: DateTime(2022, 1),
-      lastDate: DateTime(2100, 12),
-      helpText: 'Select a date range',
-    );
-
-    return newDate;
-  }
-
-  // 只取得日期 並轉換為 string
-  String _getYMD(DateTime date) {
-    return "${date.year}-${date.month}-${date.day}";
-  }
-
-  Future<void> _prepareStorage() async {
-    // rootPath = await getApplicationDocumentsDirectory();
-
-    // print(rootPath);
-    // String newPath = rootPath.path.substring(0, 5);
-    // print(newPath);
-
-    // Create sample directory if not exists
-    // Directory sampleFolder = Directory('${newPath}');
-    // if (!sampleFolder.existsSync()) {
-    //   sampleFolder.createSync();
-    // }
-
-    setState(() {});
-  }
-
-  Future<bool> _requestPermission(Permission permission) async {
-    if (await permission.isGranted) {
-      return true;
-    } else {
-      var result = await permission.request();
-      if (result == PermissionStatus.granted) {
-        return true;
-      } else {
-        return false;
-      }
-    }
-  }
-
-  SfCircularChart createPieChart(List<dynamic> data) {
-    chartData = [];
-    Map<String, dynamic> allorders = getOrderCount(data);
-    int findMax = 0;
-
-    double total = 0.0;
-    for (int i = 0; i < allorders.length; i++) {
-      total += double.parse(allorders.values.elementAt(i)['amount'].toString());
-    }
-
-    for (int i = allorders.length - 1; i >= 0; i--) {
-      if (int.parse(allorders.values.elementAt(i)['amount'].toString()) >
-          findMax) {
-        findMax = int.parse(allorders.values.elementAt(i)['amount'].toString());
-      }
-
-      double percentDouble =
-          double.parse(allorders.values.elementAt(i)['amount'].toString()) /
-              total;
-      double percent = (percentDouble * 100).round().toDouble();
-
-      chartData.add(_ChartData(allorders.keys.elementAt(i), percent,
-          color: Color((math.Random().nextDouble() * 0xFFFFFF).toInt())
-              .withOpacity(1.0)));
-    }
-
-    return SfCircularChart(
-        title: ChartTitle(text: 'Pie Chart Dishes Property'),
-        tooltipBehavior: _tooltip,
-        legend:
-            Legend(isVisible: true, overflowMode: LegendItemOverflowMode.wrap),
-        series: <CircularSeries>[
-          // Render pie chart
-          PieSeries<_ChartData, String>(
-              dataSource: chartData,
-              pointColorMapper: (_ChartData data, _) => data.color,
-              xValueMapper: (_ChartData data, _) => data.x,
-              yValueMapper: (_ChartData data, _) => data.y,
-              dataLabelSettings: DataLabelSettings(
-                isVisible: true,
-              ),
-              enableTooltip: true),
-        ]);
   }
 
   /// Return the Cartesian Chart with Column series.

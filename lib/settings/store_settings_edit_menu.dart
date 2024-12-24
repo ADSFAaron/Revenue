@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_iconpicker/Models/configuration.dart';
+import 'package:flutter_iconpicker/flutter_iconpicker.dart';
 
 class StoreEditMenu extends StatefulWidget {
   final String storeID; // 加上 final，保持不可變
@@ -12,6 +15,7 @@ class StoreEditMenu extends StatefulWidget {
 class _StoreEditMenuState extends State<StoreEditMenu> {
   late TextEditingController dishNameController, dishPriceController;
   List<dynamic> menu = []; // 本地菜單列表
+  Icon? _selectedIcon;
 
   @override
   void initState() {
@@ -52,6 +56,7 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
           }
 
           return ReorderableListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 8, 0, 8),
             itemBuilder: (context, index) => buildMenuTile(index),
             itemCount: menu.length,
             onReorder: (oldIndex, newIndex) {
@@ -73,10 +78,14 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
   }
 
   Widget buildMenuTile(int index) {
+    print('menu: $menu');
+    // Get the icon data from the menu list
+    IconData? dishIcon = IconData(int.parse(menu[index]['icon'] ?? '0xe043'), fontFamily: 'MaterialIcons');
     final item = menu[index];
     return ListTile(
       key: ValueKey(index),
-      leading: const Icon(Icons.restaurant),
+      leading: Icon(dishIcon),
+      // Connect to Firebase
       title: Text(item['name']),
       subtitle: Text("NTD ${item['price']}"),
       trailing: Row(
@@ -100,67 +109,118 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
       final item = menu[index];
       dishNameController.text = item['name'];
       dishPriceController.text = item['price'].toString();
+      _selectedIcon = Icon(IconData(int.parse(item['icon'] ?? '0xe043'), fontFamily: 'MaterialIcons'));
     } else {
       dishNameController.clear();
       dishPriceController.clear();
+      _selectedIcon = const Icon(Icons.restaurant); // Default icon for new dishes
+    }
+
+    Future<void> pickIcon(StateSetter setStateDialog) async {
+      IconPickerIcon? icon = await showIconPicker(
+        context,
+        configuration: SinglePickerConfiguration(
+          iconPackModes: [IconPack.material],
+          searchComparator: (String search, IconPickerIcon icon) =>
+              search
+                  .toLowerCase()
+                  .contains(icon.name.replaceAll('_', ' ').toLowerCase()) ||
+              icon.name.toLowerCase().contains(search.toLowerCase()),
+        ),
+      );
+
+      setStateDialog(() {
+        _selectedIcon = Icon(icon?.data);
+      });
+
+      debugPrint('Picked Icon:  $icon');
     }
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(isEdit ? 'Edit Dish' : 'Add Dish'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              decoration: const InputDecoration(labelText: 'Dish Name'),
-              controller: dishNameController,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          title: Text(isEdit ? 'Edit Dish' : 'Add Dish'),
+          content: Column(
+            spacing: 8,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Dish Icon'),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: _selectedIcon, // Use _selectedIcon here
+                  ),
+                  ElevatedButton(
+                    onPressed: () => pickIcon(setStateDialog),
+                    child: const Icon(Icons.edit),
+                  ),
+                ],
+              ),
+              TextField(
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Dish Name'),
+                controller: dishNameController,
+                textInputAction: TextInputAction.next,
+              ),
+              TextField(
+                decoration: const InputDecoration(labelText: 'Dish Price'),
+                controller: dishPriceController,
+                keyboardType: TextInputType.number,
+                inputFormatters: <TextInputFormatter>[
+                  FilteringTextInputFormatter.digitsOnly
+                ],
+                // Only numbers can be entered
+                textInputAction: TextInputAction.done,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
             ),
-            TextField(
-              decoration: const InputDecoration(labelText: 'Dish Price'),
-              controller: dishPriceController,
-              keyboardType: TextInputType.number,
+            TextButton(
+              onPressed: () {
+                if (dishNameController.text.isEmpty ||
+                    dishPriceController.text.isEmpty ||
+                    int.tryParse(dishPriceController.text) == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Invalid input!'),
+                  ));
+                  return;
+                }
+
+                final newDish = {
+                  'name': dishNameController.text,
+                  'price': int.parse(dishPriceController.text),
+                  'icon': _selectedIcon?.icon?.codePoint.toString(), // Save the selected icon
+                };
+
+                setState(() {
+                  if (isEdit && index != null) {
+                    menu[index] = newDish;
+                  } else {
+                    menu.add(newDish);
+                  }
+
+                  debugPrint('Menu: $menu');
+                  updateMenuToFirestore();
+                });
+
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(isEdit ? 'Dish Edited' : 'Dish Added'),
+                  ),
+                );
+              },
+              child: const Text('Save'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (dishNameController.text.isEmpty ||
-                  dishPriceController.text.isEmpty ||
-                  int.tryParse(dishPriceController.text) == null) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Invalid input!'),
-                ));
-                return;
-              }
-
-              final newDish = {
-                'name': dishNameController.text,
-                'price': int.parse(dishPriceController.text),
-              };
-
-              setState(() {
-                if (isEdit && index != null) {
-                  menu[index] = newDish;
-                } else {
-                  menu.add(newDish);
-                }
-                updateMenuToFirestore();
-              });
-
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(isEdit ? 'Dish Edited' : 'Dish Added'),
-              ));
-            },
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
   }
@@ -176,9 +236,14 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
   }
 
   void updateMenuToFirestore() {
+    print('Updating menu to Firestore');
+    print('Menu: $menu');
+
     FirebaseFirestore.instance
         .collection('store')
         .doc(widget.storeID)
-        .update({'menu': menu});
+        .update({'menu': menu})
+        .then((value) => print('Menu updated successfully'))
+        .catchError((error) => print('Failed to update menu: $error'));
   }
 }

@@ -2,9 +2,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 
 import 'store_settings_edit_menu.dart';
 import 'store_settings_history_order.dart';
+import 'store_staff.dart';
 
 class StoreSettings extends StatefulWidget {
   final String storeId;
@@ -47,24 +49,27 @@ class _StoreSettingsState extends State<StoreSettings> {
           }
 
           storeData = snapshot.data?.data() as Map<String, dynamic>;
+          final storeNameIcon = Icon(Symbols.id_card);
+          final storeJoinTimeIcon = Icon(Symbols.timer_arrow_up);
 
           return SafeArea(
             child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               children: [
                 _buildListTile(
                   context,
-                  icon: Icons.title_outlined,
+                  icon: storeNameIcon.icon,
                   title: 'Store Name',
                   subtitle: storeData['name'],
-                  trailing: const Icon(Icons.mode_edit_outline),
+                  trailing: const Icon(Icons.keyboard_arrow_right_outlined),
                   onTap: () => _editStoreNameDialog(context),
                 ),
                 _buildListTile(
                   context,
-                  icon: Icons.other_houses_outlined,
+                  icon: Icons.fingerprint,
                   title: 'Store ID',
                   subtitle: widget.storeId,
-                  trailing: const Icon(Icons.copy_outlined),
+                  trailing: const Icon(Icons.keyboard_arrow_right_outlined),
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: widget.storeId));
                     _showSnackBar(context, 'Store ID copied to clipboard');
@@ -73,12 +78,21 @@ class _StoreSettingsState extends State<StoreSettings> {
                 _buildListTile(
                   context,
                   icon: Icons.group_outlined,
-                  title: 'Users in store',
+                  trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                  title: 'Staff',
                   subtitle: '${storeData['users'].length} users',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => StoreStaff(widget.storeId),
+                      ),
+                    );
+                  },
                 ),
                 _buildListTile(
                   context,
-                  icon: Icons.history_toggle_off_outlined,
+                  icon: storeJoinTimeIcon.icon,
                   title: 'Join Time',
                   subtitle: DateFormat('yyyy-MM-dd  kk:mm')
                       .format(storeData['joinDate'].toDate()),
@@ -88,6 +102,7 @@ class _StoreSettingsState extends State<StoreSettings> {
                   icon: Icons.menu_book_outlined,
                   title: 'Edit Menu',
                   trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                  subtitle: 'Add, edit, or remove menu items',
                   onTap: () {
                     Navigator.push(
                       context,
@@ -102,12 +117,12 @@ class _StoreSettingsState extends State<StoreSettings> {
                   icon: Icons.history,
                   title: 'History Order',
                   trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                  subtitle: 'View order history',
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) =>
-                            StoreHistoryOrder(widget.storeId),
+                        builder: (context) => StoreHistoryOrder(widget.storeId),
                       ),
                     );
                   },
@@ -121,19 +136,22 @@ class _StoreSettingsState extends State<StoreSettings> {
   }
 
   Widget _buildListTile(
-      BuildContext context, {
-        required IconData icon,
-        required String title,
-        String? subtitle,
-        Widget? trailing,
-        void Function()? onTap,
-      }) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: subtitle != null ? Text(subtitle) : null,
-      trailing: trailing,
-      onTap: onTap,
+    BuildContext context, {
+    required IconData? icon,
+    required String title,
+    String? subtitle,
+    Widget? trailing,
+    void Function()? onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: ListTile(
+        leading: Icon(icon),
+        title: Text(title),
+        subtitle: subtitle != null ? Text(subtitle) : null,
+        trailing: trailing,
+        onTap: onTap,
+      ),
     );
   }
 
@@ -146,6 +164,7 @@ class _StoreSettingsState extends State<StoreSettings> {
         return AlertDialog(
           title: const Text('Edit Store Name'),
           content: TextField(
+            autofocus: true,
             controller: storeNameController,
             decoration: const InputDecoration(
               labelText: 'Store Name',

@@ -1,14 +1,3 @@
-<!-- # Revenue
-
-> App for Revenue Statistics and Management
-
-## Target
-- [ ] Dynamic manage menu
-- [ ] Input multiple menu items
-- [ ] Show Graph with result
-- [ ] Export Excel for all revenue
-- [ ] Add/Edit/Remove Each order 
--->
 
 <!-- PROJECT LOGO -->
 <br />
@@ -139,8 +128,11 @@ _For more examples, please refer to the [Documentation](https://example.com)_
   * [ ] Swipe page to change view date
   * [ ] Export Excel for all revenue
 * [ ] Settings Page
-  * [ ] Edit menu add icon dynamic choose
+  * [x] Edit menu add icon dynamic choose
   * [ ] Store page editing with manager
+  * [ ] Dark mode apply
+  * [ ] Language change
+  * [ ] Notification to "add transaction" with specific time
 * [ ] Material You theme apply
 * [ ] International language support
 

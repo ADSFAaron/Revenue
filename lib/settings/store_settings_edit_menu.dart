@@ -84,7 +84,11 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
     final item = menu[index];
     return ListTile(
       key: ValueKey(index),
-      leading: Icon(dishIcon),
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 12,
+        children: [const Icon(Icons.drag_indicator, color: Colors.black26,), Icon(dishIcon)],
+      ),
       // Connect to Firebase
       title: Text(item['name']),
       subtitle: Text("NTD ${item['price']}"),

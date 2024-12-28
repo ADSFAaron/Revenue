@@ -262,6 +262,7 @@ class _AddOrderState extends State<AddOrder> {
   }
 
   Widget _buildMenuItemCard(int index) {
+    IconData? dishIcon = IconData(int.parse(_menuList[index]['icon'] ?? '0xe043'), fontFamily: 'MaterialIcons');
     return ListTile(
       title: Text(
         _menuList[index]['name'].toString(),
@@ -271,7 +272,7 @@ class _AddOrderState extends State<AddOrder> {
         'NTD ${_menuList[index]['price']}',
         style: const TextStyle(fontSize: 14),
       ),
-      leading: Icon(_menuList[index]['icon'] ?? Icons.restaurant_rounded),
+      leading: Icon(dishIcon),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

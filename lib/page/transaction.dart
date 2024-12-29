@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'addorder.dart';
+
 class TransactionPage extends StatefulWidget {
   const TransactionPage({super.key});
 
@@ -89,6 +91,18 @@ class _TransactionPageState extends State<TransactionPage> {
     String totalIncome = "${stores['totalIncome']}";
 
     return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AddOrder(storeID),
+            ),
+          );
+        },
+        icon: const Icon(Icons.add),
+        label: const Text('Add Order'),
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),

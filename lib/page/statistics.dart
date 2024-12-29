@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart';
 
@@ -13,8 +14,8 @@ class StatisticsPage extends StatefulWidget {
   State<StatisticsPage> createState() => _StatisticsPageState();
 }
 
-class _StatisticsPageState extends State<StatisticsPage> {
-  String dropdownValue = 'All orders';
+class _StatisticsPageState extends State<StatisticsPage>
+    with TickerProviderStateMixin {
   CollectionReference orderReference =
       FirebaseFirestore.instance.collection('tmporder');
   User currentUser = FirebaseAuth.instance.currentUser!;
@@ -25,9 +26,16 @@ class _StatisticsPageState extends State<StatisticsPage> {
   late Directory rootPath;
   String? dirPath;
   bool isDark = false;
+  late final TabController _tabController;
 
   List<ChartSampleData>? _internetUsersDataIn2016;
   TooltipBehavior? _tooltipBehavior;
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -41,6 +49,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
     );
 
     chartData = [];
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   List<ChartSampleData> _initializeChartData() {
@@ -90,7 +99,29 @@ class _StatisticsPageState extends State<StatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
+    const String assetName = 'assets/google-gemini-icon.svg';
+    final Widget svg = SvgPicture.asset(
+      assetName,
+      semanticsLabel: 'Gemini Logo',
+      height: 24,
+      width: 24,
+      colorFilter: isDark
+          ? ColorFilter.mode(Colors.white, BlendMode.srcIn)
+          : ColorFilter.mode(Colors.black, BlendMode.srcIn),
+    );
+
     return Scaffold(
+      appBar: AppBar(
+        title: Text('Statistics'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: [
+            Tab(text: 'Day'),
+            Tab(text: 'Week'),
+            Tab(text: 'Month'),
+          ],
+        ),
+      ),
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance
             .collection('users')
@@ -127,6 +158,14 @@ class _StatisticsPageState extends State<StatisticsPage> {
           );
         },
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          debugPrint('FloatingActionButton tapped');
+        },
+        child: GestureDetector(
+          child: svg,
+        ),
+      ),
     );
   }
 
@@ -152,41 +191,43 @@ class _StatisticsPageState extends State<StatisticsPage> {
     }
 
     return SafeArea(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.vertical,
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: <Widget>[
-              buildSearchAnchor(),
-              SizedBox(height: 20),
-              SingleChoice(),
-              SizedBox(height: 20),
-              _buildHeaderRow(),
-              SizedBox(height: 20),
-              _buildRangePointerExampleGauge(),
-              _buildCartesianChart(),
-              SizedBox(height: 20),
-              Wrap(
-                children: [
-                  _buildCard(
-                    title: 'money',
-                    icon: Icons.grading_rounded,
-                    value: '2000',
-                    onTap: () => debugPrint('money Card tapped'),
+      child: TabBarView(
+        controller: _tabController,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.vertical,
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Column(
+                spacing: 20,
+                children: <Widget>[
+                  _buildHeaderRow(),
+                  _buildRangePointerExampleGauge(),
+                  _buildCartesianChart(),
+                  Wrap(
+                    children: [
+                      _buildCard(
+                        title: 'money',
+                        icon: Icons.grading_rounded,
+                        value: '2000',
+                        onTap: () => debugPrint('money Card tapped'),
+                      ),
+                      _buildCard(
+                        title: 'excel',
+                        icon: Icons.download_outlined,
+                        value: '2000',
+                        onTap: () => {debugPrint('excel tapped')},
+                      ),
+                      _buildAddMoreCard(context),
+                    ],
                   ),
-                  _buildCard(
-                    title: 'excel',
-                    icon: Icons.download_outlined,
-                    value: '2000',
-                    onTap: () => {print('excel tapped')},
-                  ),
-                  _buildAddMoreCard(context),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
+          Icon(Icons.directions_transit),
+          Icon(Icons.directions_bike),
+        ],
       ),
     );
   }
@@ -214,18 +255,37 @@ class _StatisticsPageState extends State<StatisticsPage> {
   }
 
   Widget _buildAddMoreCard(BuildContext context) {
-    return _buildCard(
-      title: 'add more',
-      icon: Icons.grading_rounded,
-      value: '+',
-      onTap: () {
-        showModalBottomSheet<void>(
-          context: context,
-          builder: (BuildContext context) {
-            return _buildAddMoreSheet(context);
-          },
-        );
-      },
+    return Card(
+      elevation: 0,
+      child: InkWell(
+        onTap: () {
+          showModalBottomSheet(
+            context: context,
+            builder: (context) => _buildAddMoreSheet(context),
+          );
+        },
+        child: SizedBox(
+          width: MediaQuery.of(context).size.width / 2 - 30,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).splashColor,
+                    borderRadius: BorderRadius.circular(48),
+                  ),
+                  height: 48,
+                  width: 48,
+                  child:
+                      Icon(Icons.add, color: Theme.of(context).iconTheme.color),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -273,56 +333,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
       subtitle: Text(subtitle),
       onTap: () => {},
     );
-  }
-
-  SearchAnchor buildSearchAnchor() {
-    return SearchAnchor(
-        builder: (BuildContext context, SearchController controller) {
-      return SearchBar(
-        controller: controller,
-        elevation: WidgetStateProperty.all(0),
-        padding: const WidgetStatePropertyAll<EdgeInsets>(
-            EdgeInsets.symmetric(horizontal: 16.0)),
-        onTap: () {
-          controller.openView();
-        },
-        onChanged: (_) {
-          controller.openView();
-        },
-        leading: const Icon(
-          Icons.psychology_alt_outlined,
-          color: Colors.grey,
-        ),
-        hintText: 'Ask Gemini',
-        trailing: <Widget>[
-          Tooltip(
-            message: 'Search for a statistic suggestion',
-            child: IconButton(
-              isSelected: isDark,
-              onPressed: () {
-                setState(() {
-                  isDark = !isDark;
-                });
-              },
-              icon: const Icon(Icons.search_outlined),
-              selectedIcon: const Icon(Icons.brightness_2_outlined),
-            ),
-          )
-        ],
-      );
-    }, suggestionsBuilder: (BuildContext context, SearchController controller) {
-      return List<ListTile>.generate(5, (int index) {
-        final String item = 'item $index';
-        return ListTile(
-          title: Text(item),
-          onTap: () {
-            setState(() {
-              controller.closeView(item);
-            });
-          },
-        );
-      });
-    });
   }
 
   Map<String, dynamic> getOrderCount(List<dynamic> data) {
@@ -529,52 +539,6 @@ class _ChartData {
   final String x;
   final double y;
   final Color color;
-}
-
-enum Calendar { day, week, month, year }
-
-class SingleChoice extends StatefulWidget {
-  const SingleChoice({super.key});
-
-  @override
-  State<SingleChoice> createState() => _SingleChoiceState();
-}
-
-class _SingleChoiceState extends State<SingleChoice> {
-  Calendar calendarView = Calendar.day;
-
-  @override
-  Widget build(BuildContext context) {
-    return SegmentedButton<Calendar>(
-      segments: const <ButtonSegment<Calendar>>[
-        ButtonSegment<Calendar>(
-            value: Calendar.day,
-            label: Text('Day'),
-            icon: Icon(Icons.calendar_view_day)),
-        ButtonSegment<Calendar>(
-            value: Calendar.week,
-            label: Text('Week'),
-            icon: Icon(Icons.calendar_view_week)),
-        ButtonSegment<Calendar>(
-            value: Calendar.month,
-            label: Text('Month'),
-            icon: Icon(Icons.calendar_view_month)),
-        ButtonSegment<Calendar>(
-            value: Calendar.year,
-            label: Text('Year'),
-            icon: Icon(Icons.calendar_today)),
-      ],
-      selected: <Calendar>{calendarView},
-      onSelectionChanged: (Set<Calendar> newSelection) {
-        setState(() {
-          // By default there is only a single segment that can be
-          // selected at one time, so its value is always the first
-          // item in the selected set.
-          calendarView = newSelection.first;
-        });
-      },
-    );
-  }
 }
 
 SfRadialGauge _buildRangePointerExampleGauge() {

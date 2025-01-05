@@ -4,8 +4,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart';
+
+
+// TODO: "More Feature" function work
+// TODO: "Export" function work
+// TODO: currentOrders and expectOrders data from Firestore
 
 class StatisticsPage extends StatefulWidget {
   const StatisticsPage({super.key});
@@ -28,7 +34,6 @@ class _StatisticsPageState extends State<StatisticsPage>
   bool isDark = false;
   late final TabController _tabController;
 
-  List<ChartSampleData>? _internetUsersDataIn2016;
   TooltipBehavior? _tooltipBehavior;
 
   @override
@@ -179,8 +184,15 @@ class _StatisticsPageState extends State<StatisticsPage>
 
   Widget _buildContent(DocumentSnapshot snapshot) {
     Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
-    print(data);
     orderForOutput = data;
+    debugPrint('DB orders: $data');
+
+    DateTime now = DateTime.now();
+    num currentOrders = 60;
+    num expectOrders = 200;
+    String chartTitle = 'Today\'s Dishes';
+    Icon moneyBagIcon = Icon(Symbols.money_bag);
+    double totalIncome = 0;
 
     if (data['orders'].isEmpty) {
       return SafeArea(
@@ -189,6 +201,19 @@ class _StatisticsPageState extends State<StatisticsPage>
         ),
       );
     }
+
+    // Recursive all orders
+    List<ChartSampleData> ordersData = [];
+    Map<String, dynamic> ordersCount = getOrderCount(data['orders']);
+    ordersCount.forEach((key, value) {
+      ordersData.add(ChartSampleData(x: key, yValue: value['amount']));
+    });
+
+    ordersCount.forEach((key, value) {
+      totalIncome += (value['price'] * value['amount']);
+    });
+
+    debugPrint('ordersData: $ordersData');
 
     return SafeArea(
       child: TabBarView(
@@ -201,21 +226,21 @@ class _StatisticsPageState extends State<StatisticsPage>
               child: Column(
                 spacing: 20,
                 children: <Widget>[
-                  _buildHeaderRow(),
-                  _buildRangePointerExampleGauge(),
-                  _buildCartesianChart(),
+                  _buildHeaderRow(now),
+                  _buildRangePointerGauge(currentOrders, expectOrders),
+                  _buildCartesianChart(chartTitle, ordersData),
                   Wrap(
                     children: [
                       _buildCard(
-                        title: 'money',
-                        icon: Icons.grading_rounded,
-                        value: '2000',
+                        title: 'Income',
+                        icon: moneyBagIcon.icon,
+                        value: totalIncome.toStringAsFixed(0),
                         onTap: () => debugPrint('money Card tapped'),
                       ),
                       _buildCard(
-                        title: 'excel',
+                        title: 'Export',
                         icon: Icons.download_outlined,
-                        value: '2000',
+                        value: 'Excel',
                         onTap: () => {debugPrint('excel tapped')},
                       ),
                       _buildAddMoreCard(context),
@@ -232,7 +257,19 @@ class _StatisticsPageState extends State<StatisticsPage>
     );
   }
 
-  Widget _buildHeaderRow() {
+  Widget _buildHeaderRow(DateTime infoDate) {
+    DateTime now = DateTime.now();
+    String displayDate;
+
+    // Determine is today or yesterday
+    if (infoDate.day == now.day) {
+      displayDate = 'Today';
+    } else if (infoDate.day == now.day - 1) {
+      displayDate = 'Yesterday';
+    } else {
+      displayDate = infoDate.toString();
+    }
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -242,7 +279,7 @@ class _StatisticsPageState extends State<StatisticsPage>
           child: Icon(Icons.arrow_back),
         ),
         Text(
-          'Today',
+          displayDate,
           style: TextStyle(fontSize: 20),
         ),
         ElevatedButton(
@@ -300,16 +337,12 @@ class _StatisticsPageState extends State<StatisticsPage>
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Text(
-                'Add more feature',
+                'More Feature',
                 style: TextStyle(fontSize: 20),
               ),
-              _buildListTile('money', 'Select Date', Icons.check_rounded),
+              _buildListTile('Income', 'Selected Date Income', Icons.check_rounded),
               _buildListTile(
-                  'peak time', 'most people come here', Icons.check_rounded),
-              _buildListTile(
-                  'export excel', 'export data to excel', Icons.check_rounded),
-              _buildListTile(
-                  'export sheet', 'export data to sheet', Icons.check_rounded),
+                  'Export', 'Export data to Excel', Icons.check_rounded),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -337,52 +370,65 @@ class _StatisticsPageState extends State<StatisticsPage>
 
   Map<String, dynamic> getOrderCount(List<dynamic> data) {
     if (allorderSave.isEmpty) {
-      Map<String, dynamic> allorders = {};
+      Map<String, dynamic> allOrders = {};
 
       for (int i = 0; i < data.length; i++) {
         List<dynamic> perData = data[i]['details'];
         for (int j = 0; j < perData.length; j++) {
-          if (allorders.containsKey(perData[j]['name'])) {
-            allorders[perData[j]['name']]['amount'] += perData[j]['amount'];
+          if (allOrders.containsKey(perData[j]['name'])) {
+            allOrders[perData[j]['name']]['amount'] += perData[j]['amount'];
           } else {
-            allorders.putIfAbsent(perData[j]['name'], () => perData[j]);
+            allOrders.putIfAbsent(perData[j]['name'], () => perData[j]);
           }
         }
       }
-      allorderSave = allorders;
-      return allorders;
+      allorderSave = allOrders;
+
+      debugPrint('allOrders: $allOrders');
+      return allOrders;
     } else {
       return allorderSave;
     }
   }
 
   /// Return the Cartesian Chart with Column series.
-  SfCartesianChart _buildCartesianChart() {
-    bool isCardView = false;
+  SfCartesianChart _buildCartesianChart(
+      String chartTitle, List<ChartSampleData> data) {
+    // Calculate max from data
+    num? max = 0;
+    for (int i = 0; i < data.length; i++) {
+      if (data[i].yValue! > max!) {
+        max = data[i].yValue!;
+      }
+    }
+
+    double maxVal = double.parse(max.toString());
+
     return SfCartesianChart(
       plotAreaBorderWidth: 0,
       title: ChartTitle(
-        text: isCardView ? '' : 'Internet Users - 2016',
+        text: chartTitle,
       ),
       primaryXAxis: const CategoryAxis(
         majorGridLines: MajorGridLines(width: 0),
       ),
-      primaryYAxis: const NumericAxis(
+      primaryYAxis: NumericAxis(
         minimum: 0,
-        maximum: 80,
-        isVisible: false,
-        labelFormat: '{value}M',
+        maximum: maxVal,
+        isVisible: true,
+        labelFormat: '{value}',
       ),
-      series: _buildColumnSeries(),
+      series: _buildColumnSeries(data),
       tooltipBehavior: _tooltipBehavior,
     );
   }
 
   /// Returns the list of Cartesian Column series.
-  List<ColumnSeries<ChartSampleData, String>> _buildColumnSeries() {
+  List<ColumnSeries<ChartSampleData, String>> _buildColumnSeries(
+      List<ChartSampleData> source) {
     return <ColumnSeries<ChartSampleData, String>>[
       ColumnSeries<ChartSampleData, String>(
-        dataSource: _internetUsersDataIn2016,
+        dataSource: source,
         xValueMapper: (ChartSampleData data, int index) => data.x,
         yValueMapper: (ChartSampleData data, int index) => data.yValue,
         pointColorMapper: (ChartSampleData data, int index) => data.pointColor,
@@ -393,12 +439,44 @@ class _StatisticsPageState extends State<StatisticsPage>
     ];
   }
 
-  Widget _buildCard({
-    required String title,
-    String? value,
-    IconData? icon,
-    required VoidCallback onTap,
-  }) {
+  Widget _buildCard(
+      {required String title,
+      String? value,
+      IconData? icon,
+      required VoidCallback onTap,
+      double? growth}) {
+    Container growthContainer;
+
+    if (growth == null) {
+      growthContainer = Container();
+    } else {
+      Icon icon = growth >= 0
+          ? const Icon(Icons.trending_up_rounded, size: 16, color: Colors.green)
+          : const Icon(Icons.trending_down_rounded,
+              size: 16, color: Colors.red);
+      String growthText = growth >= 0 ? ' $growth%' : ' $growth%';
+
+      growthContainer = Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: growth >= 0 ? Colors.green[100] : Colors.red[100],
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+            icon,
+            Text(
+              growthText,
+              style: TextStyle(
+                color: growth >= 0 ? Colors.green : Colors.red,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Card(
       elevation: 0,
       child: InkWell(
@@ -436,30 +514,12 @@ class _StatisticsPageState extends State<StatisticsPage>
                       value ?? '',
                       style: const TextStyle(fontSize: 24),
                     ),
-                    Spacer(),
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.green[100],
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.trending_up_rounded,
-                            size: 16,
-                            color: Colors.green,
+                    growth != null
+                        ? Spacer()
+                        : SizedBox(
+                            width: 8,
                           ),
-                          const Text(
-                            (' 5%'),
-                            style: TextStyle(
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    growthContainer,
                   ],
                 ),
               ],
@@ -541,15 +601,15 @@ class _ChartData {
   final Color color;
 }
 
-SfRadialGauge _buildRangePointerExampleGauge() {
-  bool isCardView = false;
+SfRadialGauge _buildRangePointerGauge(currentOrders, expectOrders) {
+  double ordersPercent = (currentOrders / expectOrders) * 100;
+
   return SfRadialGauge(
     axes: <RadialAxis>[
       RadialAxis(
         showLabels: true,
         showTicks: false,
-        startAngle: 270,
-        endAngle: 270,
+        maximum: expectOrders.toDouble(),
         radiusFactor: 0.8,
         axisLineStyle: const AxisLineStyle(
           thicknessUnit: GaugeSizeUnit.factor,
@@ -557,27 +617,35 @@ SfRadialGauge _buildRangePointerExampleGauge() {
         ),
         annotations: <GaugeAnnotation>[
           GaugeAnnotation(
-            angle: 180,
-            widget: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  'today orders',
-                  style: TextStyle(
-                    fontFamily: 'Times',
-                    fontSize: isCardView ? 18 : 22,
-                    fontWeight: FontWeight.w400,
-                    fontStyle: FontStyle.italic,
-                  ),
+            angle: 200,
+            widget: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      currentOrders.toString(),
+                      style: TextStyle(
+                        fontFamily: 'Times',
+                        fontSize: 22,
+                        fontWeight: FontWeight.w400,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                    Text(
+                      ' / $expectOrders',
+                      style: TextStyle(
+                        fontFamily: 'Times',
+                        fontSize: 22,
+                        fontWeight: FontWeight.w400,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ],
                 ),
                 Text(
-                  ' / expect orders',
-                  style: TextStyle(
-                    fontFamily: 'Times',
-                    fontSize: isCardView ? 18 : 22,
-                    fontWeight: FontWeight.w400,
-                    fontStyle: FontStyle.italic,
-                  ),
+                  '$ordersPercent%',
                 ),
               ],
             ),
@@ -585,8 +653,7 @@ SfRadialGauge _buildRangePointerExampleGauge() {
         ],
         pointers: <GaugePointer>[
           RangePointer(
-            value: 50,
-            // cornerStyle: CornerStyle.bothCurve,
+            value: currentOrders.toDouble(),
             enableAnimation: true,
             animationDuration: 1000,
             sizeUnit: GaugeSizeUnit.factor,

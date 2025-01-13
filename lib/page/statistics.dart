@@ -8,8 +8,6 @@ import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart';
 
-
-// TODO: "More Feature" function work
 // TODO: "Export" function work
 // TODO: currentOrders and expectOrders data from Firestore
 
@@ -33,6 +31,10 @@ class _StatisticsPageState extends State<StatisticsPage>
   String? dirPath;
   bool isDark = false;
   late final TabController _tabController;
+  Map<String, bool> featureSelected = {
+    'Income': false,
+    'Export': false,
+  };
 
   TooltipBehavior? _tooltipBehavior;
 
@@ -46,7 +48,6 @@ class _StatisticsPageState extends State<StatisticsPage>
   void initState() {
     super.initState();
 
-    _internetUsersDataIn2016 = _initializeChartData();
     _tooltipBehavior = TooltipBehavior(
       enable: true,
       header: '',
@@ -231,18 +232,22 @@ class _StatisticsPageState extends State<StatisticsPage>
                   _buildCartesianChart(chartTitle, ordersData),
                   Wrap(
                     children: [
-                      _buildCard(
-                        title: 'Income',
-                        icon: moneyBagIcon.icon,
-                        value: totalIncome.toStringAsFixed(0),
-                        onTap: () => debugPrint('money Card tapped'),
-                      ),
-                      _buildCard(
-                        title: 'Export',
-                        icon: Icons.download_outlined,
-                        value: 'Excel',
-                        onTap: () => {debugPrint('excel tapped')},
-                      ),
+                      featureSelected['Income']!
+                          ? _buildCard(
+                              title: 'Income',
+                              icon: moneyBagIcon.icon,
+                              value: totalIncome.toStringAsFixed(0),
+                              onTap: () => debugPrint('money Card tapped'),
+                            )
+                          : Container(),
+                      featureSelected['Export']!
+                          ? _buildCard(
+                              title: 'Export',
+                              icon: Icons.download_outlined,
+                              value: 'Excel',
+                              onTap: () => {debugPrint('excel tapped')},
+                            )
+                          : Container(),
                       _buildAddMoreCard(context),
                     ],
                   ),
@@ -328,7 +333,7 @@ class _StatisticsPageState extends State<StatisticsPage>
 
   Widget _buildAddMoreSheet(BuildContext context) {
     return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.5,
+      height: MediaQuery.of(context).size.height * 0.3,
       child: Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -340,9 +345,40 @@ class _StatisticsPageState extends State<StatisticsPage>
                 'More Feature',
                 style: TextStyle(fontSize: 20),
               ),
-              _buildListTile('Income', 'Selected Date Income', Icons.check_rounded),
-              _buildListTile(
-                  'Export', 'Export data to Excel', Icons.check_rounded),
+              featureSelected['Income']!
+                  ? _buildListTile(
+                      'Income',
+                      'Selected Date Income',
+                      Icons.check_box_outlined,
+                      () => setState(() {
+                            featureSelected['Income'] = false;
+                            Navigator.pop(context);
+                          }))
+                  : _buildListTile(
+                      'Income',
+                      'Selected Date Income',
+                      Icons.check_box_outline_blank,
+                      () => setState(() {
+                            featureSelected['Income'] = true;
+                            Navigator.pop(context);
+                          })),
+              featureSelected['Export']!
+                  ? _buildListTile(
+                      'Export',
+                      'Export data to Excel',
+                      Icons.check_box_outlined,
+                      () => setState(() {
+                            featureSelected['Export'] = false;
+                            Navigator.pop(context);
+                          }))
+                  : _buildListTile(
+                      'Export',
+                      'Export data to Excel',
+                      Icons.check_box_outline_blank,
+                      () => setState(() {
+                            featureSelected['Export'] = true;
+                            Navigator.pop(context);
+                          })),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -359,12 +395,12 @@ class _StatisticsPageState extends State<StatisticsPage>
     );
   }
 
-  Widget _buildListTile(String title, String subtitle, IconData icon) {
+  Widget _buildListTile(String title, String subtitle, IconData icon, VoidCallback onTap) {
     return ListTile(
       leading: Icon(icon),
       title: Text(title),
       subtitle: Text(subtitle),
-      onTap: () => {},
+      onTap: onTap,
     );
   }
 

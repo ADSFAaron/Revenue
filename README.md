@@ -123,8 +123,8 @@ _For more examples, please refer to the [Documentation](https://example.com)_
 * [ ] Transaction Page connect with DB
 * [ ] Statistics Page
   * [ ] Connect with DB
-  * [ ] Chart integrate with data
-  * [ ] Change day/week/month/year time selection
+  * [x] Chart integrate with data
+  * [x] Change day/week/month/year time selection
   * [ ] Swipe page to change view date
   * [ ] Export Excel for all revenue
 * [ ] Settings Page

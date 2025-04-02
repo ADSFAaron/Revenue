@@ -49,6 +49,10 @@ class _AddOrderState extends State<AddOrder> {
   }
 
   void _updateItemCount(int index, bool isIncreasing) {
+    if (_menuList[index]['amount'] == 0 && !isIncreasing) {
+      return;
+    }
+
     setState(() {
       final price = int.parse(_menuList[index]['price'].toString());
       _menuList[index]['amount'] += isIncreasing ? 1 : -1;
@@ -262,7 +266,9 @@ class _AddOrderState extends State<AddOrder> {
   }
 
   Widget _buildMenuItemCard(int index) {
-    IconData? dishIcon = IconData(int.parse(_menuList[index]['icon'] ?? '0xe043'), fontFamily: 'MaterialIcons');
+    IconData? dishIcon = IconData(
+        int.parse(_menuList[index]['icon'] ?? '0xe043'),
+        fontFamily: 'MaterialIcons');
     return ListTile(
       title: Text(
         _menuList[index]['name'].toString(),
@@ -295,7 +301,6 @@ class _AddOrderState extends State<AddOrder> {
 
   Widget _buildTotalAndSubmitSection(
       String addOrderButtonName, Map<String, dynamic> stores) {
-
     List<Map<String, dynamic>> paymentMethods = [
       {'label': 'Cash', 'icon': Icons.money_rounded},
       {'label': 'Credit Card', 'icon': Icons.credit_card_rounded},
@@ -304,7 +309,7 @@ class _AddOrderState extends State<AddOrder> {
 
     List<Widget> buttonList = List.generate(
       paymentMethods.length,
-          (index) => Padding(
+      (index) => Padding(
         padding: const EdgeInsets.all(20.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.start,
@@ -323,7 +328,6 @@ class _AddOrderState extends State<AddOrder> {
         ),
       ),
     );
-
 
     return Column(
       children: [

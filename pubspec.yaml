@@ -28,18 +28,17 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # Online Storage for files
-  firebase_storage: ^12.3.4
+  firebase_storage: ^12.4.5
 
   # Online Database for data
-  cloud_firestore: ^5.4.3
-  firebase_core: ^3.6.0
-
+  cloud_firestore: ^5.6.6
+  firebase_core: ^3.13.0
 
   # Firebase Authentication
-  firebase_auth: ^5.3.1
+  firebase_auth: ^5.5.2
 
   # Using for SVG Asset
-  flutter_svg: ^2.0.13
+  flutter_svg: ^2.0.17
 
   # Use for Page Animation
   simple_animations: ^5.1.0
@@ -48,21 +47,21 @@ dependencies:
   intl: ^0.19.0
 
   # Use for Firebase Realtime DB
-  firebase_database: ^11.1.4
+  firebase_database: ^11.3.5
 
   # Use for App Drawer
-  flutter_launcher_icons: ^0.14.1
+  flutter_launcher_icons: ^0.14.3
 
   # Use for opening app splash screen
-  flutter_native_splash: ^2.4.3
+  flutter_native_splash: ^2.4.4
 
   # Use for statistics graph
-  syncfusion_flutter_gauges: ^28.1.35
-  syncfusion_flutter_charts: ^28.1.35
+  syncfusion_flutter_gauges: ^29.1.35
+  syncfusion_flutter_charts: ^29.1.35
 
   # Use for output Excel file
   excel: ^4.0.6
-  permission_handler: ^11.3.1
+  permission_handler: ^11.4.0
   #  path_provider: ^2.1.5
   filesystem_picker: ^4.0.0
 
@@ -70,7 +69,7 @@ dependencies:
   grouped_list: ^6.0.0
 
   # Use for showing app info
-  package_info_plus: ^8.1.0
+  package_info_plus: ^8.3.0
 
   # Use for register generate uuid
   uuid: ^4.5.1
@@ -80,19 +79,20 @@ dependencies:
 
   # Use for edit menu icon
   flutter_iconpicker: ^4.0.1
-  material_symbols_icons: ^4.2801.0
-  internet_connection_checker_plus: ^2.6.0
+  material_symbols_icons: ^4.2811.0
+  internet_connection_checker_plus: ^2.7.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
   flutter_lints: ^5.0.0
+  change_app_package_name: ^1.5.0
 
 # App Icon
 flutter_launcher_icons:
   android: "launcher_icon"
-  image_path: "assets/icon/AppLogo.png"
+  image_path: "./assets/icon/AppLogo.png"
   min_sdk_android: 27 # android min sdk min:16, default 21
   adaptive_icon_background: "#eae9e4"
   adaptive_icon_foreground: "assets/icon/AppLogo.png"
@@ -108,7 +108,7 @@ flutter_launcher_icons:
     generate: true
     image_path: "assets/icon/AppLogo.png"
     background_color: "#eae9e4"
-    theme_color: "#395917"
+    theme_color: "#eae9e4"
   windows:
     generate: true
     image_path: "assets/icon/AppLogo.png"

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart';
@@ -31,10 +32,40 @@ class _StatisticsPageState extends State<StatisticsPage>
   String? dirPath;
   bool isDark = false;
   late final TabController _tabController;
+
   Map<String, bool> featureSelected = {
     'Income': false,
     'Export': false,
   };
+
+  static const List<Tab> myTabs = <Tab>[
+    Tab(text: 'Day'),
+    Tab(text: 'Week'),
+    Tab(text: 'Month'),
+  ];
+  int _selectedTabIndex = 0;
+
+  List<Color> barColors = [
+    Colors.teal[300]!,
+    Color.fromRGBO(53, 124, 210, 1),
+    Colors.pink,
+    Colors.orange,
+    Colors.pink[300]!,
+    Colors.purple[300]!,
+    Color.fromRGBO(127, 132, 232, 1),
+    Colors.pink,
+    Colors.indigo,
+    Colors.cyan,
+    Colors.lime,
+    Colors.amber,
+    Colors.deepPurple,
+    Colors.deepOrange,
+    Colors.lightBlue,
+    Colors.lightGreen,
+    Colors.brown,
+    Colors.grey,
+    Colors.blueGrey,
+  ];
 
   TooltipBehavior? _tooltipBehavior;
 
@@ -55,52 +86,13 @@ class _StatisticsPageState extends State<StatisticsPage>
     );
 
     chartData = [];
-    _tabController = TabController(length: 3, vsync: this);
-  }
-
-  List<ChartSampleData> _initializeChartData() {
-    return <ChartSampleData>[
-      ChartSampleData(
-        x: 'South\nKorea',
-        yValue: 39,
-        pointColor: Colors.teal[300],
-      ),
-      ChartSampleData(
-        x: 'India',
-        yValue: 20,
-        pointColor: const Color.fromRGBO(53, 124, 210, 1),
-      ),
-      ChartSampleData(
-        x: 'South\nAfrica',
-        yValue: 61,
-        pointColor: Colors.pink,
-      ),
-      ChartSampleData(
-        x: 'China',
-        yValue: 65,
-        pointColor: Colors.orange,
-      ),
-      ChartSampleData(
-        x: 'France',
-        yValue: 45,
-        pointColor: Colors.green,
-      ),
-      ChartSampleData(
-        x: 'Saudi\nArabia',
-        yValue: 10,
-        pointColor: Colors.pink[300],
-      ),
-      ChartSampleData(
-        x: 'Japan',
-        yValue: 16,
-        pointColor: Colors.purple[300],
-      ),
-      ChartSampleData(
-        x: 'Mexico',
-        yValue: 31,
-        pointColor: const Color.fromRGBO(127, 132, 232, 1),
-      ),
-    ];
+    _tabController = TabController(length: myTabs.length, vsync: this);
+    _tabController.addListener(() {
+      setState(() {
+        _selectedTabIndex = _tabController.index;
+      });
+      debugPrint("Selected Index: ${_tabController.index}");
+    });
   }
 
   @override
@@ -121,11 +113,7 @@ class _StatisticsPageState extends State<StatisticsPage>
         title: Text('Statistics'),
         bottom: TabBar(
           controller: _tabController,
-          tabs: [
-            Tab(text: 'Day'),
-            Tab(text: 'Week'),
-            Tab(text: 'Month'),
-          ],
+          tabs: myTabs,
         ),
       ),
       body: StreamBuilder<DocumentSnapshot>(
@@ -255,8 +243,76 @@ class _StatisticsPageState extends State<StatisticsPage>
               ),
             ),
           ),
-          Icon(Icons.directions_transit),
-          Icon(Icons.directions_bike),
+          SingleChildScrollView(
+            scrollDirection: Axis.vertical,
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Column(
+                spacing: 20,
+                children: <Widget>[
+                  _buildHeaderRow(now),
+                  _buildRangePointerGauge(currentOrders, expectOrders),
+                  _buildCartesianChart(chartTitle, ordersData),
+                  Wrap(
+                    children: [
+                      featureSelected['Income']!
+                          ? _buildCard(
+                              title: 'Income',
+                              icon: moneyBagIcon.icon,
+                              value: totalIncome.toStringAsFixed(0),
+                              onTap: () => debugPrint('money Card tapped'),
+                            )
+                          : Container(),
+                      featureSelected['Export']!
+                          ? _buildCard(
+                              title: 'Export',
+                              icon: Icons.download_outlined,
+                              value: 'Excel',
+                              onTap: () => {debugPrint('excel tapped')},
+                            )
+                          : Container(),
+                      _buildAddMoreCard(context),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.vertical,
+            child: Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Column(
+                spacing: 20,
+                children: <Widget>[
+                  _buildHeaderRow(now),
+                  _buildRangePointerGauge(currentOrders, expectOrders),
+                  _buildCartesianChart(chartTitle, ordersData),
+                  Wrap(
+                    children: [
+                      featureSelected['Income']!
+                          ? _buildCard(
+                              title: 'Income',
+                              icon: moneyBagIcon.icon,
+                              value: totalIncome.toStringAsFixed(0),
+                              onTap: () => debugPrint('money Card tapped'),
+                            )
+                          : Container(),
+                      featureSelected['Export']!
+                          ? _buildCard(
+                              title: 'Export',
+                              icon: Icons.download_outlined,
+                              value: 'Excel',
+                              onTap: () => {debugPrint('excel tapped')},
+                            )
+                          : Container(),
+                      _buildAddMoreCard(context),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -266,13 +322,26 @@ class _StatisticsPageState extends State<StatisticsPage>
     DateTime now = DateTime.now();
     String displayDate;
 
-    // Determine is today or yesterday
-    if (infoDate.day == now.day) {
-      displayDate = 'Today';
-    } else if (infoDate.day == now.day - 1) {
-      displayDate = 'Yesterday';
-    } else {
-      displayDate = infoDate.toString();
+    // Determine Tab is Day/Week/Month
+    switch (_selectedTabIndex) {
+      case 0:
+        if (infoDate.day == now.day) {
+          displayDate = 'Today';
+        } else if (infoDate.day == now.day - 1) {
+          displayDate = 'Yesterday';
+        } else {
+          displayDate = DateFormat.yMMMMd().format(infoDate);
+        }
+        break;
+      case 1:
+        displayDate = 'Week ${infoDate.weekOfYear} of ${infoDate.year}';
+        break;
+      case 2:
+        String formattedDate = DateFormat.yMMMM().format(infoDate);
+        displayDate = formattedDate;
+        break;
+      default:
+        displayDate = 'Today';
     }
 
     return Row(
@@ -395,7 +464,8 @@ class _StatisticsPageState extends State<StatisticsPage>
     );
   }
 
-  Widget _buildListTile(String title, String subtitle, IconData icon, VoidCallback onTap) {
+  Widget _buildListTile(
+      String title, String subtitle, IconData icon, VoidCallback onTap) {
     return ListTile(
       leading: Icon(icon),
       title: Text(title),
@@ -704,4 +774,17 @@ SfRadialGauge _buildRangePointerGauge(currentOrders, expectOrders) {
       ),
     ],
   );
+}
+
+extension DateTimeExtension on DateTime {
+  int get weekOfYear {
+    // Add 3 to the date to ensure it falls within the correct week
+    DateTime date = this.add(const Duration(days: 3));
+    int dayOfYear = int.parse(DateFormat("D").format(date));
+    return ((dayOfYear - date.weekday + 10) / 7).floor();
+  }
+
+  int get weekOfMonth {
+    return (day / 7).ceil();
+  }
 }

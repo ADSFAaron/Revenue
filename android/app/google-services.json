@@ -13,12 +13,7 @@
           "package_name": "com.adsf.revenue"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "984830610429-37b4bv0jjjj4tlvkbtdgccdeu22fcp6t.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
           "current_key": "AIzaSyDPn9zW09yvU0aqFxjj3k4sccjJuNLeCDw"
@@ -26,12 +21,7 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "984830610429-37b4bv0jjjj4tlvkbtdgccdeu22fcp6t.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     },
@@ -42,12 +32,7 @@
           "package_name": "com.adsf.revenueStatistics"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "984830610429-37b4bv0jjjj4tlvkbtdgccdeu22fcp6t.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
           "current_key": "AIzaSyDPn9zW09yvU0aqFxjj3k4sccjJuNLeCDw"
@@ -55,12 +40,7 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "984830610429-37b4bv0jjjj4tlvkbtdgccdeu22fcp6t.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     },
@@ -71,20 +51,7 @@
           "package_name": "com.example.adsf.revenue"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "984830610429-96tr2t0874mm2s9dv9lcq19hu1lfbhag.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.example.adsf.revenue",
-            "certificate_hash": "c65b22f29ff272582d72ddcc21ea6e519b6eace5"
-          }
-        },
-        {
-          "client_id": "984830610429-37b4bv0jjjj4tlvkbtdgccdeu22fcp6t.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
           "current_key": "AIzaSyDPn9zW09yvU0aqFxjj3k4sccjJuNLeCDw"
@@ -92,12 +59,7 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "984830610429-37b4bv0jjjj4tlvkbtdgccdeu22fcp6t.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }

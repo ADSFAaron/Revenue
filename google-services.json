@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "984830610429",
+    "firebase_url": "https://revenueapp-b8849-default-rtdb.firebaseio.com",
+    "project_id": "revenueapp-b8849",
+    "storage_bucket": "revenueapp-b8849.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:984830610429:android:338f678898416549ce2794",
+        "android_client_info": {
+          "package_name": "com.adsf.revenue"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPn9zW09yvU0aqFxjj3k4sccjJuNLeCDw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:984830610429:android:0c407ffde6cda60bce2794",
+        "android_client_info": {
+          "package_name": "com.adsf.revenueStatistics"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPn9zW09yvU0aqFxjj3k4sccjJuNLeCDw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:984830610429:android:eecbb5755e7768f3ce2794",
+        "android_client_info": {
+          "package_name": "com.example.adsf.revenue"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPn9zW09yvU0aqFxjj3k4sccjJuNLeCDw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

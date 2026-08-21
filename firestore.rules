@@ -1,0 +1,99 @@
+rules_version = '2';
+
+// Revenue — Firestore security rules.
+//
+// Model: every signed-in user has exactly one `users/{uid}` document, and that
+// document's `storeId` decides which store's data they may touch. Nothing is
+// readable without being a member of the store.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // The caller's own user document. Only call this once the caller is known
+    // to be signed in AND to have a user document — get() on a missing
+    // document evaluates to null and fails the whole rule.
+    function me() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function meExists() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function memberOf(storeId) {
+      return meExists() && me().storeId == storeId;
+    }
+
+    // Price changes, menu edits and store settings are manager-level actions.
+    function managerOf(storeId) {
+      return memberOf(storeId) && me().role in ['owner', 'manager'];
+    }
+
+    match /users/{uid} {
+      // Own document always; colleagues only within the same store (this is
+      // what the staff list reads).
+      allow read: if signedIn() &&
+        (request.auth.uid == uid || (meExists() && resource.data.storeId == me().storeId));
+      // Registration writes this document before anything else exists, so it
+      // may only be gated on the uid matching.
+      allow create: if signedIn() && request.auth.uid == uid;
+      allow update: if signedIn() && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    match /stores/{storeId} {
+      allow read: if memberOf(storeId);
+      // Registration creates the store right after the user document, so the
+      // membership check already resolves.
+      allow create: if memberOf(storeId);
+      allow update: if managerOf(storeId);
+      allow delete: if false;
+
+      match /menuItems/{itemId} {
+        allow read: if memberOf(storeId);
+        allow write: if managerOf(storeId);
+      }
+
+      // Orders are append-only. Voiding is an update that flips `status`;
+      // deletion is never allowed, so a voided order stays auditable.
+      match /orders/{orderId} {
+        allow read: if memberOf(storeId);
+        allow create: if memberOf(storeId);
+        allow update: if memberOf(storeId);
+        allow delete: if false;
+      }
+
+      // Order-number counters and the rollup tables are maintained by the
+      // client transaction that writes the order.
+      match /counters/{businessDate} {
+        allow read, write: if memberOf(storeId);
+      }
+
+      match /dailyStats/{businessDate} {
+        allow read, write: if memberOf(storeId);
+      }
+
+      match /auditLogs/{logId} {
+        allow read: if managerOf(storeId);
+        allow create: if memberOf(storeId);
+        allow update, delete: if false;
+      }
+    }
+
+    // In-app feedback: write-only from the app, readable only from the console.
+    // One document per submission, so nothing here can be edited after the fact.
+    match /feedback/{feedbackId} {
+      allow read: if false;
+      allow create: if signedIn();
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

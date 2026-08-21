@@ -1,0 +1,38 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "businessDate", "order": "ASCENDING" },
+        { "fieldPath": "placedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "placedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "itemIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "businessDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "//": "Backs StatsRepository.fetchTotals() — aggregate(sum('revenue'), sum('orderCount'), count()) for the Store page's lifetime figures. An aggregation over more than one field needs a composite index covering every field it sums, even with no filter or ordering.",
+      "collectionGroup": "dailyStats",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "orderCount", "order": "ASCENDING" },
+        { "fieldPath": "revenue", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

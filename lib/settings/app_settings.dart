@@ -1,6 +1,7 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+
+import '../database/repositories.dart';
 
 class AppSettings extends StatefulWidget {
   final String storeID;
@@ -126,43 +127,32 @@ class _AppSettingsState extends State<AppSettings> {
       isSubmitting = true;
     });
 
-    CollectionReference feedbackCollection =
-    FirebaseFirestore.instance.collection('feedback');
-    DocumentReference feedbackDoc = feedbackCollection.doc(widget.storeID);
-
     try {
-      await feedbackDoc.get().then((DocumentSnapshot docSnapshot) async {
-        final feedbackData = {
-          'version': packageInfo.version,
-          'build': packageInfo.buildNumber,
-          'feedback': feedbackController.text,
-          'timestamp': FieldValue.serverTimestamp(),
-        };
-
-        if (docSnapshot.exists) {
-          // 更新現有的反饋記錄
-          await feedbackDoc.update({
-            'item': FieldValue.arrayUnion([feedbackData]), // 使用 arrayUnion 來追加數據
-          });
-        } else {
-          // 新增反饋記錄
-          await feedbackDoc.set({
-            'item': [feedbackData],
-          });
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Feedback submitted successfully')),
-        );
-      });
+      await feedbackRepository.submit(
+        storeId: widget.storeID,
+        message: feedbackController.text.trim(),
+        version: packageInfo.version,
+        build: packageInfo.buildNumber,
+        uid: userRepository.currentUid,
+      );
+      if (!mounted) return;
+      feedbackController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Feedback submitted successfully')),
+      );
     } catch (e) {
       // 捕捉異常並提示用戶
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to send feedback: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send feedback: $e')),
+        );
+      }
     } finally {
-      setState(() {
-        isSubmitting = false;
-      });
+      if (mounted) {
+        setState(() {
+          isSubmitting = false;
+        });
+      }
     }
   }
 }

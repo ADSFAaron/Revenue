@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'animation/FadeAnimation.dart';
+import 'database/repositories.dart';
 import 'firebase_options.dart';
 import 'home.dart';
 import 'login.dart';
@@ -56,7 +57,7 @@ class HomePage extends StatelessWidget {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           } else if (snapshot.hasData) {
-            return const LoginHomePage();
+            return const _SessionGate();
           } else if (snapshot.hasError) {
             return Center(
               child: Text(
@@ -68,6 +69,88 @@ class HomePage extends StatelessWidget {
             return const WelcomeScreen();
           }
         },
+      ),
+    );
+  }
+}
+
+/// Holds the signed-in shell back until the user's profile and store can
+/// actually be read.
+///
+/// Registration signs the account in the instant it is created, which happens
+/// before its Firestore documents exist. Without this gate the shell mounts
+/// against a half-provisioned account and every page reports "not linked to a
+/// store" — and then stays that way, because each page resolves its session
+/// exactly once.
+class _SessionGate extends StatefulWidget {
+  const _SessionGate();
+
+  @override
+  State<_SessionGate> createState() => _SessionGateState();
+}
+
+class _SessionGateState extends State<_SessionGate> {
+  late Future<Session> _session = _resolve();
+
+  /// Retries briefly: the user document lands a moment after sign-in, and that
+  /// window is the only case worth waiting through. A genuine failure — no
+  /// store, no permission — still surfaces after a second or so.
+  Future<Session> _resolve() async {
+    for (var attempt = 0;; attempt++) {
+      try {
+        return await loadSession();
+      } on SessionException {
+        if (attempt >= 4) rethrow;
+        await Future.delayed(const Duration(milliseconds: 400));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Session>(
+      future: _session,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return _buildError('${snapshot.error}');
+        }
+        return const LoginHomePage();
+      },
+    );
+  }
+
+  Widget _buildError(String message) {
+    return SafeArea(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_rounded, size: 48, color: Colors.grey),
+              const SizedBox(height: 16),
+              Text(message, textAlign: TextAlign.center),
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  FilledButton.tonal(
+                    onPressed: () => setState(() => _session = _resolve()),
+                    child: const Text('Retry'),
+                  ),
+                  const SizedBox(width: 12),
+                  TextButton(
+                    onPressed: () => FirebaseAuth.instance.signOut(),
+                    child: const Text('Sign out'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

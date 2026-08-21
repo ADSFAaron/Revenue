@@ -1,7 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import 'main.dart';
 import 'page/overview.dart';
 import 'page/statistics.dart';
 import 'page/store.dart';

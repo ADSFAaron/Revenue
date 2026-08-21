@@ -1,0 +1,335 @@
+// cloud_firestore exports an `Order` enum for index definitions; ours is the
+// domain object.
+import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
+
+import '../models/order.dart';
+import '../models/order_draft.dart';
+import '../models/store.dart';
+
+/// Everything that touches `stores/{storeId}/orders/{orderId}`, plus the two
+/// documents that must move with it: the day's order-number counter and the
+/// day's rollup.
+///
+/// One order is one document. The previous design kept every order of a store
+/// inside a single array field, which rewrote the whole history on each sale
+/// and would hit Firestore's 1 MB per-document ceiling within months.
+class OrderRepository {
+  OrderRepository({FirebaseFirestore? firestore})
+      : _db = firestore ?? FirebaseFirestore.instance;
+
+  final FirebaseFirestore _db;
+
+  DocumentReference<Map<String, dynamic>> _store(String storeId) =>
+      _db.collection('stores').doc(storeId);
+
+  CollectionReference<Map<String, dynamic>> _orders(String storeId) =>
+      _store(storeId).collection('orders');
+
+  DocumentReference<Map<String, dynamic>> _counter(
+          String storeId, String businessDate) =>
+      _store(storeId).collection('counters').doc(businessDate);
+
+  DocumentReference<Map<String, dynamic>> _stats(
+          String storeId, String businessDate) =>
+      _store(storeId).collection('dailyStats').doc(businessDate);
+
+  // ---------------------------------------------------------------- writing
+
+  /// Writes a new order, takes the next order number for its trading day and
+  /// folds it into that day's rollup — all in one transaction, so two phones
+  /// ringing up at the same moment cannot take the same number or lose a sale
+  /// from the totals.
+  ///
+  /// Returns the order number that was assigned.
+  Future<int> submit({
+    required Store store,
+    required OrderDraft draft,
+    String? createdBy,
+  }) async {
+    final businessDate = store.businessDateOf(draft.placedAt);
+    final orderRef = _orders(store.id).doc();
+    final counterRef = _counter(store.id, businessDate);
+
+    return _db.runTransaction<int>((tx) async {
+      final counterSnap = await tx.get(counterRef);
+      final orderNo =
+          (counterSnap.data()?['nextOrderNo'] as num?)?.toInt() ?? 1;
+
+      final order = draft.toOrder(
+        id: orderRef.id,
+        orderNo: orderNo,
+        store: store,
+        createdBy: createdBy,
+      );
+
+      tx.set(orderRef, {
+        ...order.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      tx.set(counterRef, {'nextOrderNo': orderNo + 1});
+      _applyStats(tx, store.id, order, 1);
+
+      return orderNo;
+    });
+  }
+
+  /// Replaces an existing order. The old order's contribution is subtracted
+  /// from its rollup before the new one is added, so an edit never leaves the
+  /// day's totals double-counted.
+  ///
+  /// If the edit moves the order into a different trading day it is given a
+  /// fresh number from that day's counter — order numbers restart daily, so
+  /// carrying the old one over would collide.
+  Future<int> replace({
+    required Store store,
+    required String orderId,
+    required OrderDraft draft,
+  }) async {
+    final orderRef = _orders(store.id).doc(orderId);
+    final newBusinessDate = store.businessDateOf(draft.placedAt);
+
+    return _db.runTransaction<int>((tx) async {
+      final snap = await tx.get(orderRef);
+      if (!snap.exists) {
+        throw StateError('Order $orderId no longer exists');
+      }
+      final existing = Order.fromDoc(snap);
+      if (existing.isVoided) {
+        throw StateError('A voided order cannot be edited');
+      }
+
+      // All reads must happen before any write inside a transaction.
+      var orderNo = existing.orderNo;
+      DocumentReference<Map<String, dynamic>>? counterRef;
+      if (newBusinessDate != existing.businessDate) {
+        counterRef = _counter(store.id, newBusinessDate);
+        final counterSnap = await tx.get(counterRef);
+        orderNo = (counterSnap.data()?['nextOrderNo'] as num?)?.toInt() ?? 1;
+      }
+
+      final updated = draft.toOrder(
+        id: orderId,
+        orderNo: orderNo,
+        store: store,
+        createdBy: existing.createdBy,
+      );
+
+      _applyStats(tx, store.id, existing, -1);
+      tx.update(orderRef, {
+        ...updated.toMap(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      if (counterRef != null) {
+        tx.set(counterRef, {'nextOrderNo': orderNo + 1});
+      }
+      _applyStats(tx, store.id, updated, 1);
+
+      return orderNo;
+    });
+  }
+
+  /// Marks an order void and backs it out of the day's totals.
+  ///
+  /// The document is never deleted — a cancelled sale that leaves no trace is
+  /// exactly the gap that makes till discrepancies unarguable.
+  Future<void> voidOrder({
+    required Store store,
+    required String orderId,
+    required String? byUid,
+    String? reason,
+  }) async {
+    final orderRef = _orders(store.id).doc(orderId);
+
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(orderRef);
+      if (!snap.exists) {
+        throw StateError('Order $orderId no longer exists');
+      }
+      final order = Order.fromDoc(snap);
+      if (order.isVoided) return;
+
+      tx.update(orderRef, {
+        'status': OrderStatus.voided.id,
+        'voidedAt': FieldValue.serverTimestamp(),
+        'voidedBy': byUid,
+        'voidReason': reason,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      _applyStats(tx, store.id, order, -1);
+      tx.set(
+        _stats(store.id, order.businessDate),
+        {
+          'businessDate': order.businessDate,
+          'voidedCount': FieldValue.increment(1),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    });
+  }
+
+  /// Folds [order] into (sign 1) or out of (sign -1) its day's rollup.
+  ///
+  /// Uses [FieldValue.increment] throughout, which is atomic server-side, so
+  /// this needs no read and cannot lose a concurrent update.
+  void _applyStats(Transaction tx, String storeId, Order order, int sign) {
+    FieldValue inc(num value) => FieldValue.increment(sign * value);
+
+    // Totals per key are accumulated first: one FieldValue.increment per key
+    // per transaction, because writing the same map key twice in one payload
+    // would keep only the last value rather than adding them up.
+    final itemTotals = <String, _LineTotals>{};
+    final categoryTotals = <String, _LineTotals>{};
+    for (final line in order.items) {
+      final itemKey = line.itemId.isEmpty ? 'unknown' : line.itemId;
+      (itemTotals[itemKey] ??= _LineTotals(line.name)).add(line);
+
+      final categoryKey = line.categoryId ?? 'uncategorized';
+      (categoryTotals[categoryKey] ??= _LineTotals(categoryKey)).add(line);
+    }
+
+    final byItem = itemTotals.map((key, totals) => MapEntry(key, {
+          'name': totals.name,
+          'qty': inc(totals.qty),
+          'revenue': inc(totals.revenue),
+          'cost': inc(totals.cost),
+        }));
+    final byCategory = categoryTotals.map((key, totals) => MapEntry(key, {
+          'qty': inc(totals.qty),
+          'revenue': inc(totals.revenue),
+          'cost': inc(totals.cost),
+        }));
+
+    tx.set(
+      _stats(storeId, order.businessDate),
+      {
+        'businessDate': order.businessDate,
+        'orderCount': inc(1),
+        'guestCount': inc(order.guestCount),
+        'revenue': inc(order.total),
+        'cost': inc(order.totalCost),
+        'discountTotal': inc(order.discountAmount),
+        'taxTotal': inc(order.taxAmount),
+        'commissionTotal': inc(order.commissionAmount),
+        'byHour': {
+          order.hourOfDay.toString(): {
+            'orders': inc(1),
+            'revenue': inc(order.total),
+            'guests': inc(order.guestCount),
+          },
+        },
+        'byChannel': {
+          order.channel.id: {
+            'orders': inc(1),
+            'revenue': inc(order.total),
+            'guests': inc(order.guestCount),
+          },
+        },
+        'byPayment': {
+          order.paymentMethod.id: {
+            'orders': inc(1),
+            'revenue': inc(order.total),
+          },
+        },
+        'byItem': byItem,
+        'byCategory': byCategory,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  // ---------------------------------------------------------------- reading
+
+  Future<Order?> fetch(String storeId, String orderId) async {
+    final doc = await _orders(storeId).doc(orderId).get();
+    return doc.exists ? Order.fromDoc(doc) : null;
+  }
+
+  Stream<Order?> watch(String storeId, String orderId) => _orders(storeId)
+      .doc(orderId)
+      .snapshots()
+      .map((doc) => doc.exists ? Order.fromDoc(doc) : null);
+
+  /// The most recent orders, newest first. Backed by the automatic single-field
+  /// index on `placedAt`.
+  Stream<List<Order>> watchRecent(String storeId, {int limit = 20}) =>
+      _orders(storeId)
+          .orderBy('placedAt', descending: true)
+          .limit(limit)
+          .snapshots()
+          .map((snap) => snap.docs.map(Order.fromDoc).toList());
+
+  /// One trading day's orders, oldest first.
+  Stream<List<Order>> watchDay(String storeId, String businessDate) =>
+      _orders(storeId)
+          .where('businessDate', isEqualTo: businessDate)
+          .orderBy('placedAt')
+          .snapshots()
+          .map((snap) => snap.docs.map(Order.fromDoc).toList());
+
+  /// A page of history, newest first. Pass the last order of the previous page
+  /// as [startAfter] to continue.
+  Future<List<Order>> fetchPage(
+    String storeId, {
+    int limit = 30,
+    Order? startAfter,
+  }) async {
+    var query =
+        _orders(storeId).orderBy('placedAt', descending: true).limit(limit);
+    if (startAfter != null) {
+      query = query.startAfter([Timestamp.fromDate(startAfter.placedAt)]);
+    }
+    final snap = await query.get();
+    return snap.docs.map(Order.fromDoc).toList();
+  }
+
+  /// Every order between two trading days, inclusive.
+  Future<List<Order>> fetchRange(
+    String storeId, {
+    required String fromBusinessDate,
+    required String toBusinessDate,
+  }) async {
+    final snap = await _orders(storeId)
+        .where('businessDate', isGreaterThanOrEqualTo: fromBusinessDate)
+        .where('businessDate', isLessThanOrEqualTo: toBusinessDate)
+        .orderBy('businessDate')
+        .orderBy('placedAt')
+        .get();
+    return snap.docs.map(Order.fromDoc).toList();
+  }
+
+  /// Orders containing a given dish — the basis for basket analysis. Backed by
+  /// the `itemIds` array index.
+  Future<List<Order>> fetchContainingItem(
+    String storeId, {
+    required String itemId,
+    required String fromBusinessDate,
+    required String toBusinessDate,
+  }) async {
+    final snap = await _orders(storeId)
+        .where('itemIds', arrayContains: itemId)
+        .where('businessDate', isGreaterThanOrEqualTo: fromBusinessDate)
+        .where('businessDate', isLessThanOrEqualTo: toBusinessDate)
+        .orderBy('businessDate')
+        .get();
+    return snap.docs.map(Order.fromDoc).toList();
+  }
+}
+
+/// Running totals for one rollup key while building a stats delta.
+class _LineTotals {
+  _LineTotals(this.name);
+
+  final String name;
+  int qty = 0;
+  int revenue = 0;
+  int cost = 0;
+
+  void add(OrderLine line) {
+    qty += line.qty;
+    revenue += line.lineRevenue;
+    cost += line.lineCost;
+  }
+}

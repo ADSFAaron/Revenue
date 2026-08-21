@@ -1,127 +1,206 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:grouped_list/grouped_list.dart';
 import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../database/repositories.dart';
+import '../models/order.dart';
+import '../models/store.dart';
 import 'store_setting_history_order_detail.dart';
 
-class StoreHistoryOrder extends StatelessWidget {
-  final String storeID;
-  final String currency = "NTD";
-
+/// Order history, newest first, grouped by trading day.
+///
+/// Loads a page at a time. The whole history used to arrive in one document,
+/// which is exactly what one order per document was meant to end.
+class StoreHistoryOrder extends StatefulWidget {
   const StoreHistoryOrder(this.storeID, {super.key});
 
-  // TODO: Make firebase query lazy loading (Paginate a query)
-  // https://firebase.google.com/docs/firestore/query-data/query-cursors#dart_3
+  final String storeID;
+
+  @override
+  State<StoreHistoryOrder> createState() => _StoreHistoryOrderState();
+}
+
+class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
+  static const _pageSize = 30;
+  static const String currency = 'NTD';
+
+  final _scrollController = ScrollController();
+  final List<Order> _orders = [];
+
+  Store? _store;
+  bool _loading = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    _initialLoad();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 200) _loadMore();
+  }
+
+  Future<void> _initialLoad() async {
+    try {
+      final store = await storeRepository.fetch(widget.storeID);
+      final page =
+          await orderRepository.fetchPage(widget.storeID, limit: _pageSize);
+      if (!mounted) return;
+      setState(() {
+        _store = store;
+        _orders
+          ..clear()
+          ..addAll(page);
+        _hasMore = page.length == _pageSize;
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = '$e';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore || _orders.isEmpty) return;
+    setState(() => _loadingMore = true);
+    try {
+      final page = await orderRepository.fetchPage(
+        widget.storeID,
+        limit: _pageSize,
+        startAfter: _orders.last,
+      );
+      if (!mounted) return;
+      setState(() {
+        _orders.addAll(page);
+        _hasMore = page.length == _pageSize;
+      });
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('History Orders'),
-      ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('tmporder')
-            .doc(storeID)
-            .snapshots(),
-        builder:
-            (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
-          if (snapshot.hasError) {
-            return const Center(child: Text('Something went wrong.'));
-          }
+      appBar: AppBar(title: const Text('History Orders')),
+      body: _buildBody(),
+    );
+  }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+  Widget _buildBody() {
+    if (_error != null) return Center(child: Text('Error: $_error'));
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_orders.isEmpty) {
+      return const Center(child: Text('No orders available.'));
+    }
 
-          final Map<String, dynamic>? orderData =
-              snapshot.data?.data() as Map<String, dynamic>?;
-
-          if (orderData == null || orderData['orders'] == null) {
-            return const Center(child: Text('No orders available.'));
-          }
-
-          final List<dynamic> orders = orderData['orders'];
-
-          return GroupedListView<dynamic, String>(
-            elements: orders,
-            groupBy: (element) =>
-                DateFormat('yyyy-MM-dd').format(element['time'].toDate()),
-            groupSeparatorBuilder: (String groupByValue) =>
-                _buildGroupSeparator(groupByValue),
-            itemBuilder: (context, dynamic element) =>
-                _buildOrderCard(context, element),
-            itemComparator: (item1, item2) =>
-                item1['no'].compareTo(item2['no']),
-            useStickyGroupSeparators: true,
-            floatingHeader: true,
-          );
-        },
+    return RefreshIndicator(
+      onRefresh: _initialLoad,
+      child: GroupedListView<Order, String>(
+        controller: _scrollController,
+        elements: _orders,
+        groupBy: (order) => order.businessDate,
+        groupComparator: (a, b) => b.compareTo(a),
+        itemComparator: (a, b) => b.placedAt.compareTo(a.placedAt),
+        groupSeparatorBuilder: _buildGroupSeparator,
+        itemBuilder: (context, order) => _buildOrderCard(order),
+        useStickyGroupSeparators: true,
+        floatingHeader: true,
+        footer: _loadingMore
+            ? const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : const SizedBox(height: 24),
       ),
     );
   }
 
-  Widget _buildGroupSeparator(String groupByValue) {
-    final DateTime date = DateTime.parse(groupByValue);
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = DateTime(now.year, now.month, now.day - 1);
+  Widget _buildGroupSeparator(String businessDate) {
+    final store = _store;
+    final today = store?.currentBusinessDate;
+    final yesterday = today == null
+        ? null
+        : StatsRepository.shiftBusinessDate(today, -1);
 
-    String formattedDate;
-    if (date == today) {
-      formattedDate = "Today";
-    } else if (date == yesterday) {
-      formattedDate = "Yesterday";
+    final String label;
+    if (businessDate == today) {
+      label = 'Today';
+    } else if (businessDate == yesterday) {
+      label = 'Yesterday';
     } else {
-      formattedDate = DateFormat.yMd().add_j().format(date);
+      label = DateFormat.yMMMEd().format(parseBusinessDate(businessDate));
     }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
       child: Chip(
         labelPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        label: Text(
-          formattedDate,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
+        label: Text(label,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }
 
-  Widget _buildOrderCard(BuildContext context, dynamic element) {
-    final listAltCheckIcon = Icon(Symbols.list_alt_check);
-
+  Widget _buildOrderCard(Order order) {
     return Card(
       elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
       child: ListTile(
         contentPadding:
             const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
-        leading: listAltCheckIcon,
-        title: Text('Order #${element['no']}'),
-        subtitle: Text('${element['time'].toDate()}'),
+        leading: Icon(
+          order.isVoided ? Symbols.cancel : Symbols.list_alt_check,
+          color: order.isVoided ? Colors.red : null,
+        ),
+        title: Text(
+          'Order #${order.orderNo}',
+          style: order.isVoided
+              ? const TextStyle(decoration: TextDecoration.lineThrough)
+              : null,
+        ),
+        subtitle: Text(
+          '${DateFormat.Hm().format(order.placedAt)}  ·  '
+          '${order.channel.label}  ·  ${order.paymentMethod.label}',
+        ),
         trailing: Text(
           textAlign: TextAlign.center,
-          '$currency\n${element['total']}',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w400),
+          '$currency\n${order.total}',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w400,
+            color: order.isVoided ? Colors.grey : null,
+          ),
         ),
-        onTap: () => _navigateToOrderDetail(context, element),
+        onTap: () => _openDetail(order),
       ),
     );
   }
 
-  void _navigateToOrderDetail(BuildContext context, dynamic element) {
-    Navigator.push(
+  Future<void> _openDetail(Order order) async {
+    final changed = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (context) => StoreHistoryOrderDetail(
-          storeID,
-          element['no'] as int,
-          element,
-        ),
+        builder: (context) => StoreHistoryOrderDetail(widget.storeID, order),
       ),
     );
+    if (changed == true) _initialLoad();
   }
 }

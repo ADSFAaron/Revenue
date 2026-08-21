@@ -2,7 +2,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'home.dart';
 
 import 'animation/FadeAnimation.dart';
 
@@ -31,8 +30,15 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        systemOverlayStyle: SystemUiOverlayStyle.light,
-        backgroundColor: Colors.white,
+        // Dark status-bar icons, because the bar behind them is light.
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
+        // Transparent rather than a fixed colour, so the bar always picks up
+        // the scaffold background instead of drifting from it when the theme
+        // changes. surfaceTint and scrolledUnderElevation are what would
+        // otherwise tint it the moment content scrolls underneath.
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
         elevation: 0,
         leading: IconButton(
           icon: Icon(
@@ -170,6 +176,11 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future signIn(email, password) async {
+    if (email.isEmpty || password.isEmpty) {
+      showError('Please fill all fields');
+      return;
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -179,18 +190,26 @@ class _LoginPageState extends State<LoginPage> {
     );
 
     try {
-      UserCredential credential = await FirebaseAuth.instance
+      await FirebaseAuth.instance
           .signInWithEmailAndPassword(email: email, password: password);
 
-      if (credential.user != null) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => LoginHomePage()),
-        );
-      }
+      if (!mounted) return;
+      // Dismiss the spinner, then fall back to the root, which is watching auth
+      // state and shows the shell through the session gate.
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } on FirebaseAuthException catch (e) {
-      Navigator.pop(context);
-      showError(e.message ?? 'Unknown Error');
+      if (!mounted) return;
+      Navigator.pop(context); // the spinner
+      showError(switch (e.code) {
+        'invalid-credential' ||
+        'wrong-password' ||
+        'user-not-found' =>
+          'Wrong email or password.',
+        'invalid-email' => 'That is not a valid email address.',
+        'user-disabled' => 'This account has been disabled.',
+        'network-request-failed' => 'No connection to Firebase.',
+        _ => e.message ?? 'Unknown error (${e.code})',
+      });
     }
   }
 

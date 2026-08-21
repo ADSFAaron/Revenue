@@ -1,12 +1,12 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:uuid/uuid.dart';
 
-import 'home.dart';
+import 'database/repositories.dart';
 import 'login.dart';
+import 'models/app_user.dart';
+import 'models/store.dart';
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
 
@@ -23,6 +23,7 @@ class _RegisterPageState extends State<RegisterPage> {
       storeNameController;
 
   bool showPassword = false;
+  bool isSubmitting = false;
 
   String passwordErrorMsg = "",
       mailErrorMsg = "",
@@ -58,8 +59,13 @@ class _RegisterPageState extends State<RegisterPage> {
     return Scaffold(
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        systemOverlayStyle: SystemUiOverlayStyle.light,
-        backgroundColor: Colors.white,
+        // Dark status-bar icons, because the bar behind them is light.
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
+        // Transparent so the bar always matches the scaffold background
+        // instead of drifting from it. Matches login.dart.
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
         elevation: 0,
         leading: IconButton(
           icon: Icon(
@@ -117,7 +123,10 @@ class _RegisterPageState extends State<RegisterPage> {
                       makeInput(
                           label: "Store Name",
                           controller: storeNameController,
-                          errorDescription: storeNameErrorMsg),
+                          errorDescription: storeNameErrorMsg,
+                          helperText:
+                              "Ignored if the store ID already exists — "
+                              "you will join that store instead"),
                     ],
                   ),
                 ),
@@ -171,6 +180,7 @@ class _RegisterPageState extends State<RegisterPage> {
         required TextEditingController controller,
         bool obscureText = false,
         required String errorDescription,
+        String? helperText,
         Widget? suffixIcon}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -186,6 +196,8 @@ class _RegisterPageState extends State<RegisterPage> {
           obscureText: obscureText,
           decoration: InputDecoration(
             errorText: errorDescription == "" ? null : errorDescription,
+            helperText: helperText,
+            helperMaxLines: 2,
             contentPadding: EdgeInsets.symmetric(vertical: 0, horizontal: 10),
             border:
             OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
@@ -220,14 +232,20 @@ class _RegisterPageState extends State<RegisterPage> {
       child: MaterialButton(
         height: 60,
         minWidth: MediaQuery.of(context).size.width,
-        onPressed: registerUser,
+        onPressed: isSubmitting ? null : registerUser,
         color: Colors.greenAccent,
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-        child: Text(
-          'Register',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-        ),
+        child: isSubmitting
+            ? const SizedBox(
+                height: 24,
+                width: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Text(
+                'Register',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+              ),
       ),
     );
   }
@@ -254,23 +272,72 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> registerUser() async {
-    if (!validateInput()) return;
+    if (isSubmitting || !validateInput()) return;
+    setState(() => isSubmitting = true);
 
     try {
-      UserCredential userCredential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(
-          email: emailController.text,
-          password: passwordController.text);
-
-      await addUserToFirestore();
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => LoginHomePage()),
+      final credential =
+          await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: emailController.text.trim(),
+        password: passwordController.text,
       );
+
+      await _provisionAccount(credential.user!);
+
+      if (!mounted) return;
+      // Pop back to the root, which is already watching auth state and will
+      // show the shell through the session gate. Pushing a second shell here
+      // used to leave two of them mounted, each with its own timers.
+      Navigator.of(context).popUntil((route) => route.isFirst);
     } on FirebaseAuthException catch (e) {
-      handleFirebaseErrors(e);
+      if (mounted) handleFirebaseErrors(e);
+    } catch (e) {
+      // The auth account exists but its store data does not, which would leave
+      // an account that can sign in and then find nothing. Undo it.
+      await FirebaseAuth.instance.currentUser?.delete().catchError((_) {});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.red,
+            content: Text('Could not finish setting up the account: $e'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isSubmitting = false);
     }
+  }
+
+  /// Creates the Firestore side of a new account.
+  ///
+  /// The user document is keyed by the Auth uid, not by email — every screen
+  /// looks the user up by uid, and an email is something a person can change.
+  ///
+  /// Entering a store ID that already exists joins that store as staff;
+  /// otherwise the store is created here, along with a starter menu, so a new
+  /// owner does not land on an empty app.
+  Future<void> _provisionAccount(User authUser) async {
+    final storeId = storeIDController.text.trim();
+
+    await userRepository.create(AppUser(
+      uid: authUser.uid,
+      email: authUser.email ?? emailController.text.trim(),
+      displayName: nameController.text.trim(),
+      storeId: storeId,
+      role: UserRole.staff,
+    ));
+
+    if (await storeRepository.exists(storeId)) return;
+
+    // Creating the store makes this person its owner. The role has to be
+    // raised before the menu is seeded, because menu writes are manager-only.
+    await userRepository.updateRole(authUser.uid, UserRole.owner);
+    await storeRepository.create(Store(
+      id: storeId,
+      name: storeNameController.text.trim(),
+      categories: MenuRepository.defaultCategories,
+    ));
+    await menuRepository.seedDefaults(storeId);
   }
 
   bool validateInput() {
@@ -296,24 +363,35 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   void handleFirebaseErrors(FirebaseAuthException e) {
-    if (e.code == 'weak-password') {
-      setState(() {
-        passwordErrorMsg = 'The password provided is too weak.';
-      });
-    } else if (e.code == 'email-already-in-use') {
-      setState(() {
-        mailErrorMsg = 'The account already exists for that email.';
-      });
+    switch (e.code) {
+      case 'weak-password':
+        setState(() =>
+            passwordErrorMsg = 'The password must be at least 6 characters.');
+      case 'email-already-in-use':
+        setState(() =>
+            mailErrorMsg = 'The account already exists for that email.');
+      case 'invalid-email':
+        setState(() => mailErrorMsg = 'That is not a valid email address.');
+      case 'operation-not-allowed':
+        // Email/password sign-in is switched off in the Firebase console.
+        _showError('Email/password sign-in is not enabled for this Firebase '
+            'project. Enable it under Authentication → Sign-in method.');
+      case 'network-request-failed':
+        _showError('No connection to Firebase. Check your network.');
+      default:
+        // Anything unhandled used to fail silently: the button simply stopped
+        // spinning and nothing on screen said why.
+        _showError('Registration failed (${e.code}): ${e.message ?? ''}');
     }
   }
 
-  Future<void> addUserToFirestore() async {
-    CollectionReference users = FirebaseFirestore.instance.collection('users');
-    await users.add({
-      'email': emailController.text,
-      'storeID': storeIDController.text,
-      'name': nameController.text,
-      'storeName': storeNameController.text,
-    });
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: Colors.red,
+      duration: const Duration(seconds: 6),
+      content: Text(message),
+    ));
   }
+
 }

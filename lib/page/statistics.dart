@@ -1,7 +1,3 @@
-import 'dart:io';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:intl/intl.dart';
@@ -9,8 +5,15 @@ import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart';
 
-// TODO: "Export" function work
-// TODO: currentOrders and expectOrders data from Firestore
+import '../database/repositories.dart';
+import '../models/daily_stats.dart';
+
+// Phase 3 of docs/refactor-plan.md still owes this page:
+//   - Week / Month tabs over real date ranges (they currently show the day)
+//   - working back / forward arrows
+//   - Excel export (Phase 5)
+// The data layer for all three is already in place: StatsRepository.fetchRange
+// plus DailyStats.sum give a summed range in one call.
 
 class StatisticsPage extends StatefulWidget {
   const StatisticsPage({super.key});
@@ -21,17 +24,11 @@ class StatisticsPage extends StatefulWidget {
 
 class _StatisticsPageState extends State<StatisticsPage>
     with TickerProviderStateMixin {
-  CollectionReference orderReference =
-      FirebaseFirestore.instance.collection('tmporder');
-  User currentUser = FirebaseAuth.instance.currentUser!;
-  late Map<String, dynamic> users, stores;
-  late List<_ChartData> chartData;
-  late Map<String, dynamic> orderForOutput = {};
-  Map<String, dynamic> allorderSave = {};
-  late Directory rootPath;
-  String? dirPath;
-  bool isDark = false;
+  late final Future<Session> _session = loadSession();
   late final TabController _tabController;
+
+  bool isDark = false;
+  int _selectedTabIndex = 0;
 
   Map<String, bool> featureSelected = {
     'Income': false,
@@ -43,56 +40,27 @@ class _StatisticsPageState extends State<StatisticsPage>
     Tab(text: 'Week'),
     Tab(text: 'Month'),
   ];
-  int _selectedTabIndex = 0;
-
-  List<Color> barColors = [
-    Colors.teal[300]!,
-    Color.fromRGBO(53, 124, 210, 1),
-    Colors.pink,
-    Colors.orange,
-    Colors.pink[300]!,
-    Colors.purple[300]!,
-    Color.fromRGBO(127, 132, 232, 1),
-    Colors.pink,
-    Colors.indigo,
-    Colors.cyan,
-    Colors.lime,
-    Colors.amber,
-    Colors.deepPurple,
-    Colors.deepOrange,
-    Colors.lightBlue,
-    Colors.lightGreen,
-    Colors.brown,
-    Colors.grey,
-    Colors.blueGrey,
-  ];
 
   TooltipBehavior? _tooltipBehavior;
 
   @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  @override
   void initState() {
     super.initState();
-
     _tooltipBehavior = TooltipBehavior(
       enable: true,
       header: '',
       canShowMarker: false,
     );
-
-    chartData = [];
     _tabController = TabController(length: myTabs.length, vsync: this);
     _tabController.addListener(() {
-      setState(() {
-        _selectedTabIndex = _tabController.index;
-      });
-      debugPrint("Selected Index: ${_tabController.index}");
+      setState(() => _selectedTabIndex = _tabController.index);
     });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
@@ -104,262 +72,153 @@ class _StatisticsPageState extends State<StatisticsPage>
       height: 24,
       width: 24,
       colorFilter: isDark
-          ? ColorFilter.mode(Colors.white, BlendMode.srcIn)
-          : ColorFilter.mode(Colors.black, BlendMode.srcIn),
+          ? const ColorFilter.mode(Colors.white, BlendMode.srcIn)
+          : const ColorFilter.mode(Colors.black, BlendMode.srcIn),
     );
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Statistics'),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: myTabs,
-        ),
+        title: const Text('Statistics'),
+        bottom: TabBar(controller: _tabController, tabs: myTabs),
       ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(currentUser.email)
-            .snapshots(),
-        builder:
-            (BuildContext context, AsyncSnapshot<DocumentSnapshot> snapshot) {
+      body: FutureBuilder<Session>(
+        future: _session,
+        builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return _buildErrorWidget(snapshot.error.toString());
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
           }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return _buildLoadingWidget();
-          }
+          final session = snapshot.data!;
+          final businessDate = session.store.currentBusinessDate;
 
-          users = snapshot.data?.data() as Map<String, dynamic>;
-
-          return FutureBuilder<DocumentSnapshot>(
-            future: orderReference.doc(users['storeID']).get(),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return _buildErrorWidget("Something went wrong");
+          // One rollup document instead of the store's entire order history.
+          return StreamBuilder<DailyStats>(
+            stream: statsRepository.watchDay(session.storeId, businessDate),
+            builder: (context, statsSnapshot) {
+              if (statsSnapshot.hasError) {
+                return Center(child: Text('Error: ${statsSnapshot.error}'));
               }
-
-              if (snapshot.hasData && !snapshot.data!.exists) {
-                return _buildErrorWidget("Document does not exist");
+              if (!statsSnapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
               }
-
-              if (snapshot.connectionState == ConnectionState.done) {
-                return _buildContent(snapshot.data!);
-              }
-              return _buildLoadingWidget();
+              return _buildContent(session, statsSnapshot.data!);
             },
           );
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          debugPrint('FloatingActionButton tapped');
-        },
-        child: GestureDetector(
-          child: svg,
-        ),
+        onPressed: () => debugPrint('FloatingActionButton tapped'),
+        child: GestureDetector(child: svg),
       ),
     );
   }
 
-  Widget _buildErrorWidget(String errorMessage) {
-    return Center(child: Text('Error: $errorMessage'));
-  }
-
-  Widget _buildLoadingWidget() {
-    return Center(child: CircularProgressIndicator());
-  }
-
-  Widget _buildContent(DocumentSnapshot snapshot) {
-    Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
-    orderForOutput = data;
-    debugPrint('DB orders: $data');
-
-    DateTime now = DateTime.now();
-    num currentOrders = 60;
-    num expectOrders = 200;
-    String chartTitle = 'Today\'s Dishes';
-    Icon moneyBagIcon = Icon(Symbols.money_bag);
-    double totalIncome = 0;
-
-    if (data['orders'].isEmpty) {
+  Widget _buildContent(Session session, DailyStats stats) {
+    if (stats.isEmpty) {
       return SafeArea(
-        child: Center(
-          child: Text('No Order'),
+        child: Column(
+          children: [
+            _buildHeaderRow(stats.businessDate),
+            const Expanded(child: Center(child: Text('No Order'))),
+          ],
         ),
       );
     }
 
-    // Recursive all orders
-    List<ChartSampleData> ordersData = [];
-    Map<String, dynamic> ordersCount = getOrderCount(data['orders']);
-    ordersCount.forEach((key, value) {
-      ordersData.add(ChartSampleData(x: key, yValue: value['amount']));
-    });
-
-    ordersCount.forEach((key, value) {
-      totalIncome += (value['price'] * value['amount']);
-    });
-
-    debugPrint('ordersData: $ordersData');
-
+    // Every tab shows the same trading day until the Week / Month ranges land
+    // in Phase 3 — one body rather than three copies of it.
+    final body = _buildTabBody(session, stats);
     return SafeArea(
       child: TabBarView(
         controller: _tabController,
-        children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.vertical,
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Column(
-                spacing: 20,
-                children: <Widget>[
-                  _buildHeaderRow(now),
-                  _buildRangePointerGauge(currentOrders, expectOrders),
-                  _buildCartesianChart(chartTitle, ordersData),
-                  Wrap(
-                    children: [
-                      featureSelected['Income']!
-                          ? _buildCard(
-                              title: 'Income',
-                              icon: moneyBagIcon.icon,
-                              value: totalIncome.toStringAsFixed(0),
-                              onTap: () => debugPrint('money Card tapped'),
-                            )
-                          : Container(),
-                      featureSelected['Export']!
-                          ? _buildCard(
-                              title: 'Export',
-                              icon: Icons.download_outlined,
-                              value: 'Excel',
-                              onTap: () => {debugPrint('excel tapped')},
-                            )
-                          : Container(),
-                      _buildAddMoreCard(context),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SingleChildScrollView(
-            scrollDirection: Axis.vertical,
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Column(
-                spacing: 20,
-                children: <Widget>[
-                  _buildHeaderRow(now),
-                  _buildRangePointerGauge(currentOrders, expectOrders),
-                  _buildCartesianChart(chartTitle, ordersData),
-                  Wrap(
-                    children: [
-                      featureSelected['Income']!
-                          ? _buildCard(
-                              title: 'Income',
-                              icon: moneyBagIcon.icon,
-                              value: totalIncome.toStringAsFixed(0),
-                              onTap: () => debugPrint('money Card tapped'),
-                            )
-                          : Container(),
-                      featureSelected['Export']!
-                          ? _buildCard(
-                              title: 'Export',
-                              icon: Icons.download_outlined,
-                              value: 'Excel',
-                              onTap: () => {debugPrint('excel tapped')},
-                            )
-                          : Container(),
-                      _buildAddMoreCard(context),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SingleChildScrollView(
-            scrollDirection: Axis.vertical,
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Column(
-                spacing: 20,
-                children: <Widget>[
-                  _buildHeaderRow(now),
-                  _buildRangePointerGauge(currentOrders, expectOrders),
-                  _buildCartesianChart(chartTitle, ordersData),
-                  Wrap(
-                    children: [
-                      featureSelected['Income']!
-                          ? _buildCard(
-                              title: 'Income',
-                              icon: moneyBagIcon.icon,
-                              value: totalIncome.toStringAsFixed(0),
-                              onTap: () => debugPrint('money Card tapped'),
-                            )
-                          : Container(),
-                      featureSelected['Export']!
-                          ? _buildCard(
-                              title: 'Export',
-                              icon: Icons.download_outlined,
-                              value: 'Excel',
-                              onTap: () => {debugPrint('excel tapped')},
-                            )
-                          : Container(),
-                      _buildAddMoreCard(context),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+        children: [body, body, body],
       ),
     );
   }
 
-  Widget _buildHeaderRow(DateTime infoDate) {
-    DateTime now = DateTime.now();
+  Widget _buildTabBody(Session session, DailyStats stats) {
+    final chartData = stats.itemsByQty
+        .map((item) => ChartSampleData(x: item.name, yValue: item.qty))
+        .toList();
+
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          spacing: 20,
+          children: <Widget>[
+            _buildHeaderRow(stats.businessDate),
+            // Target comes from the store's settings, not from a literal 60/200.
+            _buildRangePointerGauge(
+              stats.orderCount,
+              session.store.targets.dailyOrders,
+            ),
+            _buildCartesianChart("Today's Dishes", chartData),
+            Wrap(
+              children: [
+                if (featureSelected['Income']!)
+                  _buildCard(
+                    title: 'Income',
+                    icon: Symbols.money_bag,
+                    value: NumberFormat.decimalPattern().format(stats.revenue),
+                    onTap: () => debugPrint('money Card tapped'),
+                  ),
+                if (featureSelected['Export']!)
+                  _buildCard(
+                    title: 'Export',
+                    icon: Icons.download_outlined,
+                    value: 'Excel',
+                    onTap: () => debugPrint('excel tapped'),
+                  ),
+                _buildAddMoreCard(context),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderRow(String businessDate) {
+    final infoDate = DateTime.tryParse(businessDate) ?? DateTime.now();
+    final now = DateTime.now();
     String displayDate;
 
-    // Determine Tab is Day/Week/Month
     switch (_selectedTabIndex) {
-      case 0:
-        if (infoDate.day == now.day) {
-          displayDate = 'Today';
-        } else if (infoDate.day == now.day - 1) {
-          displayDate = 'Yesterday';
-        } else {
-          displayDate = DateFormat.yMMMMd().format(infoDate);
-        }
-        break;
       case 1:
         displayDate = 'Week ${infoDate.weekOfYear} of ${infoDate.year}';
         break;
       case 2:
-        String formattedDate = DateFormat.yMMMM().format(infoDate);
-        displayDate = formattedDate;
+        displayDate = DateFormat.yMMMM().format(infoDate);
         break;
       default:
-        displayDate = 'Today';
+        if (infoDate.year == now.year &&
+            infoDate.month == now.month &&
+            infoDate.day == now.day) {
+          displayDate = 'Today';
+        } else {
+          displayDate = DateFormat.yMMMMd().format(infoDate);
+        }
     }
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
+        // Paging through past periods is Phase 3; disabled rather than silently
+        // doing nothing when tapped.
         ElevatedButton(
-          onPressed: () {},
+          onPressed: null,
           style: ElevatedButton.styleFrom(elevation: 0),
-          child: Icon(Icons.arrow_back),
+          child: const Icon(Icons.arrow_back),
         ),
-        Text(
-          displayDate,
-          style: TextStyle(fontSize: 20),
-        ),
+        Text(displayDate, style: const TextStyle(fontSize: 20)),
         ElevatedButton(
-          onPressed: () {},
+          onPressed: null,
           style: ElevatedButton.styleFrom(elevation: 0),
-          child: Icon(Icons.arrow_forward),
+          child: const Icon(Icons.arrow_forward),
         ),
       ],
     );
@@ -369,12 +228,10 @@ class _StatisticsPageState extends State<StatisticsPage>
     return Card(
       elevation: 0,
       child: InkWell(
-        onTap: () {
-          showModalBottomSheet(
-            context: context,
-            builder: (context) => _buildAddMoreSheet(context),
-          );
-        },
+        onTap: () => showModalBottomSheet(
+          context: context,
+          builder: (context) => _buildAddMoreSheet(context),
+        ),
         child: SizedBox(
           width: MediaQuery.of(context).size.width / 2 - 30,
           child: Padding(
@@ -401,6 +258,18 @@ class _StatisticsPageState extends State<StatisticsPage>
   }
 
   Widget _buildAddMoreSheet(BuildContext context) {
+    Widget toggle(String key, String subtitle) => ListTile(
+          leading: Icon(featureSelected[key]!
+              ? Icons.check_box_outlined
+              : Icons.check_box_outline_blank),
+          title: Text(key),
+          subtitle: Text(subtitle),
+          onTap: () {
+            setState(() => featureSelected[key] = !featureSelected[key]!);
+            Navigator.pop(context);
+          },
+        );
+
     return SizedBox(
       height: MediaQuery.of(context).size.height * 0.3,
       child: Center(
@@ -410,50 +279,15 @@ class _StatisticsPageState extends State<StatisticsPage>
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Text(
-                'More Feature',
-                style: TextStyle(fontSize: 20),
-              ),
-              featureSelected['Income']!
-                  ? _buildListTile(
-                      'Income',
-                      'Selected Date Income',
-                      Icons.check_box_outlined,
-                      () => setState(() {
-                            featureSelected['Income'] = false;
-                            Navigator.pop(context);
-                          }))
-                  : _buildListTile(
-                      'Income',
-                      'Selected Date Income',
-                      Icons.check_box_outline_blank,
-                      () => setState(() {
-                            featureSelected['Income'] = true;
-                            Navigator.pop(context);
-                          })),
-              featureSelected['Export']!
-                  ? _buildListTile(
-                      'Export',
-                      'Export data to Excel',
-                      Icons.check_box_outlined,
-                      () => setState(() {
-                            featureSelected['Export'] = false;
-                            Navigator.pop(context);
-                          }))
-                  : _buildListTile(
-                      'Export',
-                      'Export data to Excel',
-                      Icons.check_box_outline_blank,
-                      () => setState(() {
-                            featureSelected['Export'] = true;
-                            Navigator.pop(context);
-                          })),
+              const Text('More Feature', style: TextStyle(fontSize: 20)),
+              toggle('Income', 'Selected Date Income'),
+              toggle('Export', 'Export data to Excel'),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   ElevatedButton(
-                    child: const Text('Close'),
                     onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
                   ),
                 ],
               ),
@@ -464,63 +298,23 @@ class _StatisticsPageState extends State<StatisticsPage>
     );
   }
 
-  Widget _buildListTile(
-      String title, String subtitle, IconData icon, VoidCallback onTap) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      onTap: onTap,
-    );
-  }
-
-  Map<String, dynamic> getOrderCount(List<dynamic> data) {
-    if (allorderSave.isEmpty) {
-      Map<String, dynamic> allOrders = {};
-
-      for (int i = 0; i < data.length; i++) {
-        List<dynamic> perData = data[i]['details'];
-        for (int j = 0; j < perData.length; j++) {
-          if (allOrders.containsKey(perData[j]['name'])) {
-            allOrders[perData[j]['name']]['amount'] += perData[j]['amount'];
-          } else {
-            allOrders.putIfAbsent(perData[j]['name'], () => perData[j]);
-          }
-        }
-      }
-      allorderSave = allOrders;
-
-      debugPrint('allOrders: $allOrders');
-      return allOrders;
-    } else {
-      return allorderSave;
-    }
-  }
-
   /// Return the Cartesian Chart with Column series.
   SfCartesianChart _buildCartesianChart(
       String chartTitle, List<ChartSampleData> data) {
-    // Calculate max from data
-    num? max = 0;
-    for (int i = 0; i < data.length; i++) {
-      if (data[i].yValue! > max!) {
-        max = data[i].yValue!;
-      }
+    num max = 0;
+    for (final point in data) {
+      if ((point.yValue ?? 0) > max) max = point.yValue!;
     }
-
-    double maxVal = double.parse(max.toString());
 
     return SfCartesianChart(
       plotAreaBorderWidth: 0,
-      title: ChartTitle(
-        text: chartTitle,
-      ),
+      title: ChartTitle(text: chartTitle),
       primaryXAxis: const CategoryAxis(
         majorGridLines: MajorGridLines(width: 0),
       ),
       primaryYAxis: NumericAxis(
         minimum: 0,
-        maximum: maxVal,
+        maximum: max.toDouble() == 0 ? 1 : max.toDouble(),
         isVisible: true,
         labelFormat: '{value}',
       ),
@@ -538,29 +332,25 @@ class _StatisticsPageState extends State<StatisticsPage>
         xValueMapper: (ChartSampleData data, int index) => data.x,
         yValueMapper: (ChartSampleData data, int index) => data.yValue,
         pointColorMapper: (ChartSampleData data, int index) => data.pointColor,
-        dataLabelSettings: const DataLabelSettings(
-          isVisible: true,
-        ),
+        dataLabelSettings: const DataLabelSettings(isVisible: true),
       ),
     ];
   }
 
-  Widget _buildCard(
-      {required String title,
-      String? value,
-      IconData? icon,
-      required VoidCallback onTap,
-      double? growth}) {
-    Container growthContainer;
+  Widget _buildCard({
+    required String title,
+    String? value,
+    IconData? icon,
+    required VoidCallback onTap,
+    double? growth,
+  }) {
+    Widget growthContainer = const SizedBox.shrink();
 
-    if (growth == null) {
-      growthContainer = Container();
-    } else {
-      Icon icon = growth >= 0
+    if (growth != null) {
+      final trendIcon = growth >= 0
           ? const Icon(Icons.trending_up_rounded, size: 16, color: Colors.green)
           : const Icon(Icons.trending_down_rounded,
               size: 16, color: Colors.red);
-      String growthText = growth >= 0 ? ' $growth%' : ' $growth%';
 
       growthContainer = Container(
         padding: const EdgeInsets.all(4),
@@ -570,9 +360,9 @@ class _StatisticsPageState extends State<StatisticsPage>
         ),
         child: Row(
           children: [
-            icon,
+            trendIcon,
             Text(
-              growthText,
+              ' $growth%',
               style: TextStyle(
                 color: growth >= 0 ? Colors.green : Colors.red,
                 fontWeight: FontWeight.bold,
@@ -607,24 +397,22 @@ class _StatisticsPageState extends State<StatisticsPage>
                           Icon(icon, color: Theme.of(context).iconTheme.color),
                     ),
                     const SizedBox(width: 10),
-                    Text(title),
+                    Flexible(child: Text(title)),
                   ],
                 ),
-                SizedBox(
-                  height: 16,
-                ),
+                const SizedBox(height: 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Text(
-                      value ?? '',
-                      style: const TextStyle(fontSize: 24),
+                    Flexible(
+                      child: FittedBox(
+                        child: Text(value ?? '',
+                            style: const TextStyle(fontSize: 24)),
+                      ),
                     ),
                     growth != null
-                        ? Spacer()
-                        : SizedBox(
-                            width: 8,
-                          ),
+                        ? const Spacer()
+                        : const SizedBox(width: 8),
                     growthContainer,
                   ],
                 ),
@@ -640,82 +428,28 @@ class _StatisticsPageState extends State<StatisticsPage>
 ///Chart sample data
 class ChartSampleData {
   /// Holds the datapoint values like x, y, etc.,
-  ChartSampleData(
-      {this.x,
-      this.y,
-      this.xValue,
-      this.yValue,
-      this.secondSeriesYValue,
-      this.thirdSeriesYValue,
-      this.pointColor,
-      this.size,
-      this.text,
-      this.open,
-      this.close,
-      this.low,
-      this.high,
-      this.volume});
+  ChartSampleData({this.x, this.yValue, this.pointColor});
 
   /// Holds x value of the datapoint
   final dynamic x;
 
   /// Holds y value of the datapoint
-  final num? y;
-
-  /// Holds x value of the datapoint
-  final dynamic xValue;
-
-  /// Holds y value of the datapoint
   final num? yValue;
-
-  /// Holds y value of the datapoint(for 2nd series)
-  final num? secondSeriesYValue;
-
-  /// Holds y value of the datapoint(for 3nd series)
-  final num? thirdSeriesYValue;
 
   /// Holds point color of the datapoint
   final Color? pointColor;
-
-  /// Holds size of the datapoint
-  final num? size;
-
-  /// Holds datalabel/text value mapper of the datapoint
-  final String? text;
-
-  /// Holds open value of the datapoint
-  final num? open;
-
-  /// Holds close value of the datapoint
-  final num? close;
-
-  /// Holds low value of the datapoint
-  final num? low;
-
-  /// Holds high value of the datapoint
-  final num? high;
-
-  /// Holds open value of the datapoint
-  final num? volume;
 }
 
-class _ChartData {
-  _ChartData(this.x, this.y, {this.color = Colors.blue});
-
-  final String x;
-  final double y;
-  final Color color;
-}
-
-SfRadialGauge _buildRangePointerGauge(currentOrders, expectOrders) {
-  double ordersPercent = (currentOrders / expectOrders) * 100;
+SfRadialGauge _buildRangePointerGauge(num currentOrders, num expectOrders) {
+  final safeTarget = expectOrders <= 0 ? 1 : expectOrders;
+  final ordersPercent = (currentOrders / safeTarget) * 100;
 
   return SfRadialGauge(
     axes: <RadialAxis>[
       RadialAxis(
         showLabels: true,
         showTicks: false,
-        maximum: expectOrders.toDouble(),
+        maximum: safeTarget.toDouble(),
         radiusFactor: 0.8,
         axisLineStyle: const AxisLineStyle(
           thicknessUnit: GaugeSizeUnit.factor,
@@ -731,8 +465,8 @@ SfRadialGauge _buildRangePointerGauge(currentOrders, expectOrders) {
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Text(
-                      currentOrders.toString(),
-                      style: TextStyle(
+                      '$currentOrders',
+                      style: const TextStyle(
                         fontFamily: 'Times',
                         fontSize: 22,
                         fontWeight: FontWeight.w400,
@@ -741,7 +475,7 @@ SfRadialGauge _buildRangePointerGauge(currentOrders, expectOrders) {
                     ),
                     Text(
                       ' / $expectOrders',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontFamily: 'Times',
                         fontSize: 22,
                         fontWeight: FontWeight.w400,
@@ -750,16 +484,14 @@ SfRadialGauge _buildRangePointerGauge(currentOrders, expectOrders) {
                     ),
                   ],
                 ),
-                Text(
-                  '$ordersPercent%',
-                ),
+                Text('${ordersPercent.toStringAsFixed(0)}%'),
               ],
             ),
           ),
         ],
         pointers: <GaugePointer>[
           RangePointer(
-            value: currentOrders.toDouble(),
+            value: currentOrders.toDouble().clamp(0, safeTarget.toDouble()),
             enableAnimation: true,
             animationDuration: 1000,
             sizeUnit: GaugeSizeUnit.factor,
@@ -779,12 +511,10 @@ SfRadialGauge _buildRangePointerGauge(currentOrders, expectOrders) {
 extension DateTimeExtension on DateTime {
   int get weekOfYear {
     // Add 3 to the date to ensure it falls within the correct week
-    DateTime date = this.add(const Duration(days: 3));
+    DateTime date = add(const Duration(days: 3));
     int dayOfYear = int.parse(DateFormat("D").format(date));
     return ((dayOfYear - date.weekday + 10) / 7).floor();
   }
 
-  int get weekOfMonth {
-    return (day / 7).ceil();
-  }
+  int get weekOfMonth => (day / 7).ceil();
 }

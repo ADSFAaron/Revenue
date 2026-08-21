@@ -1,11 +1,10 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../database/repositories.dart';
+import '../models/daily_stats.dart';
 import 'addorder.dart';
 
 class OverviewPage extends StatefulWidget {
@@ -16,92 +15,61 @@ class OverviewPage extends StatefulWidget {
 }
 
 class _OverviewPageState extends State<OverviewPage> {
-  final User currentUser = FirebaseAuth.instance.currentUser!;
-  late Future<Map<String, dynamic>> _userDataFuture;
+  late final Future<Session> _session = loadSession();
+  Timer? _clock;
   late String _timeString;
 
   @override
   void initState() {
     super.initState();
-    _userDataFuture = _fetchUserData();
     _timeString = _formatDateTime(DateTime.now());
-    Timer.periodic(const Duration(minutes: 1), (timer) {
-      setState(() {
-        _timeString = _formatDateTime(DateTime.now());
-      });
+    _clock = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) {
+        setState(() => _timeString = _formatDateTime(DateTime.now()));
+      }
     });
   }
 
-  Future<Map<String, dynamic>> _fetchUserData() async {
-    try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser.email)
-          .get();
-
-      final userData = userDoc.data();
-      if (userData == null) {
-        throw Exception("User data not found");
-      }
-      return userData;
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error fetching user data: $e');
-      }
-      rethrow;
-    }
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
   }
 
-  String _formatDateTime(DateTime dateTime) {
-    return DateFormat('yyyy/MM/dd\nH:mm').format(dateTime);
-  }
+  String _formatDateTime(DateTime dateTime) =>
+      DateFormat('yyyy/MM/dd\nH:mm').format(dateTime);
 
   String _getGreeting(DateTime now) {
-    if (now.hour >= 6 && now.hour <= 12) {
-      return "☀️ Morning";
-    } else if (now.hour >= 13 && now.hour <= 18) {
-      return "🌻 Afternoon";
-    } else if (now.hour >= 19 && now.hour <= 23) {
-      return "Evening";
-    } else {
-      return "🌝 Night";
-    }
+    if (now.hour >= 6 && now.hour <= 12) return "☀️ Morning";
+    if (now.hour >= 13 && now.hour <= 18) return "🌻 Afternoon";
+    if (now.hour >= 19 && now.hour <= 23) return "Evening";
+    return "🌝 Night";
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _userDataFuture,
-      builder:
-          (BuildContext context, AsyncSnapshot<Map<String, dynamic>> snapshot) {
+    return FutureBuilder<Session>(
+      future: _session,
+      builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
-        } else if (snapshot.hasError) {
-          return Center(
-            child: Text('Error: ${snapshot.error}'),
-          );
-        } else if (!snapshot.hasData) {
-          return const Center(
-            child: Text('No user data available'),
-          );
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
         }
 
-        final userData = snapshot.data!;
-        final String greeting =
-            "${_getGreeting(DateTime.now())}, ${userData['name']}";
+        final session = snapshot.data!;
+        final greeting =
+            "${_getGreeting(DateTime.now())}, ${session.user.displayName}";
 
         return Scaffold(
           floatingActionButton: FloatingActionButton.extended(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => AddOrder(userData['storeID']),
-                ),
-              );
-            },
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AddOrder(session.storeId),
+              ),
+            ),
             icon: const Icon(Icons.add),
             label: const Text('Add Order'),
           ),
@@ -113,194 +81,34 @@ class _OverviewPageState extends State<OverviewPage> {
                 children: [
                   _buildHeader(greeting, _timeString),
                   const SizedBox(height: 20),
-                  Card(
-                    elevation: 0,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16.0, vertical: 32),
-                      child: Column(
+                  // Today's figures come from the day's rollup document.
+                  StreamBuilder<DailyStats>(
+                    stream: statsRepository.watchDay(
+                        session.storeId, session.store.currentBusinessDate),
+                    builder: (context, snapshot) {
+                      final stats = snapshot.data ??
+                          DailyStats(
+                              businessDate:
+                                  session.store.currentBusinessDate);
+                      final money = NumberFormat.decimalPattern();
+                      return Column(
                         children: [
-                          ListTile(
-                            onTap: () {
-                              SnackBar snackBar = SnackBar(
-                                content:
-                                    Text('Store ID: ${userData['storeID']}'),
-                              );
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(snackBar);
-                            },
-                            title: const Text('Total Property'),
-                            leading: Container(
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).splashColor,
-                                borderRadius: BorderRadius.circular(48),
-                              ),
-                              height: 48,
-                              width: 48,
-                              child: Icon(Icons.shopping_bag_rounded,
-                                  color: Theme.of(context).iconTheme.color),
-                            ),
-                            trailing: IconButton.outlined(
-                              icon: const Icon(Icons.arrow_forward_ios_rounded,
-                                  size: 16),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Theme.of(context).primaryColor,
-                                side: const BorderSide(color: Colors.grey),
-                              ),
-                              onPressed: () {
-                                SnackBar snackBar = SnackBar(
-                                  content: Text(
-                                      'Navigate to Transaction Page with store ID: ${userData['storeID']}'),
-                                );
-                                ScaffoldMessenger.of(context)
-                                    .showSnackBar(snackBar);
-                              },
-                            ),
+                          _buildStatCard(
+                            title: "Today's Revenue",
+                            icon: Icons.savings_rounded,
+                            prefix: 'NTD ',
+                            value: money.format(stats.revenue),
+                            storeId: session.storeId,
                           ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                            child: Row(
-                              children: [
-                                const Text('NTD '),
-                                Text(
-                                  '12345',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 28,
-                                  ),
-                                ),
-                                SizedBox(width: 16),
-                                Spacer(),
-                                Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green[100],
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.trending_up_rounded,
-                                        size: 16,
-                                        color: Colors.green,
-                                      ),
-                                      const Text(
-                                        (' 5%'),
-                                        style: TextStyle(
-                                          color: Colors.green,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Last month 1234',
-                                  style: const TextStyle(
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          _buildStatCard(
+                            title: 'Number of Sales',
+                            icon: Icons.shopping_bag_rounded,
+                            value: money.format(stats.orderCount),
+                            storeId: session.storeId,
                           ),
                         ],
-                      ),
-                    ),
-                  ),
-                  Card(
-                    elevation: 0,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16.0, vertical: 32),
-                      child: Column(
-                        children: [
-                          ListTile(
-                            onTap: () {
-                              SnackBar snackBar = SnackBar(
-                                content:
-                                    Text('Store ID: ${userData['storeID']}'),
-                              );
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(snackBar);
-                            },
-                            title: const Text('Number of Sales'),
-                            leading: Container(
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).splashColor,
-                                borderRadius: BorderRadius.circular(48),
-                              ),
-                              height: 48,
-                              width: 48,
-                              child: Icon(Icons.shopping_bag_rounded,
-                                  color: Theme.of(context).iconTheme.color),
-                            ),
-                            trailing: IconButton.outlined(
-                              icon: const Icon(Icons.arrow_forward_ios_rounded,
-                                  size: 16),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Theme.of(context).primaryColor,
-                                side: const BorderSide(color: Colors.grey),
-                              ),
-                              onPressed: () {
-                                SnackBar snackBar = SnackBar(
-                                  content: Text(
-                                      'Navigate to Transaction Page with store ID: ${userData['storeID']}'),
-                                );
-                                ScaffoldMessenger.of(context)
-                                    .showSnackBar(snackBar);
-                              },
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                            child: Row(
-                              children: [
-                                Text(
-                                  '12345',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 28,
-                                  ),
-                                ),
-                                SizedBox(width: 16),
-                                Spacer(),
-                                Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green[100],
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.trending_up_rounded,
-                                        size: 16,
-                                        color: Colors.green,
-                                      ),
-                                      const Text(
-                                        (' 5%'),
-                                        style: TextStyle(
-                                          color: Colors.green,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Last month 1234',
-                                  style: const TextStyle(
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -311,32 +119,75 @@ class _OverviewPageState extends State<OverviewPage> {
     );
   }
 
+  Widget _buildStatCard({
+    required String title,
+    required IconData icon,
+    required String value,
+    required String storeId,
+    String prefix = '',
+  }) {
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24),
+        child: Column(
+          children: [
+            ListTile(
+              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Store ID: $storeId')),
+              ),
+              title: Text(title),
+              leading: Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).splashColor,
+                  borderRadius: BorderRadius.circular(48),
+                ),
+                height: 48,
+                width: 48,
+                child: Icon(icon, color: Theme.of(context).iconTheme.color),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                children: [
+                  if (prefix.isNotEmpty) Text(prefix),
+                  Flexible(
+                    child: FittedBox(
+                      child: Text(
+                        value,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 28,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildHeader(String greeting, String time) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                greeting,
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
+          Text(
+            greeting,
+            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
           ),
+          const SizedBox(height: 8),
+          Text(time, style: const TextStyle(fontSize: 14, color: Colors.grey)),
           const SizedBox(height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Explore information and activity \nabout your store',
-                style: TextStyle(fontSize: 16, color: Colors.black54),
-              ),
-            ],
+          const Text(
+            'Explore information and activity \nabout your store',
+            style: TextStyle(fontSize: 16, color: Colors.black54),
           ),
         ],
       ),

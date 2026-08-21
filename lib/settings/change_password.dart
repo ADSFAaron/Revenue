@@ -1,9 +1,12 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../database/repositories.dart';
+
 class ChangePassword extends StatefulWidget {
-  final String usermail;
-  ChangePassword(this.usermail, {super.key});
+  /// Takes no email: re-authentication has to use the address the signed-in
+  /// account actually has, which the auth layer already knows. Passing one down
+  /// from the settings screen only created something that could go stale.
+  const ChangePassword({super.key});
 
   @override
   State<ChangePassword> createState() => _ChangePasswordState();
@@ -127,33 +130,38 @@ class _ChangePasswordState extends State<ChangePassword> {
     });
 
     _changePassword(
-      widget.usermail,
       oldPasswordController.text,
       newPasswordController.text,
     );
   }
 
-  void _changePassword(String currentMail, String currentPassword, String newPassword) async {
-    final user = FirebaseAuth.instance.currentUser;
-    final credential =
-    EmailAuthProvider.credential(email: currentMail, password: currentPassword);
-
+  void _changePassword(String currentPassword, String newPassword) async {
     try {
-      await user?.reauthenticateWithCredential(credential);
-      await user?.updatePassword(newPassword);
+      await authRepository.changePassword(
+        currentPassword: currentPassword,
+        newPassword: newPassword,
+      );
+      if (!mounted) return;
       _showSnackBar('Password updated successfully', isError: false);
       oldPasswordController.clear();
       newPasswordController.clear();
       reNewPasswordController.clear();
-      Navigator.pop(context); // 返回上一頁
-    } on FirebaseAuthException catch (error) {
-      _showSnackBar(error.message ?? 'An error occurred');
+      Navigator.pop(context);
+    } on AuthException catch (error) {
+      // Re-authentication rejects the *current* password, so say so — the
+      // generic wording sent people off to check the new one instead.
+      if (!mounted) return;
+      _showSnackBar(error.failure == AuthFailure.wrongPassword
+          ? 'That is not your current password.'
+          : error.message);
     } catch (e) {
-      _showSnackBar('An unexpected error occurred');
+      if (mounted) _showSnackBar('An unexpected error occurred');
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
   }
 

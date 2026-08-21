@@ -1,25 +1,24 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/app_user.dart';
+import 'auth_repository.dart';
 
 /// Everything that touches `users/{uid}`.
 ///
 /// Documents are keyed by the Firebase Auth uid. Nothing outside this class
 /// should assume anything about how a user is stored.
 class UserRepository {
-  UserRepository({FirebaseFirestore? firestore, FirebaseAuth? auth})
+  UserRepository({FirebaseFirestore? firestore, AuthRepository? auth})
       : _db = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+        _auth = auth ?? AuthRepository();
 
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
+
+  /// Only for resolving "who is signed in" — who that person *is* lives in
+  /// `users/{uid}`, which is this class's business; the uid itself is not.
+  final AuthRepository _auth;
 
   CollectionReference<Map<String, dynamic>> get _users => _db.collection('users');
-
-  String? get currentUid => _auth.currentUser?.uid;
-
-  String? get currentEmail => _auth.currentUser?.email;
 
   Future<AppUser?> fetch(String uid) async {
     final doc = await _users.doc(uid).get();
@@ -28,12 +27,12 @@ class UserRepository {
 
   /// The signed-in user's profile, or null when signed out.
   Future<AppUser?> fetchCurrent() async {
-    final uid = currentUid;
+    final uid = _auth.currentUid;
     return uid == null ? null : fetch(uid);
   }
 
   Stream<AppUser?> watchCurrent() {
-    final uid = currentUid;
+    final uid = _auth.currentUid;
     if (uid == null) return Stream.value(null);
     return _users
         .doc(uid)

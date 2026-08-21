@@ -204,7 +204,7 @@ class _AddOrderState extends State<AddOrder> {
       final orderNo = await orderRepository.submit(
         store: store,
         draft: draft,
-        createdBy: userRepository.currentUid,
+        createdBy: authRepository.currentUid,
       );
       if (!mounted) return;
       _snack('Order #$orderNo added');

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
 import '../database/repositories.dart';
@@ -97,7 +96,7 @@ class _StorePageState extends State<StorePage> {
                 _buildListTile(
                   title: 'Logout',
                   icon: Icons.logout_outlined,
-                  onTap: () => FirebaseAuth.instance.signOut(),
+                  onTap: authRepository.signOut,
                 ),
               ],
             ),

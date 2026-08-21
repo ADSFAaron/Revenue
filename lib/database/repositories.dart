@@ -1,5 +1,6 @@
 import '../models/app_user.dart';
 import '../models/store.dart';
+import 'auth_repository.dart';
 import 'feedback_repository.dart';
 import 'menu_repository.dart';
 import 'order_repository.dart';
@@ -7,6 +8,7 @@ import 'stats_repository.dart';
 import 'store_repository.dart';
 import 'user_repository.dart';
 
+export 'auth_repository.dart';
 export 'feedback_repository.dart';
 export 'menu_repository.dart';
 export 'order_repository.dart';
@@ -16,10 +18,11 @@ export 'user_repository.dart';
 
 /// The single entry point to stored data.
 ///
-/// No widget may reach for `FirebaseFirestore.instance` directly. Keeping every
-/// query behind these five objects is what makes the backend replaceable later
-/// without touching a single screen.
-final userRepository = UserRepository();
+/// No widget may reach for `FirebaseFirestore.instance` or `FirebaseAuth`
+/// directly. Keeping every query and every sign-in call behind these objects is
+/// what makes the backend replaceable later without touching a single screen.
+final authRepository = AuthRepository();
+final userRepository = UserRepository(auth: authRepository);
 final storeRepository = StoreRepository();
 final menuRepository = MenuRepository();
 final orderRepository = OrderRepository();
@@ -55,7 +58,7 @@ Future<Session> loadSession() async {
   // not report the same thing: telling someone who just signed in that they are
   // "not signed in" sends them straight back to a login screen that will not
   // help.
-  final uid = userRepository.currentUid;
+  final uid = authRepository.currentUid;
   if (uid == null) {
     throw const SessionException('You are not signed in.');
   }
@@ -63,7 +66,7 @@ Future<Session> loadSession() async {
   final user = await userRepository.fetch(uid);
   if (user == null) {
     throw SessionException(
-      'Signed in as ${userRepository.currentEmail ?? uid}, but this account '
+      'Signed in as ${authRepository.currentEmail ?? uid}, but this account '
       'has no profile document yet.\n\n'
       'This happens when a sign-in account outlives its Firestore data — for '
       'example after the database was cleared. Sign out and register again '

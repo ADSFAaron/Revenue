@@ -1,9 +1,9 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'animation/FadeAnimation.dart';
+import 'database/repositories.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -190,26 +190,16 @@ class _LoginPageState extends State<LoginPage> {
     );
 
     try {
-      await FirebaseAuth.instance
-          .signInWithEmailAndPassword(email: email, password: password);
+      await authRepository.signIn(email: email, password: password);
 
       if (!mounted) return;
       // Dismiss the spinner, then fall back to the root, which is watching auth
       // state and shows the shell through the session gate.
       Navigator.of(context).popUntil((route) => route.isFirst);
-    } on FirebaseAuthException catch (e) {
+    } on AuthException catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // the spinner
-      showError(switch (e.code) {
-        'invalid-credential' ||
-        'wrong-password' ||
-        'user-not-found' =>
-          'Wrong email or password.',
-        'invalid-email' => 'That is not a valid email address.',
-        'user-disabled' => 'This account has been disabled.',
-        'network-request-failed' => 'No connection to Firebase.',
-        _ => e.message ?? 'Unknown error (${e.code})',
-      });
+      showError(e.message);
     }
   }
 

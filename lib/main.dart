@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -11,14 +10,6 @@ import 'login.dart';
 import 'register.dart';
 import 'theme.dart';
 
-// Firebase Authentication Service
-class FirebaseAuthService {
-  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
-
-  Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
-}
-
-final FirebaseAuthService authService = FirebaseAuthService();
 final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
@@ -51,8 +42,10 @@ class HomePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: StreamBuilder<User?>(
-        stream: authService.authStateChanges,
+      body: StreamBuilder<String?>(
+        // Emits the signed-in uid, or null when signed out — `hasData` is
+        // false for null, so signing out falls through to the welcome screen.
+        stream: authRepository.uidChanges,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -143,7 +136,7 @@ class _SessionGateState extends State<_SessionGate> {
                   ),
                   const SizedBox(width: 12),
                   TextButton(
-                    onPressed: () => FirebaseAuth.instance.signOut(),
+                    onPressed: authRepository.signOut,
                     child: const Text('Sign out'),
                   ),
                 ],

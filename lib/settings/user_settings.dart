@@ -65,7 +65,7 @@ class UserSettings extends StatelessWidget {
           title: const Text('Change Password'),
           onTap: () => Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => ChangePassword(usermail)),
+            MaterialPageRoute(builder: (context) => const ChangePassword()),
           ),
         ),
       ],

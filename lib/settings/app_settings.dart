@@ -133,7 +133,7 @@ class _AppSettingsState extends State<AppSettings> {
         message: feedbackController.text.trim(),
         version: packageInfo.version,
         build: packageInfo.buildNumber,
-        uid: userRepository.currentUid,
+        uid: authRepository.currentUid,
       );
       if (!mounted) return;
       feedbackController.clear();

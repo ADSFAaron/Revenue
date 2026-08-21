@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
@@ -275,26 +274,27 @@ class _RegisterPageState extends State<RegisterPage> {
     if (isSubmitting || !validateInput()) return;
     setState(() => isSubmitting = true);
 
+    final email = emailController.text.trim();
+
     try {
-      final credential =
-          await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: emailController.text.trim(),
+      final uid = await authRepository.register(
+        email: email,
         password: passwordController.text,
       );
 
-      await _provisionAccount(credential.user!);
+      await _provisionAccount(uid, email);
 
       if (!mounted) return;
       // Pop back to the root, which is already watching auth state and will
       // show the shell through the session gate. Pushing a second shell here
       // used to leave two of them mounted, each with its own timers.
       Navigator.of(context).popUntil((route) => route.isFirst);
-    } on FirebaseAuthException catch (e) {
-      if (mounted) handleFirebaseErrors(e);
+    } on AuthException catch (e) {
+      if (mounted) showAuthError(e);
     } catch (e) {
       // The auth account exists but its store data does not, which would leave
       // an account that can sign in and then find nothing. Undo it.
-      await FirebaseAuth.instance.currentUser?.delete().catchError((_) {});
+      await authRepository.deleteCurrentAccount();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -316,12 +316,12 @@ class _RegisterPageState extends State<RegisterPage> {
   /// Entering a store ID that already exists joins that store as staff;
   /// otherwise the store is created here, along with a starter menu, so a new
   /// owner does not land on an empty app.
-  Future<void> _provisionAccount(User authUser) async {
+  Future<void> _provisionAccount(String uid, String email) async {
     final storeId = storeIDController.text.trim();
 
     await userRepository.create(AppUser(
-      uid: authUser.uid,
-      email: authUser.email ?? emailController.text.trim(),
+      uid: uid,
+      email: email,
       displayName: nameController.text.trim(),
       storeId: storeId,
       role: UserRole.staff,
@@ -331,7 +331,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
     // Creating the store makes this person its owner. The role has to be
     // raised before the menu is seeded, because menu writes are manager-only.
-    await userRepository.updateRole(authUser.uid, UserRole.owner);
+    await userRepository.updateRole(uid, UserRole.owner);
     await storeRepository.create(Store(
       id: storeId,
       name: storeNameController.text.trim(),
@@ -362,26 +362,17 @@ class _RegisterPageState extends State<RegisterPage> {
         storeNameErrorMsg.isEmpty;
   }
 
-  void handleFirebaseErrors(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'weak-password':
-        setState(() =>
-            passwordErrorMsg = 'The password must be at least 6 characters.');
-      case 'email-already-in-use':
-        setState(() =>
-            mailErrorMsg = 'The account already exists for that email.');
-      case 'invalid-email':
-        setState(() => mailErrorMsg = 'That is not a valid email address.');
-      case 'operation-not-allowed':
-        // Email/password sign-in is switched off in the Firebase console.
-        _showError('Email/password sign-in is not enabled for this Firebase '
-            'project. Enable it under Authentication → Sign-in method.');
-      case 'network-request-failed':
-        _showError('No connection to Firebase. Check your network.');
+  /// Puts the failure where the person can act on it: under the field that
+  /// caused it when there is one, in a snackbar when there is not.
+  void showAuthError(AuthException e) {
+    switch (e.failure) {
+      case AuthFailure.weakPassword:
+        setState(() => passwordErrorMsg = e.message);
+      case AuthFailure.emailInUse:
+      case AuthFailure.invalidEmail:
+        setState(() => mailErrorMsg = e.message);
       default:
-        // Anything unhandled used to fail silently: the button simply stopped
-        // spinning and nothing on screen said why.
-        _showError('Registration failed (${e.code}): ${e.message ?? ''}');
+        _showError(e.message);
     }
   }
 

@@ -1,5 +1,7 @@
 import '../models/app_user.dart';
+import '../models/audit_log.dart';
 import '../models/store.dart';
+import 'audit_log_repository.dart';
 import 'auth_repository.dart';
 import 'feedback_repository.dart';
 import 'menu_repository.dart';
@@ -8,6 +10,7 @@ import 'stats_repository.dart';
 import 'store_repository.dart';
 import 'user_repository.dart';
 
+export 'audit_log_repository.dart';
 export 'auth_repository.dart';
 export 'feedback_repository.dart';
 export 'menu_repository.dart';
@@ -28,6 +31,20 @@ final menuRepository = MenuRepository();
 final orderRepository = OrderRepository();
 final statsRepository = StatsRepository();
 final feedbackRepository = FeedbackRepository();
+final auditLogRepository = AuditLogRepository();
+
+Actor? _lastKnownActor;
+
+/// The signed-in person, for stamping onto audit entries.
+///
+/// Served from whatever [loadSession] last resolved rather than re-read: every
+/// screen calls loadSession on the way in, so the name is already in hand, and
+/// spending a document read per voided order to fetch a name we just had would
+/// be careless. Falls back to the uid alone if a change somehow happens before
+/// any session resolved — an entry naming only a uid is still far better than
+/// no entry.
+Actor currentActor() =>
+    _lastKnownActor ?? Actor(uid: authRepository.currentUid);
 
 /// The signed-in user together with the store they belong to.
 class Session {
@@ -84,5 +101,6 @@ Future<Session> loadSession() async {
       'exists. It was probably removed after this account was created.',
     );
   }
+  _lastKnownActor = Actor(uid: user.uid, name: user.displayName);
   return Session(user: user, store: store);
 }

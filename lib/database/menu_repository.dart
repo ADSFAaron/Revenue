@@ -1,18 +1,22 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../models/audit_log.dart';
 import '../models/menu_item.dart';
 import '../models/store.dart';
+import 'audit_log_repository.dart';
 
 /// Everything that touches `stores/{storeId}/menuItems/{itemId}`.
 ///
 /// The menu is a subcollection rather than an array on the store document so
 /// that each dish keeps a stable id across renames and price changes.
 class MenuRepository {
-  MenuRepository({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance;
+  MenuRepository({FirebaseFirestore? firestore, AuditLogRepository? auditLogs})
+      : _db = firestore ?? FirebaseFirestore.instance,
+        _auditLogs = auditLogs ?? AuditLogRepository();
 
   final FirebaseFirestore _db;
+  final AuditLogRepository _auditLogs;
 
   CollectionReference<Map<String, dynamic>> _items(String storeId) =>
       _db.collection('stores').doc(storeId).collection('menuItems');
@@ -102,11 +106,49 @@ class MenuRepository {
     return ref.id;
   }
 
-  Future<void> update(String storeId, MenuItem item) =>
-      _items(storeId).doc(item.id).update({
-        ...item.toMap(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+  /// Saves an edited dish, recording the change when it moves the price.
+  ///
+  /// Pass [previous] and [by] to have a repricing show up in the audit log.
+  /// Only the price is logged: a rename or a new icon cannot change what a
+  /// till takes, and logging every keystroke would bury the entries that
+  /// matter.
+  Future<void> update(
+    String storeId,
+    MenuItem item, {
+    MenuItem? previous,
+    Actor? by,
+  }) async {
+    final data = {
+      ...item.toMap(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    final repriced = previous != null && previous.price != item.price;
+    if (!repriced) {
+      await _items(storeId).doc(item.id).update(data);
+      return;
+    }
+
+    // Batched so the new price and the record of it land together. Two separate
+    // writes would let a dropped connection leave a changed price with nothing
+    // saying who changed it — which is the one case the entry exists for.
+    final batch = _db.batch();
+    batch.update(_items(storeId).doc(item.id), data);
+    final (logRef, logData) = _auditLogs.entryFor(
+      storeId,
+      AuditLog(
+        id: '',
+        action: AuditAction.editMenuPrice,
+        targetId: item.id,
+        before: {'name': previous.name, 'price': previous.price},
+        after: {'name': item.name, 'price': item.price},
+        byUid: by?.uid,
+        byName: by?.name,
+      ),
+    );
+    batch.set(logRef, logData);
+    await batch.commit();
+  }
 
   /// Retires a dish. Never deletes it: past orders reference this id, and a
   /// missing item turns them into rows nobody can interpret.

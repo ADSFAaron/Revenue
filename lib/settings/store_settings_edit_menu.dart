@@ -322,6 +322,8 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
             icon: iconCodePoint,
             categoryId: categoryId,
           ),
+          previous: existing,
+          by: currentActor(),
         );
       } else {
         await menuRepository.add(

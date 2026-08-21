@@ -195,6 +195,7 @@ class _AddOrderState extends State<AddOrder> {
           store: store,
           orderId: widget.existing!.id,
           draft: draft,
+          by: currentActor(),
         );
         if (!mounted) return;
         Navigator.pop(context, true);

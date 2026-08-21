@@ -285,7 +285,7 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
       await orderRepository.voidOrder(
         store: store,
         orderId: _order.id,
-        byUid: authRepository.currentUid,
+        by: currentActor(),
         reason: reason.isEmpty ? null : reason,
       );
       final refreshed = await orderRepository.fetch(widget.storeID, _order.id);

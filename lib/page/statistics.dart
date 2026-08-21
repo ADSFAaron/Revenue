@@ -6,13 +6,14 @@ import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart';
 
 import '../database/repositories.dart';
+import '../export/statistics_workbook.dart';
+import '../export/workbook_saver.dart';
 import '../models/daily_stats.dart';
 import '../models/stats_period.dart';
 import '../models/store.dart';
 import 'analysis.dart';
 
-// Phase 5 of docs/refactor-plan.md still owes this page Excel export (F4), and
-// the Gemini button (F7) is still unwired.
+// The Gemini button (F7) is still unwired.
 
 class StatisticsPage extends StatefulWidget {
   const StatisticsPage({super.key});
@@ -38,6 +39,7 @@ class _StatisticsPageState extends State<StatisticsPage>
   Stream<PeriodReport>? _reportStream;
 
   bool isDark = false;
+  bool _exporting = false;
 
   Map<String, bool> featureSelected = {
     'Income': false,
@@ -95,6 +97,40 @@ class _StatisticsPageState extends State<StatisticsPage>
     // Keeps where you are in time: paging back to June and then switching to
     // Day lands on a day in June rather than jumping back to today.
     setState(() => _setPeriod(_period!.withGranularity(granularity)));
+  }
+
+  /// Writes the period on screen out as a spreadsheet.
+  ///
+  /// Encoding a workbook is slow enough to be noticed, so the card is latched
+  /// while it runs — tapping twice would otherwise start a second export and
+  /// hand back two files.
+  Future<void> _export(Session session, PeriodReport report) async {
+    setState(() => _exporting = true);
+    try {
+      final workbook = StatisticsWorkbook(
+        store: session.store,
+        period: report.period,
+        days: report.days,
+      );
+      final outcome = await saveWorkbook(
+        excel: workbook.build(),
+        fileName: workbook.fileName,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(outcome.description)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red,
+          content: Text('Export failed: $error'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 
   void _step(int direction) {
@@ -289,9 +325,13 @@ class _StatisticsPageState extends State<StatisticsPage>
                 if (featureSelected['Export']!)
                   _buildCard(
                     title: 'Export',
-                    icon: Icons.download_outlined,
+                    icon: _exporting
+                        ? Icons.hourglass_top_rounded
+                        : Icons.download_outlined,
                     value: 'Excel',
-                    onTap: () => debugPrint('excel tapped'),
+                    // Exports exactly the period on screen, so what lands in
+                    // the file is what the page is showing.
+                    onTap: _exporting ? null : () => _export(session, report),
                   ),
                 _buildAddMoreCard(context),
               ],

@@ -2,9 +2,11 @@
 // domain object.
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 
+import '../models/audit_log.dart';
 import '../models/order.dart';
 import '../models/order_draft.dart';
 import '../models/store.dart';
+import 'audit_log_repository.dart';
 
 /// Everything that touches `stores/{storeId}/orders/{orderId}`, plus the two
 /// documents that must move with it: the day's order-number counter and the
@@ -14,10 +16,12 @@ import '../models/store.dart';
 /// inside a single array field, which rewrote the whole history on each sale
 /// and would hit Firestore's 1 MB per-document ceiling within months.
 class OrderRepository {
-  OrderRepository({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance;
+  OrderRepository({FirebaseFirestore? firestore, AuditLogRepository? auditLogs})
+      : _db = firestore ?? FirebaseFirestore.instance,
+        _auditLogs = auditLogs ?? AuditLogRepository();
 
   final FirebaseFirestore _db;
+  final AuditLogRepository _auditLogs;
 
   DocumentReference<Map<String, dynamic>> _store(String storeId) =>
       _db.collection('stores').doc(storeId);
@@ -85,6 +89,7 @@ class OrderRepository {
     required Store store,
     required String orderId,
     required OrderDraft draft,
+    Actor? by,
   }) async {
     final orderRef = _orders(store.id).doc(orderId);
     final newBusinessDate = store.businessDateOf(draft.placedAt);
@@ -124,6 +129,19 @@ class OrderRepository {
         tx.set(counterRef, {'nextOrderNo': orderNo + 1});
       }
       _applyStats(tx, store.id, updated, 1);
+      _recordAudit(
+        tx,
+        store.id,
+        AuditLog(
+          id: '',
+          action: AuditAction.editOrder,
+          targetId: orderId,
+          before: _auditSnapshot(existing),
+          after: _auditSnapshot(updated),
+          byUid: by?.uid,
+          byName: by?.name,
+        ),
+      );
 
       return orderNo;
     });
@@ -136,7 +154,7 @@ class OrderRepository {
   Future<void> voidOrder({
     required Store store,
     required String orderId,
-    required String? byUid,
+    required Actor by,
     String? reason,
   }) async {
     final orderRef = _orders(store.id).doc(orderId);
@@ -152,7 +170,7 @@ class OrderRepository {
       tx.update(orderRef, {
         'status': OrderStatus.voided.id,
         'voidedAt': FieldValue.serverTimestamp(),
-        'voidedBy': byUid,
+        'voidedBy': by.uid,
         'voidReason': reason,
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -166,8 +184,44 @@ class OrderRepository {
         },
         SetOptions(merge: true),
       );
+      _recordAudit(
+        tx,
+        store.id,
+        AuditLog(
+          id: '',
+          action: AuditAction.voidOrder,
+          targetId: orderId,
+          before: _auditSnapshot(order),
+          byUid: by.uid,
+          byName: by.name,
+          note: reason,
+        ),
+      );
     });
   }
+
+  /// Appends an audit entry as part of the caller's transaction.
+  ///
+  /// In the transaction on purpose: a void that commits without its record, or
+  /// a record without the void, is exactly the discrepancy the log exists to
+  /// settle.
+  void _recordAudit(Transaction tx, String storeId, AuditLog log) {
+    final (ref, data) = _auditLogs.entryFor(storeId, log);
+    tx.set(ref, data);
+  }
+
+  /// The parts of an order worth freezing into an audit entry.
+  ///
+  /// Not the whole document: every line item on both sides of every edit would
+  /// bloat the log for detail nobody reads. These are the fields a till
+  /// discrepancy actually turns on.
+  static Map<String, dynamic> _auditSnapshot(Order order) => {
+        'orderNo': order.orderNo,
+        'businessDate': order.businessDate,
+        'total': order.total,
+        'discountAmount': order.discountAmount,
+        'itemCount': order.items.length,
+      };
 
   /// Folds [order] into (sign 1) or out of (sign -1) its day's rollup.
   ///

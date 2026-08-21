@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/material_symbols_icons.dart';
 import '../database/repositories.dart';
 import '../models/app_user.dart';
 import '../models/store.dart';
+import 'store_settings_audit_log.dart';
 import 'store_settings_edit_menu.dart';
 import 'store_settings_history_order.dart';
 import 'store_staff.dart';
@@ -118,6 +119,13 @@ class _StoreSettingsState extends State<StoreSettings> {
                   trailing: const Icon(Icons.keyboard_arrow_right_outlined),
                   subtitle: 'View order history',
                   onTap: () => _push(StoreHistoryOrder(widget.storeId)),
+                ),
+                _buildListTile(
+                  icon: Icons.fact_check_outlined,
+                  title: 'Change history',
+                  trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                  subtitle: 'Voids, order edits and price changes',
+                  onTap: () => _push(StoreAuditLog(widget.storeId)),
                 ),
               ],
             ),

@@ -5,7 +5,7 @@
 
 ## 實作進度（2026-08-21 更新）
 
-**Phase 0-4 已實作完成，Phase 5 尚未開始。**
+**Phase 0-5 全部實作完成。**
 
 | Phase | 狀態 |
 |---|---|
@@ -14,10 +14,10 @@
 | 2 — `orders` subcollection、counters、`dailyStats`、AddOrder 改寫、作廢單 | ✅ 完成 |
 | 3 — 統計頁 Day/Week/Month 真實區間、翻頁、與前期比較 | ✅ 完成 |
 | 4 — 菜單工程矩陣、熱度圖、搭配分析、備料預估 | ✅ 完成 |
-| 5 — Excel 匯出、auditLog UI | ⬜ 未開始 |
+| 5 — Excel 匯出、auditLog UI | ✅ 完成 |
 
-已修掉的項目：B1–B9 全部、F1、F2、F3、F5、F6。**仍未修：F4、F7**——
-Export 與 Gemini FAB 仍只有 `debugPrint`（分別是 Phase 5 與未排期）。
+已修掉的項目：B1–B9 全部、F1–F6。**仍未修：F7**——Statistics 頁的 Gemini FAB
+仍只有 `debugPrint`。它不屬於任何 Phase，要不要做（以及做成什麼）還沒決定。
 
 Phase 0-2 之外另外補的：Firebase Auth 也收進 repository 層了
 （[auth_repository.dart](../lib/database/auth_repository.dart)）。原本
@@ -415,7 +415,7 @@ match /stores/{storeId}/{document=**} {
 | **2** | ✅ | `orders` subcollection + AddOrder 改寫（channel / guestCount / paymentMethod / tax 真的寫進去）+ counters 取號 + `dailyStats` 同 transaction 累加 | [addorder.dart](../lib/page/addorder.dart)、[store_settings_history_order.dart](../lib/settings/store_settings_history_order.dart)、[store_setting_history_order_detail.dart](../lib/settings/store_setting_history_order_detail.dart)、[store_settings.dart](../lib/settings/store_settings.dart) |
 | **3** | ⬜ | 統計頁重寫（Day/Week/Month 真的能切、箭頭能翻頁、與前期比較） | [statistics.dart](../lib/page/statistics.dart) |
 | **4** | ✅ | 菜單工程矩陣、星期×小時熱度圖、品項搭配分析、備料預估 | [lib/analysis/](../lib/analysis/)、[analysis.dart](../lib/page/analysis.dart)（統計頁右上 Insights 進入） |
-| **5** | ⬜ | Excel 匯出、auditLog UI | — |
+| **5** | ✅ | Excel 匯出、auditLog UI | [lib/export/](../lib/export/)、[audit_log_repository.dart](../lib/database/audit_log_repository.dart)、[store_settings_audit_log.dart](../lib/settings/store_settings_audit_log.dart) |
 
 **Phase 0-2 之間資料結構不相容，要一次做完再上。**
 Phase 3 之後每一步都能獨立出貨。

@@ -62,7 +62,9 @@ dependencies:
   # Use for output Excel file
   excel: ^4.0.6
   permission_handler: ^11.4.0
-  #  path_provider: ^2.1.5
+
+  # Use for locating where an exported Excel file may be written
+  path_provider: ^2.1.5
   filesystem_picker: ^4.0.0
 
   # Use for history order grouped

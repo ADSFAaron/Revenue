@@ -35,12 +35,20 @@
         <li><a href="#prerequisites">Prerequisites</a></li>
         <li><a href="#1-clone-and-install-dependencies">1. Clone and install dependencies</a></li>
         <li><a href="#2-firebase-setup-required">2. Firebase setup (required)</a></li>
-        <li><a href="#3-run-the-app">3. Run the app</a></li>
+        <li><a href="#3-deploy-the-firestore-rules-and-indexes">3. Deploy the Firestore rules and indexes</a></li>
+        <li><a href="#4-run-the-app">4. Run the app</a></li>
       </ul>
     </li>
+    <li><a href="#web-and-firebase-hosting">Web and Firebase Hosting</a></li>
     <li><a href="#building-a-release-build">Building a release build</a></li>
     <li><a href="#platform-support-status">Platform support status</a></li>
-    <li><a href="#project-structure">Project structure</a></li>
+    <li>
+      <a href="#project-structure">Project structure</a>
+      <ul>
+        <li><a href="#the-repository-layer">The repository layer</a></li>
+        <li><a href="#data-model">Data model</a></li>
+      </ul>
+    </li>
     <li><a href="#troubleshooting">Troubleshooting</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contributing">Contributing</a></li>
@@ -54,10 +62,19 @@
 
 ![Cover Image](markdown/images/Cover%20for%20Github.png)
 
-Revenue is a Flutter app for recording and analysing a small store's sales. It covers
-day-to-day order entry, a transaction history, and a statistics page with charts, gauges
-and Excel export. All data lives in Firebase (Cloud Firestore + Realtime Database), with
-Firebase Authentication for sign-in and Firebase Storage for uploaded files.
+Revenue is a Flutter app for a small restaurant to record and analyse its own sales.
+It is a bookkeeping and analysis tool, **not** a point-of-sale platform: there is no
+customer-facing side, no QR ordering and no platform commission. Staff tap the dishes
+into their phone and submit; the value is in what the numbers say afterwards.
+
+It covers order entry, order history, and a statistics page with charts and gauges.
+Data lives in Cloud Firestore, with Firebase Authentication for sign-in.
+
+> **Status.** The app is mid-refactor on branch `v3`. Phases 0–2 of
+> [docs/refactor-plan.md](docs/refactor-plan.md) are implemented — the Firestore schema,
+> the repository layer, security rules, menu editing and order entry are all on the new
+> design. Phases 3–5 (real Day/Week/Month ranges, menu engineering, Excel export) are
+> not. See [Roadmap](#roadmap) for exactly what is and is not done.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -156,12 +173,110 @@ flutterfire configure --project=revenueapp-b8849 --platforms=android,web
 This writes `lib/firebase_options.dart` and refreshes `android/app/google-services.json`.
 You need access to the `revenueapp-b8849` Firebase project for this to work.
 
-### 3. Run the app
+### 3. Deploy the Firestore rules and indexes
+
+`firestore.rules` and `firestore.indexes.json` are committed, but committing them does not
+apply them. Until you deploy, a fresh project runs on whatever rules the console last had —
+and the composite indexes the order queries need will not exist, so those queries fail with
+a `FAILED_PRECONDITION` error containing a link to create the missing index.
+
+> ⚠️ **`firebase.json` is git-ignored** (line 51 of `.gitignore`), so a fresh clone has
+> neither the `firestore` nor the `hosting` configuration, and both `firebase deploy`
+> commands in this README abort with *"Cannot understand what targets to deploy"*.
+>
+> Consider removing that line: the file holds only a project id, an app id and file paths —
+> all values that are compiled into the client anyway, none of them secret. Until then,
+> every machine has to recreate the `firestore` and `hosting` blocks by hand.
+> `.firebaserc` (which pins the default project) *is* committed.
 
 ```sh
-flutter devices          # confirm your target is listed
-flutter run
+firebase deploy --only firestore:rules,firestore:indexes --project revenueapp-b8849
 ```
+
+Re-run this whenever either file changes. Index builds are asynchronous; the console shows
+them as *Building* for a few minutes on a large collection.
+
+Because the rules deny everything not explicitly matched, **the app cannot read anything
+until this is deployed** on a project whose rules are still the default deny-all.
+
+### 4. Run the app
+
+Web is the current development target — it needs no device or emulator:
+
+```sh
+flutter run -d chrome
+```
+
+For Android, `flutter devices` first to confirm a device or emulator is attached, then
+`flutter run`.
+
+Register a new account to get started. Entering a **new** store ID creates the store, makes
+you its owner and seeds a starter menu; entering an **existing** store ID joins that store
+as staff, and the store name field is ignored.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Web and Firebase Hosting
+
+The app is deployed as a Flutter web build on Firebase Hosting.
+
+### Build and preview locally
+
+```sh
+flutter build web --no-tree-shake-icons
+firebase emulators:start --only hosting
+```
+
+`--no-tree-shake-icons` is required: menu items store an arbitrary MaterialIcons code point
+chosen at runtime in the icon picker, so the icon font cannot be shaken down to a fixed set.
+Without the flag the build fails with *"Avoid non-constant invocations of IconData"*.
+
+> On macOS the hosting emulator often reports *"unable to start on port 5000"* and moves to
+> 5002 — port 5000 belongs to AirPlay Receiver. Either use the port it prints, or turn
+> AirPlay Receiver off in System Settings → General → AirDrop & Handoff.
+
+### Deploy
+
+```sh
+flutter build web --no-tree-shake-icons
+firebase deploy --only hosting
+```
+
+This publishes to `https://revenueapp-b8849.web.app` (and `.firebaseapp.com`). Both are in
+Firebase Auth's authorised-domains list automatically, so sign-in works with no extra setup.
+Any **custom** domain has to be added manually under Authentication → Settings → Authorized
+domains, or every sign-in fails with `auth/unauthorized-domain`.
+
+To share a build without touching the live site, deploy to a preview channel instead — it
+gets its own temporary URL and expires on its own:
+
+```sh
+firebase hosting:channel:deploy preview --expires 7d
+```
+
+### Caching
+
+Flutter's web output is **not content-hashed** — `main.dart.js` has the same filename on
+every build. Two obvious settings are both wrong here, and the second one is not obvious at
+all:
+
+| `Cache-Control` | What happens |
+| --- | --- |
+| `max-age=31536000, immutable` | Browsers that already loaded the app are pinned to that version forever. **No redeploy ever reaches them.** |
+| `no-cache` | Firebase Hosting stops honouring `If-None-Match` on the file and re-sends the whole body. **Every page load re-downloads ~1 MB gzipped.** |
+| `public, max-age=0, must-revalidate` ✅ | Revalidate before every use, and get a `304` with an empty body when the build has not changed. |
+
+So [firebase.json](firebase.json) uses the third. Measured against the deployed preview
+channel: a conditional request for `main.dart.js` returns `304` and 0 bytes when unchanged,
+and a redeploy is still picked up on the next load. `canvaskit/` is the one exception — it
+is pinned to the Flutter SDK version, so it is held for a week.
+
+> `no-cache` and `max-age=0, must-revalidate` mean the same thing in the HTTP spec. Firebase
+> Hosting's CDN does **not** treat them the same. If you change this, re-measure with
+> `curl -I` and a conditional `If-None-Match` request rather than trusting the semantics.
+
+First load is roughly **3.5 MB** of `main.dart.js`, about **1.06 MB** over the wire after
+gzip. That is once per deployed version; revalidation keeps every later visit at 0 bytes.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -196,8 +311,8 @@ buildTypes {
 
 | Platform | Status |
 | --- | --- |
-| Android | Fully working — the primary target |
-| Web | Firebase configured; UI is not verified |
+| Web | **Working — the current development and deployment target.** Builds, renders and initialises Firebase with no console errors; deployed via Firebase Hosting |
+| Android | Builds and runs. Not re-verified since the Phase 0–2 refactor — no device or emulator was available |
 | iOS | **Not configured.** The app is registered in Firebase and `ios/Runner/GoogleService-Info.plist` exists, but `firebase_options.dart` still throws `UnsupportedError` for iOS. See below. |
 | Windows / macOS / Linux | Not configured |
 
@@ -221,14 +336,18 @@ lib/
 ├── login.dart / register.dart
 ├── home.dart                 # Bottom-nav shell hosting the four pages below
 ├── page/
-│   ├── overview.dart         # Landing page: totals and quick stats
-│   ├── transaction.dart      # Order history
-│   ├── statistics.dart       # Charts, gauges, date-range picker, Excel export
-│   ├── store.dart
-│   └── addorder.dart
-├── settings/                 # App, user, store and staff settings
-├── database/firestore.dart   # Firestore access layer
+│   ├── overview.dart         # Landing page: today's revenue and order count
+│   ├── transaction.dart      # Today's summary + last transactions
+│   ├── statistics.dart       # Charts and target gauge (Day only — see Roadmap)
+│   ├── store.dart            # Store card, lifetime totals, settings entry points
+│   └── addorder.dart         # Order entry
+├── settings/                 # App, user, store, staff, menu, order history
+├── models/                   # AppUser, Store, MenuItem, Order, OrderDraft, DailyStats
+├── database/                 # Repository layer — the only code that talks to Firestore
 └── animation/                # Shared page transitions
+
+firestore.rules               # Security rules
+firestore.indexes.json        # Composite indexes for the orders subcollection
 
 android/app/src/main/kotlin/com/adsf/revenue/MainActivity.kt
                               # Must match the `namespace` in android/app/build.gradle
@@ -237,6 +356,180 @@ android/app/src/main/kotlin/com/adsf/revenue/MainActivity.kt
 > The package name is `com.adsf.revenue`. If you ever rename it, `MainActivity.kt` has to
 > move to the matching directory *and* have its `package` line updated — otherwise the app
 > installs fine and then crashes on launch with `ClassNotFoundException`.
+
+### The repository layer
+
+**No widget may reference `FirebaseFirestore.instance`.** Every read and write goes
+through one of the repositories in `lib/database/`, reached via the shared instances in
+[repositories.dart](lib/database/repositories.dart):
+
+| Repository | Owns |
+| --- | --- |
+| `UserRepository` | `users/{uid}` — profiles, roles, the store's staff list |
+| `StoreRepository` | `stores/{storeId}` — name, tax, trading-day cutoff, targets, categories |
+| `MenuRepository` | `stores/{storeId}/menuItems/{itemId}` |
+| `OrderRepository` | `stores/{storeId}/orders/{orderId}` + counters + rollups |
+| `StatsRepository` | `stores/{storeId}/dailyStats/{businessDate}` |
+| `FeedbackRepository` | `feedback/{feedbackId}` |
+
+`loadSession()` resolves "signed-in user → their store" in one call; four screens used to
+repeat that lookup inline.
+
+This rule is the reason the layer exists. Firestore has no `GROUP BY`, so every new report
+needs a pre-aggregated table designed for it; if that ever stops paying off, swapping the
+backend is a change to one directory rather than to every screen. See §2 of
+[docs/refactor-plan.md](docs/refactor-plan.md) for the trade-off in full.
+
+### Data model
+
+```text
+users/{uid}                                 keyed by Firebase Auth uid, never by email
+stores/{storeId}
+  ├── menuItems/{itemId}                    stable ids; retired via isActive, never deleted
+  ├── orders/{orderId}                      one document per order
+  ├── dailyStats/{businessDate}             pre-aggregated rollup, yyyy-MM-dd
+  ├── counters/{businessDate}               nextOrderNo, resets daily
+  └── auditLogs/{logId}                     reserved; no UI yet
+feedback/{feedbackId}                       write-only from the app
+```
+
+Amounts are whole NTD integers throughout — no decimals, no floats. Rates (`taxRate`,
+`commissionRate`) are fractions: `0.05` means 5%.
+
+#### `users/{uid}` → [app_user.dart](lib/models/app_user.dart)
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `uid` | string | Same as the document id |
+| `email` | string | Display only; never a lookup key |
+| `displayName` | string | |
+| `storeId` | string | Which store this person belongs to. Drives every security rule |
+| `role` | `owner` \| `manager` \| `staff` | `owner`/`manager` may edit menu, prices and store settings |
+| `createdAt` / `updatedAt` | timestamp | |
+
+The staff list is a reverse lookup — `where('storeId', '==', id)` — not an array kept on
+the store document.
+
+#### `stores/{storeId}` → [store.dart](lib/models/store.dart)
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `name` | string | |
+| `currency` / `timezone` | string | `TWD` / `Asia/Taipei` |
+| `taxRate` | number | Fraction. `0` disables tax entirely |
+| `taxIncluded` | bool | `true` = menu prices already contain tax (the Taiwanese default) |
+| `dayCutoffHour` | int 0–23 | Trading-day rollover. Default 4 |
+| `businessHours` | map | Reserved; not read yet |
+| `targets` | map | `{ dailyOrders, dailyRevenue }` — feeds the statistics gauge |
+| `categories` | array | `[{ id, name, sortOrder }]`, inline because every menu screen needs all of them |
+| `deliveryPlatforms` | array | `[{ id, name, commissionRate }]` |
+| `createdAt` / `updatedAt` | timestamp | `createdAt` is shown as "Join Time" |
+
+There is deliberately **no `totalIncome` and no `orderIndex`**. Lifetime revenue is a
+Firestore `sum()` aggregation over `dailyStats`; order numbers come from `counters`.
+
+#### `stores/{storeId}/menuItems/{itemId}` → [menu_item.dart](lib/models/menu_item.dart)
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `name` | string | |
+| `categoryId` | string? | Matches an id in `stores.categories` |
+| `icon` | string | MaterialIcons code point. Decimal (`"57900"`) when chosen in the picker, or the `0x`-prefixed default `"0xe56c"`; `int.tryParse` reads both |
+| `sortOrder` | int | Drag-to-reorder writes consecutive values |
+| `price` | int | |
+| `cost` | int | Ingredient cost. `0` means *not filled in*, and is reported as unknown margin — never as 100% |
+| `isActive` | bool | `false` = retired: off the order screen, still in history |
+| `createdAt` / `updatedAt` | timestamp | |
+
+#### `stores/{storeId}/orders/{orderId}` → [order.dart](lib/models/order.dart)
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `orderNo` | int | Unique within its trading day, from `counters` |
+| `businessDate` | string | `yyyy-MM-dd`, already shifted by `dayCutoffHour` |
+| `placedAt` | timestamp | |
+| `hourOfDay` | int 0–23 | Redundant against `placedAt` — see note 2 below |
+| `weekday` | int 1–7 | 1 = Monday, matching `DateTime.weekday` |
+| `channel` | `dine_in` \| `takeout` \| `delivery` | |
+| `guestCount` | int | People on the bill, not orders |
+| `deliveryPlatformId` | string? | Set only when `channel == delivery` |
+| `commissionRate` / `commissionAmount` | number / int | Platform's cut, frozen at sale time |
+| `paymentMethod` | `cash` \| `credit_card` \| `line_pay` \| `other` | |
+| `items` | array | `[{ itemId, name, categoryId, unitPrice, unitCost, qty, lineRevenue, lineCost, note }]` |
+| `itemIds` | array\<string\> | Flat list for `arrayContains` queries (basket analysis) |
+| `subtotal` | int | Before discount |
+| `discountAmount` / `discountReason` | int / string? | Stored; no UI yet |
+| `taxAmount` | int | Contained in, or added to, `total` per `taxIncluded` |
+| `total` | int | What the customer pays |
+| `totalCost` | int | Sum of `lineCost` |
+| `grossProfit` | int | `total - totalCost - commissionAmount` |
+| `status` | `completed` \| `voided` | |
+| `voidedAt` / `voidedBy` / `voidReason` | timestamp / string / string | |
+| `createdBy` | string | uid |
+
+#### `stores/{storeId}/dailyStats/{businessDate}` → [daily_stats.dart](lib/models/daily_stats.dart)
+
+Maintained by `FieldValue.increment` inside the same transaction that writes the order, so
+concurrent tills cannot lose a sale. Voiding and editing apply the same deltas in reverse.
+
+| Field | Type |
+| --- | --- |
+| `businessDate` | string |
+| `orderCount`, `guestCount`, `voidedCount` | int |
+| `revenue`, `cost`, `discountTotal`, `taxTotal`, `commissionTotal` | int |
+| `byHour` | map `"0".."23"` → `{ orders, revenue, guests }` |
+| `byChannel` | map channel id → `{ orders, revenue, guests }` |
+| `byPayment` | map payment id → `{ orders, revenue }` |
+| `byItem` | map itemId → `{ name, qty, revenue, cost }` |
+| `byCategory` | map categoryId → `{ qty, revenue, cost }` (`uncategorized` for none) |
+| `updatedAt` | timestamp |
+
+`grossProfit` is **not stored** — it is derived as `revenue - cost - commissionTotal`, so
+there is one fewer field that can drift out of agreement with the others.
+
+> `byItem` is a map, so a store with hundreds of dishes will grow this document. Under
+> ~100 items it is nowhere near the 1 MB ceiling; past a few hundred, split it into a
+> `dailyStats/{date}/items/{itemId}` subcollection.
+
+#### `stores/{storeId}/counters/{businessDate}`
+
+`{ nextOrderNo: int }`. Read and bumped inside the order transaction, which is what stops
+two devices taking the same number. Resets to 1 each trading day.
+
+#### Three decisions that should survive future edits
+
+1. **Order lines copy in the dish name, price and cost.** A historical order freezes what
+   was actually charged, so a price rise cannot retroactively rewrite last month's profit.
+2. **`businessDate`, `hourOfDay` and `weekday` are stored on every order** even though
+   they are derivable from `placedAt`. Firestore cannot extract an hour from a timestamp,
+   so without them a time-of-day report means downloading the whole history.
+3. **Orders are voided, never deleted**, and menu items are retired, never removed —
+   otherwise a cancelled sale leaves no trace and a retired dish orphans its own history.
+
+The **trading day** is not the calendar day. Each store sets `dayCutoffHour` (default 04:00,
+editable in Store Settings → *Trading day starts at*); an order rung up at 02:00 counts
+towards the previous day's takings, which is how a late-night kitchen actually counts.
+Changing the setting only affects new orders — existing ones keep the `businessDate` they
+were written with, so past reports do not silently reshuffle.
+
+#### Access control
+
+Rules in [firestore.rules](firestore.rules). Membership is `users/{uid}.storeId == storeId`;
+managing requires `role in ['owner','manager']`.
+
+| Path | Read | Write |
+| --- | --- | --- |
+| `users/{uid}` | Self, or a colleague in the same store | Self only |
+| `stores/{storeId}` | Member | Create: member · Update: manager · Delete: never |
+| `…/menuItems` | Member | Manager |
+| `…/orders` | Member | Create + update: member · **Delete: never** |
+| `…/counters`, `…/dailyStats` | Member | Member |
+| `…/auditLogs` | Manager | Create only |
+| `feedback` | Nobody (console only) | Create only, signed in |
+
+> Anyone who knows a store ID can register against it and read that store's data — the
+> store ID is effectively a shared secret. Treat it accordingly; an invite flow would be
+> the fix if staff turnover ever makes that uncomfortable.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -321,22 +614,59 @@ is somewhere after it.
 <!-- ROADMAP -->
 ## Roadmap
 
-* [ ] Overview Page connect with DB
-* [ ] Transaction Page connect with DB
-* [ ] Statistics Page
-  * [ ] Connect with DB
-  * [x] Chart integrate with data
-  * [x] Change day/week/month/year time selection
-  * [ ] Swipe page to change view date
-  * [ ] Export Excel for all revenue
-* [ ] Settings Page
-  * [x] Edit menu add icon dynamic choose
-  * [ ] Store page editing with manager
-  * [ ] Dark mode apply
-  * [ ] Language change
-  * [ ] Notification to "add transaction" with specific time
+Tracked against the phases in [docs/refactor-plan.md](docs/refactor-plan.md).
+
+**Phase 0 — foundations** ✅
+
+* [x] Firestore security rules and composite indexes
+* [x] Repository layer; no widget touches `FirebaseFirestore.instance`
+* [x] Registration keys `users/{uid}` by Auth uid, creates the store and seeds a menu
+
+**Phase 1 — menu** ✅
+
+* [x] `menuItems` subcollection with stable ids
+* [x] Optional ingredient `cost` per dish
+* [x] Categories, drag-to-reorder, retire/restore instead of delete
+
+**Phase 2 — orders** ✅
+
+* [x] One document per order
+* [x] Order numbers from a per-day counter, allocated in a transaction
+* [x] Channel (dine-in / takeout / delivery + platform commission), guest count,
+      payment method and tax all actually persisted
+* [x] `dailyStats` rollups maintained in the same transaction as the order
+* [x] Void an order instead of deleting it
+* [x] Trading-day cutoff, editable per store
+* [x] Overview, Transaction and Store pages on real data; the placeholder
+      "Last Transactions" row and hard-coded growth badges are gone
+
+**Phase 3 — statistics** — not started
+
+* [x] Target gauge reads the store's daily target
+* [ ] Day / Week / Month tabs over real date ranges (all three currently show the day)
+* [ ] Back / forward arrows to page through periods (disabled for now)
+* [ ] Comparison against the previous period
+* [ ] Weekday × hour heatmap
+* [ ] Item ranking with a date range and sorting
+
+**Phase 4 — analysis** — not started
+
+* [ ] Menu engineering matrix (needs `cost` filled in)
+* [ ] Basket analysis (which dishes are ordered together)
+* [ ] Prep forecasting
+
+**Phase 5 — export and audit** — not started
+
+* [ ] Excel export (the button currently only logs)
+* [ ] `auditLogs` UI
+
+**Not tied to a phase**
+
+* [ ] Dark mode apply
+* [ ] Language change / international language support
 * [ ] Material You theme apply
-* [ ] International language support
+* [ ] Notification to "add transaction" at a set time
+* [ ] iOS configuration
 
 See the [open issues](https://github.com/ADSFAaron/Revenue/issues) for a full list of proposed features (and known issues).
 

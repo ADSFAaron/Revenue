@@ -1,11 +1,11 @@
 {
-    "name": "revenue",
-    "short_name": "revenue",
+    "name": "Revenue",
+    "short_name": "Revenue",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#eae9e4",
     "theme_color": "#395917",
-    "description": "A new Flutter project.",
+    "description": "Sales bookkeeping and analysis for a small restaurant.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

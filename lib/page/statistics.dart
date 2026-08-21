@@ -9,6 +9,7 @@ import '../database/repositories.dart';
 import '../models/daily_stats.dart';
 import '../models/stats_period.dart';
 import '../models/store.dart';
+import 'analysis.dart';
 
 // Phase 5 of docs/refactor-plan.md still owes this page Excel export (F4), and
 // the Gemini button (F7) is still unwired.
@@ -117,6 +118,19 @@ class _StatisticsPageState extends State<StatisticsPage>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Statistics'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.insights_rounded),
+            tooltip: 'Insights',
+            // Only once the session is in hand: every report behind here needs
+            // the store's cutoff hour to know which days it is looking at.
+            onPressed: _session == null
+                ? null
+                : () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => AnalysisPage(session: _session!),
+                    )),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: [

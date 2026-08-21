@@ -3,23 +3,26 @@
 > 這份文件是給後續接手的 Claude session 的交接說明。
 > 產出於 2026-08-08，分支 `v3`。
 
-## 實作進度（2026-08-08 更新）
+## 實作進度（2026-08-21 更新）
 
-**Phase 0-2 已實作完成，Phase 3-5 尚未開始。**
+**Phase 0-3 已實作完成，Phase 4-5 尚未開始。**
 
 | Phase | 狀態 |
 |---|---|
 | 0 — security rules、repository 層、註冊流程 | ✅ 完成 |
 | 1 — `menuItems` subcollection、`cost`、分類、軟刪除 | ✅ 完成 |
 | 2 — `orders` subcollection、counters、`dailyStats`、AddOrder 改寫、作廢單 | ✅ 完成 |
-| 3 — 統計頁 Day/Week/Month 真實區間、翻頁、與前期比較 | ⬜ 未開始 |
+| 3 — 統計頁 Day/Week/Month 真實區間、翻頁、與前期比較 | ✅ 完成 |
 | 4 — 菜單工程矩陣、熱度圖、搭配分析、備料預估 | ⬜ 未開始 |
 | 5 — Excel 匯出、auditLog UI | ⬜ 未開始 |
 
-已修掉的項目：B1–B9 全部、F3、F5、F6（品項排行改讀 `dailyStats.byItem`，
-日期區間仍待 Phase 3）。**仍未修：F1、F2、F4、F7**——統計頁的
-Day/Week/Month 三個分頁目前顯示同一天的資料，左右箭頭已改為 disabled
-（不再是假裝能按的空 callback），Export 與 Gemini FAB 仍只有 `debugPrint`。
+已修掉的項目：B1–B9 全部、F1、F2、F3、F5、F6。**仍未修：F4、F7**——
+Export 與 Gemini FAB 仍只有 `debugPrint`（分別是 Phase 5 與未排期）。
+
+Phase 0-2 之外另外補的：Firebase Auth 也收進 repository 層了
+（[auth_repository.dart](../lib/database/auth_repository.dart)）。原本
+`FirebaseAuth.instance` 散在五個畫面，login 與 register 各有一份錯誤碼對照表
+且已經走鐘。現在 `grep -rl 'firebase_auth' lib/` 只會列出 `lib/database/`。
 
 實作時與本文件規劃不同之處，見 §7。
 

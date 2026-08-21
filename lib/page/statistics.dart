@@ -7,13 +7,11 @@ import 'package:syncfusion_flutter_gauges/gauges.dart';
 
 import '../database/repositories.dart';
 import '../models/daily_stats.dart';
+import '../models/stats_period.dart';
+import '../models/store.dart';
 
-// Phase 3 of docs/refactor-plan.md still owes this page:
-//   - Week / Month tabs over real date ranges (they currently show the day)
-//   - working back / forward arrows
-//   - Excel export (Phase 5)
-// The data layer for all three is already in place: StatsRepository.fetchRange
-// plus DailyStats.sum give a summed range in one call.
+// Phase 5 of docs/refactor-plan.md still owes this page Excel export (F4), and
+// the Gemini button (F7) is still unwired.
 
 class StatisticsPage extends StatefulWidget {
   const StatisticsPage({super.key});
@@ -24,22 +22,26 @@ class StatisticsPage extends StatefulWidget {
 
 class _StatisticsPageState extends State<StatisticsPage>
     with TickerProviderStateMixin {
-  late final Future<Session> _session = loadSession();
   late final TabController _tabController;
 
+  Session? _session;
+  Object? _sessionError;
+
+  /// The span on screen. Null only until the session resolves, because the
+  /// store's cutoff hour decides which trading day "today" is.
+  StatsPeriod? _period;
+
+  /// Rebuilt in lockstep with [_period] rather than in `build`, so that a
+  /// rebuild for any other reason does not tear down the subscription and pay
+  /// for the same documents again.
+  Stream<PeriodReport>? _reportStream;
+
   bool isDark = false;
-  int _selectedTabIndex = 0;
 
   Map<String, bool> featureSelected = {
     'Income': false,
     'Export': false,
   };
-
-  static const List<Tab> myTabs = <Tab>[
-    Tab(text: 'Day'),
-    Tab(text: 'Week'),
-    Tab(text: 'Month'),
-  ];
 
   TooltipBehavior? _tooltipBehavior;
 
@@ -51,9 +53,18 @@ class _StatisticsPageState extends State<StatisticsPage>
       header: '',
       canShowMarker: false,
     );
-    _tabController = TabController(length: myTabs.length, vsync: this);
-    _tabController.addListener(() {
-      setState(() => _selectedTabIndex = _tabController.index);
+    _tabController =
+        TabController(length: StatsGranularity.values.length, vsync: this)
+          ..addListener(_onTabChanged);
+
+    loadSession().then((session) {
+      if (!mounted) return;
+      setState(() {
+        _session = session;
+        _setPeriod(StatsPeriod.current(session.store, StatsGranularity.day));
+      });
+    }).catchError((Object error) {
+      if (mounted) setState(() => _sessionError = error);
     });
   }
 
@@ -61,6 +72,33 @@ class _StatisticsPageState extends State<StatisticsPage>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  /// The trading day the store is currently in — not `DateTime.now()`, which
+  /// before the cutoff hour still belongs to yesterday's takings.
+  DateTime get _today => parseBusinessDate(_session!.store.currentBusinessDate);
+
+  /// Assigns the period and the stream that serves it. Must be called from
+  /// inside a `setState`.
+  void _setPeriod(StatsPeriod period) {
+    _period = period;
+    _reportStream = statsRepository
+        .watchPeriod(_session!.storeId, period, today: _today)
+        .asBroadcastStream();
+  }
+
+  void _onTabChanged() {
+    if (_tabController.indexIsChanging || _period == null) return;
+    final granularity = StatsGranularity.values[_tabController.index];
+    if (granularity == _period!.granularity) return;
+    // Keeps where you are in time: paging back to June and then switching to
+    // Day lands on a day in June rather than jumping back to today.
+    setState(() => _setPeriod(_period!.withGranularity(granularity)));
+  }
+
+  void _step(int direction) {
+    setState(() =>
+        _setPeriod(direction < 0 ? _period!.previous : _period!.next));
   }
 
   @override
@@ -79,36 +117,15 @@ class _StatisticsPageState extends State<StatisticsPage>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Statistics'),
-        bottom: TabBar(controller: _tabController, tabs: myTabs),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: [
+            for (final granularity in StatsGranularity.values)
+              Tab(text: granularity.label),
+          ],
+        ),
       ),
-      body: FutureBuilder<Session>(
-        future: _session,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final session = snapshot.data!;
-          final businessDate = session.store.currentBusinessDate;
-
-          // One rollup document instead of the store's entire order history.
-          return StreamBuilder<DailyStats>(
-            stream: statsRepository.watchDay(session.storeId, businessDate),
-            builder: (context, statsSnapshot) {
-              if (statsSnapshot.hasError) {
-                return Center(child: Text('Error: ${statsSnapshot.error}'));
-              }
-              if (!statsSnapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              return _buildContent(session, statsSnapshot.data!);
-            },
-          );
-        },
-      ),
+      body: _buildBody(),
       floatingActionButton: FloatingActionButton(
         onPressed: () => debugPrint('FloatingActionButton tapped'),
         child: GestureDetector(child: svg),
@@ -116,33 +133,91 @@ class _StatisticsPageState extends State<StatisticsPage>
     );
   }
 
-  Widget _buildContent(Session session, DailyStats stats) {
-    if (stats.isEmpty) {
-      return SafeArea(
-        child: Column(
-          children: [
-            _buildHeaderRow(stats.businessDate),
-            const Expanded(child: Center(child: Text('No Order'))),
-          ],
-        ),
-      );
+  Widget _buildBody() {
+    if (_sessionError != null) {
+      return Center(child: Text('Error: $_sessionError'));
+    }
+    if (_session == null || _period == null) {
+      return const Center(child: CircularProgressIndicator());
     }
 
-    // Every tab shows the same trading day until the Week / Month ranges land
-    // in Phase 3 — one body rather than three copies of it.
-    final body = _buildTabBody(session, stats);
+    final session = _session!;
+    final period = _period!;
+
+    // The three tabs share one body rather than sitting in a TabBarView. A
+    // TabBarView keeps every visited tab alive, so a glance at Week and Month
+    // would leave three live range subscriptions running against Firestore for
+    // the rest of the visit.
     return SafeArea(
-      child: TabBarView(
-        controller: _tabController,
-        children: [body, body, body],
+      child: Column(
+        children: [
+          // Outside the StreamBuilder: the arrows have to keep working while a
+          // period loads, and above all on an empty period, which is otherwise
+          // a dead end you cannot page out of.
+          _buildHeaderRow(period),
+          Expanded(
+            child: StreamBuilder<PeriodReport>(
+              stream: _reportStream,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final report = snapshot.data!;
+                if (report.isEmpty) {
+                  return Center(
+                    child: Text('No orders in ${period.label(_today)}'),
+                  );
+                }
+                return _buildReport(session, report);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildTabBody(Session session, DailyStats stats) {
-    final chartData = stats.itemsByQty
-        .map((item) => ChartSampleData(x: item.name, yValue: item.qty))
-        .toList();
+  Widget _buildHeaderRow(StatsPeriod period) {
+    // Nothing has been rung up in the future, so there is nothing to page
+    // forward into once the period on screen contains today.
+    final atPresent = period.contains(_today);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          ElevatedButton(
+            onPressed: () => _step(-1),
+            style: ElevatedButton.styleFrom(elevation: 0),
+            child: const Icon(Icons.arrow_back),
+          ),
+          Flexible(
+            child: Text(
+              period.label(_today),
+              style: const TextStyle(fontSize: 20),
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          ElevatedButton(
+            onPressed: atPresent ? null : () => _step(1),
+            style: ElevatedButton.styleFrom(elevation: 0),
+            child: const Icon(Icons.arrow_forward),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReport(Session session, PeriodReport report) {
+    final period = report.period;
+    final total = report.total;
+    final previous = report.previousTotal;
+    final money = _moneyFormat(session.store);
 
     return SingleChildScrollView(
       child: Padding(
@@ -150,20 +225,51 @@ class _StatisticsPageState extends State<StatisticsPage>
         child: Column(
           spacing: 20,
           children: <Widget>[
-            _buildHeaderRow(stats.businessDate),
-            // Target comes from the store's settings, not from a literal 60/200.
-            _buildRangePointerGauge(
-              stats.orderCount,
-              session.store.targets.dailyOrders,
+            Wrap(
+              children: [
+                _buildCard(
+                  title: 'Revenue',
+                  icon: Symbols.money_bag,
+                  value: money.format(total.revenue),
+                  change: PeriodReport.change(total.revenue, previous.revenue),
+                ),
+                _buildCard(
+                  title: 'Orders',
+                  icon: Icons.receipt_long_outlined,
+                  value: NumberFormat.decimalPattern().format(total.orderCount),
+                  change: PeriodReport.change(
+                      total.orderCount, previous.orderCount),
+                ),
+                _buildCard(
+                  title: 'Gross profit',
+                  icon: Icons.trending_up_rounded,
+                  value: money.format(total.grossProfit),
+                  change: PeriodReport.change(
+                      total.grossProfit, previous.grossProfit),
+                ),
+                _buildCard(
+                  title: 'Per head',
+                  icon: Icons.groups_outlined,
+                  value: money.format(total.averageGuestSpend.round()),
+                  change: PeriodReport.change(
+                      total.averageGuestSpend, previous.averageGuestSpend),
+                ),
+              ],
             ),
-            _buildCartesianChart("Today's Dishes", chartData),
+            Text(
+              period.comparisonLabel(_today),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            _buildTargetGauge(session.store, period, total),
+            _buildTrendChart(session.store, report),
+            _buildTopDishesChart(total),
             Wrap(
               children: [
                 if (featureSelected['Income']!)
                   _buildCard(
                     title: 'Income',
                     icon: Symbols.money_bag,
-                    value: NumberFormat.decimalPattern().format(stats.revenue),
+                    value: money.format(total.revenue),
                     onTap: () => debugPrint('money Card tapped'),
                   ),
                 if (featureSelected['Export']!)
@@ -182,47 +288,86 @@ class _StatisticsPageState extends State<StatisticsPage>
     );
   }
 
-  Widget _buildHeaderRow(String businessDate) {
-    final infoDate = DateTime.tryParse(businessDate) ?? DateTime.now();
-    final now = DateTime.now();
-    String displayDate;
-
-    switch (_selectedTabIndex) {
-      case 1:
-        displayDate = 'Week ${infoDate.weekOfYear} of ${infoDate.year}';
-        break;
-      case 2:
-        displayDate = DateFormat.yMMMM().format(infoDate);
-        break;
-      default:
-        if (infoDate.year == now.year &&
-            infoDate.month == now.month &&
-            infoDate.day == now.day) {
-          displayDate = 'Today';
-        } else {
-          displayDate = DateFormat.yMMMMd().format(infoDate);
-        }
-    }
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        // Paging through past periods is Phase 3; disabled rather than silently
-        // doing nothing when tapped.
-        ElevatedButton(
-          onPressed: null,
-          style: ElevatedButton.styleFrom(elevation: 0),
-          child: const Icon(Icons.arrow_back),
-        ),
-        Text(displayDate, style: const TextStyle(fontSize: 20)),
-        ElevatedButton(
-          onPressed: null,
-          style: ElevatedButton.styleFrom(elevation: 0),
-          child: const Icon(Icons.arrow_forward),
-        ),
-      ],
+  /// Progress against the store's daily order target.
+  ///
+  /// Over a week or a month the target is scaled to the days that have actually
+  /// happened, not to the whole period: two days into a month, 60 orders is on
+  /// track, and measuring it against thirty days' worth of target would report
+  /// it as a 6% failure.
+  Widget _buildTargetGauge(
+      Store store, StatsPeriod period, DailyStats total) {
+    final elapsed = period.elapsedDays(_today).clamp(1, period.dayCount);
+    return _buildRangePointerGauge(
+      total.orderCount,
+      store.targets.dailyOrders * elapsed,
     );
   }
+
+  /// How the takings moved inside the period: by hour for a single day, by
+  /// trading day for a week or a month.
+  Widget _buildTrendChart(Store store, PeriodReport report) {
+    final period = report.period;
+
+    if (period.granularity == StatsGranularity.day) {
+      return _buildCartesianChart(
+        'Revenue by hour',
+        _hourlyData(report.total),
+      );
+    }
+
+    // Days with no takings have no document at all, so they are filled back in
+    // here — a chart that silently skips the days a shop was closed makes a
+    // four-day week look like a full one.
+    final byDate = {for (final day in report.days) day.businessDate: day};
+    final data = <ChartSampleData>[];
+    for (var offset = 0; offset < period.dayCount; offset++) {
+      final date =
+          DateTime(period.start.year, period.start.month, period.start.day + offset);
+      if (date.isAfter(_today)) break;
+      data.add(ChartSampleData(
+        x: DateFormat.Md().format(date),
+        yValue: byDate[formatBusinessDate(date)]?.revenue ?? 0,
+      ));
+    }
+    return _buildCartesianChart('Revenue by day', data);
+  }
+
+  /// Hours from the first sale of the day to the last, gaps included, so a
+  /// lunchtime peak and a quiet mid-afternoon keep their real shape.
+  List<ChartSampleData> _hourlyData(DailyStats total) {
+    final hours = total.byHour.keys
+        .map(int.tryParse)
+        .whereType<int>()
+        .toList()
+      ..sort();
+    if (hours.isEmpty) return const [];
+
+    return [
+      for (var hour = hours.first; hour <= hours.last; hour++)
+        ChartSampleData(
+          x: '${hour.toString().padLeft(2, '0')}:00',
+          yValue: total.byHour['$hour']?.revenue ?? 0,
+        ),
+    ];
+  }
+
+  /// Best sellers by units. Capped, because a month can span the whole menu and
+  /// forty columns on a phone are unreadable.
+  Widget _buildTopDishesChart(DailyStats total) {
+    final data = total.itemsByQty
+        .take(10)
+        .map((item) => ChartSampleData(x: item.name, yValue: item.qty))
+        .toList();
+    return _buildCartesianChart('Top dishes', data);
+  }
+
+  NumberFormat _moneyFormat(Store store) => NumberFormat.currency(
+        // Firestore holds money as whole units — see the schema notes in
+        // docs/refactor-plan.md — so a decimal place would only ever show '.00'.
+        name: store.currency,
+        symbol: store.currency == 'TWD' ? 'NT\$' : null,
+        decimalDigits: 0,
+      );
 
   Widget _buildAddMoreCard(BuildContext context) {
     return Card(
@@ -311,6 +456,7 @@ class _StatisticsPageState extends State<StatisticsPage>
       title: ChartTitle(text: chartTitle),
       primaryXAxis: const CategoryAxis(
         majorGridLines: MajorGridLines(width: 0),
+        labelIntersectAction: AxisLabelIntersectAction.rotate45,
       ),
       primaryYAxis: NumericAxis(
         minimum: 0,
@@ -341,38 +487,9 @@ class _StatisticsPageState extends State<StatisticsPage>
     required String title,
     String? value,
     IconData? icon,
-    required VoidCallback onTap,
-    double? growth,
+    VoidCallback? onTap,
+    double? change,
   }) {
-    Widget growthContainer = const SizedBox.shrink();
-
-    if (growth != null) {
-      final trendIcon = growth >= 0
-          ? const Icon(Icons.trending_up_rounded, size: 16, color: Colors.green)
-          : const Icon(Icons.trending_down_rounded,
-              size: 16, color: Colors.red);
-
-      growthContainer = Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: growth >= 0 ? Colors.green[100] : Colors.red[100],
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Row(
-          children: [
-            trendIcon,
-            Text(
-              ' $growth%',
-              style: TextStyle(
-                color: growth >= 0 ? Colors.green : Colors.red,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     return Card(
       elevation: 0,
       child: InkWell(
@@ -410,16 +527,54 @@ class _StatisticsPageState extends State<StatisticsPage>
                             style: const TextStyle(fontSize: 24)),
                       ),
                     ),
-                    growth != null
-                        ? const Spacer()
-                        : const SizedBox(width: 8),
-                    growthContainer,
+                    const SizedBox(width: 8),
+                    _ChangeBadge(change: change),
                   ],
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The "+12%" pill next to a figure.
+///
+/// A null [change] renders as an em dash rather than as 0%: "no comparison
+/// available" and "flat against last month" are different things, and a shop's
+/// first week would otherwise read as though it had gone nowhere.
+class _ChangeBadge extends StatelessWidget {
+  const _ChangeBadge({this.change});
+
+  final double? change;
+
+  @override
+  Widget build(BuildContext context) {
+    final change = this.change;
+    if (change == null) {
+      return Text('—', style: Theme.of(context).textTheme.bodySmall);
+    }
+
+    final rising = change >= 0;
+    final color = rising ? Colors.green : Colors.red;
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: rising ? Colors.green[100] : Colors.red[100],
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(rising ? Icons.trending_up_rounded : Icons.trending_down_rounded,
+              size: 16, color: color),
+          Text(
+            ' ${(change * 100).toStringAsFixed(0)}%',
+            style: TextStyle(color: color, fontWeight: FontWeight.bold),
+          ),
+        ],
       ),
     );
   }
@@ -474,7 +629,7 @@ SfRadialGauge _buildRangePointerGauge(num currentOrders, num expectOrders) {
                       ),
                     ),
                     Text(
-                      ' / $expectOrders',
+                      ' / $safeTarget',
                       style: const TextStyle(
                         fontFamily: 'Times',
                         fontSize: 22,
@@ -506,15 +661,4 @@ SfRadialGauge _buildRangePointerGauge(num currentOrders, num expectOrders) {
       ),
     ],
   );
-}
-
-extension DateTimeExtension on DateTime {
-  int get weekOfYear {
-    // Add 3 to the date to ensure it falls within the correct week
-    DateTime date = add(const Duration(days: 3));
-    int dayOfYear = int.parse(DateFormat("D").format(date));
-    return ((dayOfYear - date.weekday + 10) / 7).floor();
-  }
-
-  int get weekOfMonth => (day / 7).ceil();
 }

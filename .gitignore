@@ -53,3 +53,6 @@ android/app/google-services.json
 
 # Firebase Hosting deploy cache
 .firebase/
+
+# Local-only notes, never published (security findings, private context)
+*.local.md

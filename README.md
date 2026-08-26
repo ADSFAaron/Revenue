@@ -49,6 +49,18 @@
         <li><a href="#data-model">Data model</a></li>
       </ul>
     </li>
+    <li>
+      <a href="#registration-and-onboarding">Registration and onboarding</a>
+      <ul>
+        <li><a href="#the-two-paths">The two paths</a></li>
+        <li><a href="#fields-that-go-away">Fields that go away</a></li>
+        <li><a href="#settings-that-are-never-asked-for">Settings that are never asked for</a></li>
+        <li><a href="#invite-codes">Invite codes</a></li>
+        <li><a href="#the-rules-this-needs">The rules this needs</a></li>
+        <li><a href="#sign-in-methods">Sign-in methods</a></li>
+        <li><a href="#passkeys-designed-not-built">Passkeys (designed, not built)</a></li>
+      </ul>
+    </li>
     <li><a href="#troubleshooting">Troubleshooting</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contributing">Contributing</a></li>
@@ -390,7 +402,12 @@ stores/{storeId}
   ├── dailyStats/{businessDate}             pre-aggregated rollup, yyyy-MM-dd
   ├── counters/{businessDate}               nextOrderNo, resets daily
   └── auditLogs/{logId}                     reserved; no UI yet
+invites/{code}                              planned; the code is the document id
 feedback/{feedbackId}                       write-only from the app
+
+planned, passkeys only — server-side collections, no client access at all:
+passkeyCredentials/{credentialId}           public keys, keyed by credential id
+passkeyChallenges/{challengeId}             single-use, 60-second lifetime
 ```
 
 Amounts are whole NTD integers throughout — no decimals, no floats. Rates (`taxRate`,
@@ -527,9 +544,256 @@ managing requires `role in ['owner','manager']`.
 | `…/auditLogs` | Manager | Create only |
 | `feedback` | Nobody (console only) | Create only, signed in |
 
-> Anyone who knows a store ID can register against it and read that store's data — the
-> store ID is effectively a shared secret. Treat it accordingly; an invite flow would be
-> the fix if staff turnover ever makes that uncomfortable.
+> Membership is asserted by the `users/{uid}` document, and a store ID is currently the
+> thing that grants it — a shared secret with no expiry and no revocation, handed to every
+> member of staff. [Registration and onboarding](#registration-and-onboarding) replaces it
+> with an invite flow and tightens these rules in the same change. The two are one piece of
+> work rather than two, and the ordering matters: the rules go in with the invite flow, not
+> after it.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Registration and onboarding
+
+> **Status: specification only.** Nothing in this section is implemented. The current
+> [register.dart](lib/register.dart) still asks for all six fields on one page and still
+> seeds the starter menu. This section is the agreed design for replacing it.
+
+The person this app is for runs a small kitchen and does not want to operate software. The
+registration flow as it stands loses that person in the first minute, for four reasons:
+
+1. **Six fields on one page** — email, password, confirm password, store ID, name, store name.
+2. **The store ID is a 36-character UUID that a human has to type or paste.** There is a
+   `Generate` button that produces the gibberish, and the owner is then expected to pass
+   that string to staff, who type it back in.
+3. **"Open a new store" and "join an existing one" are decided implicitly**, by whether the
+   store ID happens to exist. The only thing telling anyone which one they are doing is a
+   line of helper text.
+4. **The seeded starter menu is not their menu.** They still have to delete it and type in
+   sixty dishes of their own. This is the single largest barrier to getting started, and it
+   arrives on day one.
+
+### The two paths
+
+The first screen asks which one, explicitly. No more inferring it from whether an id exists.
+
+**Path A — open a new store** (this person becomes `owner`)
+
+| Step | Field | Required | Notes |
+| --- | --- | --- | --- |
+| 1 Account | Email | ✅ | |
+| | Password | ✅ | ≥6 characters (Firebase's floor). Keeps the existing show/hide toggle |
+| | Display name | ✅ | Used by the staff list and by `createdBy` / `voidedBy` on orders |
+| 2 Store | Store name | ✅ | The only thing about the store anyone has to type |
+| 3 Menu | — | — | Primary button *Import menu from a photo*, secondary *Add dishes manually*, small link *Skip for now* |
+
+**Path B — join an existing store**
+
+| Step | Field | Required | Notes |
+| --- | --- | --- | --- |
+| 1 Invite | 6-character invite code | ✅ | **Validated before anything else is asked.** On success the screen names the store — "You are joining: <store name>" — so a mistyped code is caught here, not later |
+| 2 Account | Email / password / display name | ✅ | Same as path A |
+
+Validating the code first is deliberate: nobody should fill in a whole page and only then
+discover they typed the code wrong.
+
+### Fields that go away
+
+| Removed | Why |
+| --- | --- |
+| **The store ID input and its `Generate` button** | The store id becomes an internal identifier: generated automatically, never displayed, never typed by anyone |
+| **Confirm password** | There is already a show/hide toggle on the password field, which does the same job; a forgotten password has Firebase's reset flow |
+| **Store name, on path B** | It comes from the invite. Staff should not have the opportunity to spell their own workplace differently from their colleagues |
+
+### Settings that are never asked for
+
+Registration stops asking about store configuration entirely. Everything below takes the
+default it already has in code, and stays editable in Store Settings afterwards.
+
+| Field | Default | Where the default comes from |
+| --- | --- | --- |
+| `taxRate` | `0` | `Store` constructor |
+| `taxIncluded` | `true` | Taiwanese menu prices normally already contain tax |
+| `dayCutoffHour` | `4` | `Store.defaultDayCutoffHour` |
+| `targets` | `dailyOrders 100` / `dailyRevenue 20000` | `StoreTargets` |
+| `currency` / `timezone` | `TWD` / `Asia/Taipei` | `Store` constructor |
+| `categories` | Taken from the imported menu; empty if skipped | **Changed** — no longer `MenuRepository.defaultCategories` |
+| `deliveryPlatforms` | Empty | Prompt for one the first time somebody picks the delivery channel |
+| `businessHours` | Empty | Nothing reads it yet |
+
+`MenuRepository.seedDefaults()` is **no longer called at registration**. An empty menu is
+honest; a fake menu that looks real invites somebody to ring up a sale against 牛肉麵 that
+this kitchen has never sold.
+
+### Invite codes
+
+A new top-level collection, `invites/{code}`. The code is the document id — unique for
+free, fetched with a single `get()` rather than a query, and needing no index.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `storeId` | string | The store being joined |
+| `storeName` | string | Denormalised on purpose. The code is checked *before* the person belongs to any store, and at that moment they cannot read `stores/{id}` to find its name |
+| `role` | `staff` \| `manager` | Chosen by whoever generates the code |
+| `createdBy` | string | uid |
+| `createdAt` / `expiresAt` | timestamp | 30 minutes by default |
+| `usedBy` | string? | The uid that redeemed it; `null` while unused |
+| `usedAt` | timestamp? | |
+
+**Format:** six upper-case alphanumerics, with `0 O 1 I L` excluded. This code gets read
+aloud across a noisy kitchen or copied onto a scrap of paper, so the characters that get
+confused when spoken or written are not in the alphabet.
+
+**Single use.** Once `usedBy` is set the code is spent. Adding three staff means generating
+three codes; the generator screen supports issuing them one after another. Single-use is
+both the safest option and the one that is easiest to explain to an owner.
+
+**Redemption is atomic.** A client-side Firestore transaction marks the invite used and
+writes `users/{uid}` in one commit, so two people racing on the same code produce exactly
+one member. Firestore client transactions are real cross-document transactions — **this
+does not need Cloud Functions**, and the project therefore does not need a Blaze plan to
+ship the invite flow.
+
+### The rules this needs
+
+These changes ship with the invite flow, not after it — see the note under
+[access control](#access-control). The shape is: a `users/{uid}` document may no longer
+decide on its own which store it belongs to, or what it is allowed to do there.
+
+**`users/{uid}` — pin `storeId` and `role`**
+
+* `create` is allowed in exactly two shapes:
+  * **Opening a store** — the `storeId` being claimed does not exist yet, in which case
+    `role` may be `owner`.
+  * **Joining a store** — the document carries `joinedViaCode`, and the rule `get()`s that
+    invite to confirm the `storeId` matches, it has not expired, `usedBy` is still null,
+    and the `role` being claimed is the one the invite grants.
+* `update` requires `storeId` and `role` to equal their current values. Everything else on
+  the document, `displayName` included, stays freely editable.
+
+**`users/{uid}` — let managers change a colleague's role**
+
+Today `update` is restricted to your own document, which means *promoting a staff member to
+manager is not currently possible at all*. A second `update` clause allows
+`managerOf(resource.data.storeId)` to change another member's `role`, while never touching
+`storeId`, never acting on yourself, and never granting `owner`.
+
+**`invites/{code}`**
+
+| Operation | Allowed to |
+| --- | --- |
+| `create` | `managerOf(storeId)` |
+| `read` | Any signed-in user — at validation time they are not yet a member of anything |
+| `update` | Setting `usedBy` from null to your own uid, before `expiresAt` |
+| `delete` | `managerOf(storeId)` |
+
+### Sign-in methods
+
+`AuthRepository` is already the only thing in the app that imports `firebase_auth` —
+`grep -rl 'firebase_auth' lib/` lists nothing outside `lib/database/`, and screens deal
+only in uids, emails and `AuthException`. Adding a provider touches no caller.
+
+| Order | Method | Notes |
+| --- | --- | --- |
+| 1 | Email / password | Current behaviour. Stays forever as the fallback |
+| 2 | Google | Removes three fields and fills `displayName` in automatically |
+| 3 | Passkey | See below |
+| 4 | Apple | Blocked on iOS configuration (see [Platform support status](#platform-support-status)). App Store review requires Sign in with Apple wherever another third-party sign-in is offered |
+
+### Passkeys (designed, not built)
+
+Firebase Authentication has no passkey provider, and `firebase_auth` has not exposed one
+either — [flutterfire#17201](https://github.com/firebase/flutterfire/issues/17201) has been
+open since March 2025, unassigned, labelled `blocked: firebase-sdk`. So this is a
+self-hosted WebAuthn relying party.
+
+[passkeys](https://pub.dev/packages/passkeys) covers Android, iOS, macOS, **Web** and
+Windows, but only the client half of the ceremony: it hands back signed data that something
+trusted has to verify. Minting a Firebase custom token needs the Admin SDK's service
+account key, so the function in the middle cannot be skipped.
+
+```text
+Adding a passkey:
+  beginRegistration()   → server issues a challenge (single use, 60s)
+  passkeys.register()   → attestation
+  finishRegistration()  → verify, store the public key
+
+Signing in:
+  beginAuthentication()  → challenge
+  passkeys.authenticate()→ assertion
+  finishAuthentication() → verify challenge / origin / rpid / attestation /
+                           signature / counter
+                         → createCustomToken(uid)
+  signInWithCustomToken(token)
+```
+
+Verification uses `@simplewebauthn/server`; all six checks matter, and the challenge has to
+be server-generated and single-use or the whole thing is replayable.
+
+**Storage.** Both collections sit at the top level rather than under `stores/` — at sign-in
+time the user is not authenticated yet, so there is no store id to nest under.
+
+`passkeyCredentials/{credentialId}`
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `uid` | string | The Firebase Auth account this credential signs in |
+| `publicKey` | string | base64 |
+| `signCount` | int | Incremented on every use; a count that goes backwards means a cloned authenticator |
+| `transports` | array | `usb` / `internal` / `hybrid` … |
+| `deviceName` | string | So a person can tell which of their phones this is |
+| `createdAt` / `lastUsedAt` | timestamp | |
+
+The credential id is the document id because sign-in has to resolve a credential to a uid
+before anybody is authenticated.
+
+`passkeyChallenges/{challengeId}` holds `challenge`, `uid?`, `type`
+(registration / authentication), `expiresAt` (60 seconds) and `usedAt`.
+
+**Both collections must be `allow read, write: if false`.** Only the Admin SDK touches
+them. Public keys and `signCount` are the security-critical half of WebAuthn and the client
+has no business reading, let alone writing, either.
+
+**Platform association files.** The RP ID is the Firebase Hosting domain, and Hosting
+serves both files:
+
+* `/.well-known/assetlinks.json` — Android
+* `/.well-known/apple-app-site-association` — iOS (no extension, served as `application/json`)
+
+> The hosting rewrite in [firebase.json](firebase.json) is currently `"source": "**"` →
+> `/index.html`, which swallows `/.well-known/*` along with everything else. It needs an
+> exception, or neither association file is reachable and passkeys fail on both platforms.
+
+**Passkeys are always additive, never the only way in.** Email and password stay. Losing or
+replacing a phone must not lock an owner out of their own books — that is not a recoverable
+failure for this audience.
+
+**What this costs.** Cloud Functions requires the Blaze plan, which the project is not on
+(there is no `functions/` directory today). Blaze carries the same free quotas as Spark plus
+two million function invocations a month; fifty stores at twenty sign-ins a day is around
+thirty thousand, some sixty times under the ceiling. The real barrier is putting a card on
+file, not the bill. Set a budget alert and `maxInstances` on every function — an unbounded
+function is the thing that actually generates a surprise.
+
+If a card is genuinely not an option, the relying party can live on Cloudflare Workers
+instead: 100,000 requests/day free with no card, `@simplewebauthn/server` runs there, and a
+Firebase custom token is just an RS256 JWT signed with the service account key, which Web
+Crypto can do without the Admin SDK. The cost is a second cloud provider to deploy and
+debug. Photo-based menu import will want a server too, so whichever way this goes, the two
+features share the bill.
+
+**Not `corbado_auth_firebase`.** [corbado/flutter-passkeys](https://github.com/corbado/flutter-passkeys)
+is a useful reference for the flow above — it is the same shape, function verifies then
+mints a custom token — but its Firebase package is not the route here, for four independent
+reasons: its README states the package is currently broken with no ETA; its support table
+marks **Web as untested**, and Web is this project's primary platform; it still needs
+Firebase Functions, so it saves nothing on infrastructure; and it deploys as a Firebase
+Extension, a product being retired on 2027-03-31. It also puts the public keys on Corbado's
+servers. The core `passkeys` package from the same repository has none of these problems and
+is the right client-side choice.
+
+**Sequencing.** The registration rewrite comes first — passkeys are a provider bolted onto a
+flow that has to exist. Then Cloud Functions, then the relying party, then iOS.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -659,6 +923,20 @@ Tracked against the phases in [docs/refactor-plan.md](docs/refactor-plan.md).
 
 * [ ] Excel export (the button currently only logs)
 * [ ] `auditLogs` UI
+
+**Phase 6 — registration and onboarding** — specified, not started
+
+Design in [Registration and onboarding](#registration-and-onboarding).
+
+* [ ] Split registration into steps, with "open a store" and "join a store" as an explicit choice
+* [ ] Retire the store ID field and its `Generate` button — the id becomes internal
+* [ ] `invites/{code}` collection, manager-side code generator, redemption in a client transaction
+* [ ] Lock `storeId` and `role` in the rules; let managers change a colleague's role
+* [ ] Stop calling `MenuRepository.seedDefaults()` at registration
+* [ ] Import a menu from a photo (needs the recognition route settled first)
+* [ ] Google sign-in
+* [ ] Cloud Functions or a Workers relying party, then passkeys
+* [ ] `/.well-known/*` exception in the hosting rewrite (blocks passkeys on both mobile platforms)
 
 **Not tied to a phase**
 

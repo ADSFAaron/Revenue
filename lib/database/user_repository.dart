@@ -25,12 +25,6 @@ class UserRepository {
     return doc.exists ? AppUser.fromDoc(doc) : null;
   }
 
-  /// The signed-in user's profile, or null when signed out.
-  Future<AppUser?> fetchCurrent() async {
-    final uid = _auth.currentUid;
-    return uid == null ? null : fetch(uid);
-  }
-
   Stream<AppUser?> watchCurrent() {
     final uid = _auth.currentUid;
     if (uid == null) return Stream.value(null);
@@ -39,9 +33,6 @@ class UserRepository {
         .snapshots()
         .map((doc) => doc.exists ? AppUser.fromDoc(doc) : null);
   }
-
-  /// Convenience for the many screens that only need the store id.
-  Future<String?> currentStoreId() async => (await fetchCurrent())?.storeId;
 
   Future<void> create(AppUser user) async {
     await _users.doc(user.uid).set({
@@ -73,16 +64,4 @@ class UserRepository {
       .snapshots()
       .map((snap) => snap.docs.map(AppUser.fromDoc).toList()
         ..sort((a, b) => a.role.index.compareTo(b.role.index)));
-
-  Future<List<AppUser>> fetchStaff(String storeId) async {
-    final snap = await _users.where('storeId', isEqualTo: storeId).get();
-    return snap.docs.map(AppUser.fromDoc).toList()
-      ..sort((a, b) => a.role.index.compareTo(b.role.index));
-  }
-
-  Future<int> staffCount(String storeId) async {
-    final snap =
-        await _users.where('storeId', isEqualTo: storeId).count().get();
-    return snap.count ?? 0;
-  }
 }

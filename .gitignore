@@ -47,9 +47,15 @@ app.*.map.json
 /android/key.properties
 lib/firebase_options.dart
 ios/Runner/GoogleService-Info.plist
-firebase.json
 google-services.json
 android/app/google-services.json
+
+# firebase.json is deliberately NOT ignored. The Firestore rules and indexes
+# only deploy through its `firestore` block, and the hosting rewrites are the
+# only thing making /.well-known/* reachable — none of which survived a fresh
+# clone while the file was untracked. It holds a projectId and appIds, which
+# are compiled into every client build anyway; the API key lives in
+# lib/firebase_options.dart, which stays ignored.
 
 # Firebase Hosting deploy cache
 .firebase/

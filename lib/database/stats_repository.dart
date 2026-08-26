@@ -71,11 +71,6 @@ class StatsRepository {
   CollectionReference<Map<String, dynamic>> _stats(String storeId) =>
       _db.collection('stores').doc(storeId).collection('dailyStats');
 
-  Future<DailyStats?> fetchDay(String storeId, String businessDate) async {
-    final doc = await _stats(storeId).doc(businessDate).get();
-    return doc.exists ? DailyStats.fromDoc(doc) : null;
-  }
-
   Stream<DailyStats> watchDay(String storeId, String businessDate) =>
       _stats(storeId).doc(businessDate).snapshots().map((doc) => doc.exists
           ? DailyStats.fromDoc(doc)

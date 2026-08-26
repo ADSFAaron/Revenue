@@ -1,9 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
 
 import '../models/audit_log.dart';
 import '../models/menu_item.dart';
-import '../models/store.dart';
 import 'audit_log_repository.dart';
 
 /// Everything that touches `stores/{storeId}/menuItems/{itemId}`.
@@ -21,67 +19,11 @@ class MenuRepository {
   CollectionReference<Map<String, dynamic>> _items(String storeId) =>
       _db.collection('stores').doc(storeId).collection('menuItems');
 
-  /// The categories a brand-new store starts with.
-  static List<StoreCategory> get defaultCategories => const [
-        StoreCategory(id: 'cat_main', name: '主餐', sortOrder: 0),
-        StoreCategory(id: 'cat_side', name: '小菜', sortOrder: 1),
-        StoreCategory(id: 'cat_drink', name: '飲料', sortOrder: 2),
-      ];
-
-  /// A starter menu, so a new store is not an empty screen. Every field here is
-  /// editable in Store Settings → Edit Menu; costs are left at 0 for the owner
-  /// to fill in.
-  static List<MenuItem> get defaultMenu => [
-        MenuItem(
-            id: '',
-            name: '牛肉麵',
-            categoryId: 'cat_main',
-            icon: Icons.ramen_dining.codePoint.toString(),
-            price: 130,
-            sortOrder: 0),
-        MenuItem(
-            id: '',
-            name: '滷肉飯',
-            categoryId: 'cat_main',
-            icon: Icons.rice_bowl.codePoint.toString(),
-            price: 45,
-            sortOrder: 1),
-        MenuItem(
-            id: '',
-            name: '乾麵',
-            categoryId: 'cat_main',
-            icon: Icons.ramen_dining.codePoint.toString(),
-            price: 50,
-            sortOrder: 2),
-        MenuItem(
-            id: '',
-            name: '燙青菜',
-            categoryId: 'cat_side',
-            icon: Icons.eco.codePoint.toString(),
-            price: 35,
-            sortOrder: 3),
-        MenuItem(
-            id: '',
-            name: '滷蛋',
-            categoryId: 'cat_side',
-            icon: Icons.egg.codePoint.toString(),
-            price: 15,
-            sortOrder: 4),
-        MenuItem(
-            id: '',
-            name: '紅茶',
-            categoryId: 'cat_drink',
-            icon: Icons.local_cafe.codePoint.toString(),
-            price: 25,
-            sortOrder: 5),
-      ];
-
-  /// Dishes currently on sale, in menu order.
-  Stream<List<MenuItem>> watchActive(String storeId) => _items(storeId)
-      .where('isActive', isEqualTo: true)
-      .snapshots()
-      .map(_sorted);
-
+  // There is deliberately no starter menu and no default category list here.
+  // Registration used to seed six dishes and three categories into every new
+  // store; that menu belonged to nobody, and it invited somebody to ring up a
+  // sale against a dish this kitchen has never sold. A new store starts empty,
+  // and Store Settings → Edit Menu is where it stops being empty.
   /// Every dish including retired ones — the menu editor needs these so a
   /// retired dish can be brought back.
   Stream<List<MenuItem>> watchAll(String storeId) =>
@@ -170,19 +112,6 @@ class MenuRepository {
     for (var i = 0; i < ordered.length; i++) {
       batch.update(_items(storeId).doc(ordered[i].id), {
         'sortOrder': i,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-    }
-    await batch.commit();
-  }
-
-  /// Writes the starter menu. Called once, when a store is first created.
-  Future<void> seedDefaults(String storeId) async {
-    final batch = _db.batch();
-    for (final item in defaultMenu) {
-      batch.set(_items(storeId).doc(), {
-        ...item.toMap(),
-        'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
     }

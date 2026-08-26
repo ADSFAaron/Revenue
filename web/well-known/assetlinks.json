@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.adsf.revenue",
+      "sha256_cert_fingerprints": [
+        "CD:1B:92:5F:CF:08:C7:10:1F:52:BD:59:5C:C1:D2:5B:66:6A:58:90:E3:5D:EC:A7:A4:3D:EA:D0:CD:D6:46:B8"
+      ]
+    }
+  }
+]

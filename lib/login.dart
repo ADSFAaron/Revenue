@@ -4,6 +4,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'animation/FadeAnimation.dart';
 import 'database/repositories.dart';
+import 'register.dart';
+import 'sign_in_options.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -50,9 +52,13 @@ class _LoginPageState extends State<LoginPage> {
         ),
       ),
       body: SingleChildScrollView(
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height,
-          width: double.infinity,
+        child: ConstrainedBox(
+          // minHeight rather than a fixed height: with the Google and passkey
+          // buttons added, a short screen has to be allowed to scroll rather
+          // than overflow.
+          constraints: BoxConstraints(
+            minHeight: MediaQuery.of(context).size.height - 100,
+          ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: <Widget>[
@@ -141,6 +147,16 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
                       )),
+                  FadeAnimation(
+                    900,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(40, 24, 40, 0),
+                      child: SignInOptions(
+                        onGoogle: signInWithGoogle,
+                        onPasskey: signInWithPasskey,
+                      ),
+                    ),
+                  ),
                 ],
               ),
               FadeAnimation(
@@ -149,11 +165,18 @@ class _LoginPageState extends State<LoginPage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text("Don't have an account? "),
-                      Text(
-                        "Sign UP",
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 20,
+                      TextButton(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const RegisterPage()),
+                        ),
+                        child: const Text(
+                          "Sign UP",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 20,
+                          ),
                         ),
                       ),
                     ],
@@ -203,10 +226,61 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  Future<void> signInWithGoogle() async {
+    try {
+      final result = await authRepository.signInWithGoogle();
+      await _land(result);
+    } on AuthException catch (e) {
+      // Dismissing the Google sheet is a decision, not a failure.
+      if (e.failure != AuthFailure.cancelled) showError(e.message);
+    }
+  }
+
+  Future<void> signInWithPasskey() async {
+    try {
+      await _land(await passkeyRepository.signIn());
+    } on PasskeyException catch (e) {
+      if (e.failure != PasskeyFailure.cancelled) showError(e.message);
+    }
+  }
+
+  /// Sends a successful sign-in on to the app, or undoes it.
+  ///
+  /// Google will happily create an account for anybody who taps the button,
+  /// including somebody who has never registered. That account has no
+  /// `users/{uid}` document and belongs to no store, so letting it through
+  /// would drop them on the session gate's "no profile" screen with no idea
+  /// what to do. Better to put it back the way it was and say which button
+  /// they wanted.
+  Future<void> _land(SignInResult result) async {
+    if (await userRepository.fetch(result.uid) != null) {
+      if (!mounted) return;
+      // Back to the root, which is watching auth state and shows the shell
+      // through the session gate.
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      return;
+    }
+
+    if (result.isNewAccount) {
+      // Created seconds ago and never used. Leaving it behind would mean the
+      // person's second attempt at registering hits "email already in use".
+      await authRepository.deleteCurrentAccount();
+    } else {
+      await authRepository.signOut();
+    }
+
+    showError(
+      'There is no Revenue account for that sign-in yet. Tap Sign UP to open '
+      'a store, or to join one with an invite code.',
+    );
+  }
+
   void showError(String message) {
+    if (!mounted) return;
     final snackBar = SnackBar(
       content: Text(message),
       backgroundColor: Colors.red,
+      duration: const Duration(seconds: 6),
     );
     ScaffoldMessenger.of(context).showSnackBar(snackBar);
   }
@@ -239,23 +313,6 @@ class _LoginPageState extends State<LoginPage> {
         SizedBox(height: 20),
       ],
     );
-  }
-
-  void validateAndSignIn() {
-    String email = emailController.text.trim();
-    String password = passwordController.text.trim();
-
-    if (email.isEmpty || password.isEmpty) {
-      showError('Please fill all fields');
-      return;
-    }
-
-    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(email)) {
-      showError('Invalid Email Format');
-      return;
-    }
-
-    signIn(email, password);
   }
 
 }

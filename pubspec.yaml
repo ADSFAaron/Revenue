@@ -27,9 +27,6 @@ dependencies:
   # iOS style icons.
   cupertino_icons: ^1.0.8
 
-  # Online Storage for files
-  firebase_storage: ^12.4.5
-
   # Online Database for data
   cloud_firestore: ^5.6.6
   firebase_core: ^3.13.0
@@ -46,9 +43,6 @@ dependencies:
   # Use for getting clock
   intl: ^0.19.0
 
-  # Use for Firebase Realtime DB
-  firebase_database: ^11.3.5
-
   # Use for App Drawer
   flutter_launcher_icons: ^0.14.3
 
@@ -61,20 +55,38 @@ dependencies:
 
   # Use for output Excel file
   excel: ^4.0.6
-  permission_handler: ^11.4.0
 
   # Use for locating where an exported Excel file may be written
   path_provider: ^2.1.5
-  filesystem_picker: ^4.0.0
 
   # Use for history order grouped
   grouped_list: ^6.0.0
 
-  # Use for showing app info
-  package_info_plus: ^8.3.0
+  # Use for showing app info.
+  # 9.x is the floor `passkeys` pulls in through passkeys_doctor; it costs an
+  # Android Gradle Plugin bump to 8.12.1 (android/settings.gradle) and nothing
+  # else — the PackageInfo API itself is unchanged.
+  package_info_plus: ^9.0.1
 
   # Use for register generate uuid
   uuid: ^4.5.1
+
+  # Google sign-in on Android. Web goes through firebase_auth's signInWithPopup
+  # instead — google_sign_in_web cannot do a custom-button flow at all
+  # (supportsAuthenticate() is false there and authenticate() throws).
+  google_sign_in: ^7.2.0
+
+  # Passkeys: the client half of the WebAuthn ceremony. The verifying half is
+  # the relying party in functions/ — this package only signs challenges.
+  passkeys: ^2.22.3
+
+  # Calling that relying party. Firebase Auth has no passkey provider, so the
+  # ceremony finishes with a Cloud Function minting a custom token.
+  #
+  # Held at 5.x deliberately: cloud_functions 6.x wants firebase_core ^4, and
+  # moving to that would drag cloud_firestore and firebase_auth through a
+  # major version each. Passkeys are not worth a stack-wide migration.
+  cloud_functions: ^5.6.0
 
   # Use for app name
   rename: ^3.0.2
@@ -82,7 +94,6 @@ dependencies:
   # Use for edit menu icon
   flutter_iconpicker: ^4.0.1
   material_symbols_icons: ^4.2811.0
-  internet_connection_checker_plus: ^2.7.1
 
 dev_dependencies:
   flutter_test:
@@ -119,7 +130,6 @@ flutter_launcher_icons:
     generate: true
     image_path: "assets/icon/AppLogo.png"
 
-
 flutter_native_splash:
   color: "#eae9e4"
   image: "assets/icon/AppLogo.png"
@@ -134,8 +144,8 @@ flutter:
   assets:
     - assets/welcome.svg
     - assets/login_bg.svg
-    - assets/register_bg.svg
     - assets/google-gemini-icon.svg
+    - assets/google-icon.svg
 
   # An images asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware.

@@ -4,24 +4,28 @@
       "collectionGroup": "orders",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "businessDate", "order": "ASCENDING" },
-        { "fieldPath": "placedAt", "order": "ASCENDING" }
+        {
+          "fieldPath": "businessDate",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "placedAt",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "orders",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "placedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "orders",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "itemIds", "arrayConfig": "CONTAINS" },
-        { "fieldPath": "businessDate", "order": "ASCENDING" }
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "placedAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
@@ -29,8 +33,29 @@
       "collectionGroup": "dailyStats",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "orderCount", "order": "ASCENDING" },
-        { "fieldPath": "revenue", "order": "ASCENDING" }
+        {
+          "fieldPath": "orderCount",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "revenue",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "Backs InviteRepository.watchForStore() — the manager's list of codes issued for their store, newest first. The equality filter plus a different ordering field is exactly the shape that needs a composite index.",
+      "collectionGroup": "invites",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "storeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],

@@ -6,6 +6,7 @@ import 'package:flutter_iconpicker/flutter_iconpicker.dart';
 import '../database/repositories.dart';
 import '../models/menu_item.dart';
 import '../models/store.dart';
+import 'store_categories.dart';
 
 class StoreEditMenu extends StatefulWidget {
   final String storeID;
@@ -23,10 +24,38 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
 
   List<StoreCategory> _categories = const [];
 
+  // Owned by this State rather than created inside _openDialog. Disposing a
+  // controller straight after `await showDialog` throws "A
+  // TextEditingController was used after being disposed": the future completes
+  // when the route is popped, which is the start of the exit transition, and
+  // the TextField is still mounted and still reading it. That is what made
+  // Cancel crash.
+  final nameController = TextEditingController();
+  final priceController = TextEditingController();
+  final costController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _loadCategories();
+  }
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    priceController.dispose();
+    costController.dispose();
+    super.dispose();
+  }
+
+  /// Reloads on the way back: the dish dialog's category dropdown is built
+  /// from this list, and an edit made next door has to show up here.
+  Future<void> _openCategories() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => StoreCategories(widget.storeID)),
+    );
+    await _loadCategories();
   }
 
   Future<void> _loadCategories() async {
@@ -40,6 +69,11 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
       appBar: AppBar(
         title: const Text('Edit Menu'),
         actions: [
+          IconButton(
+            tooltip: 'Menu categories',
+            icon: const Icon(Icons.category_outlined),
+            onPressed: _openCategories,
+          ),
           IconButton(
             tooltip: _showRetired ? 'Hide retired dishes' : 'Show retired dishes',
             icon: Icon(_showRetired
@@ -65,7 +99,16 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
 
           if (visible.isEmpty) {
             return const Center(
-              child: Text('No dishes yet. Tap + to add one.'),
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: Text(
+                  'No dishes yet. Tap + to add one.\n\n'
+                  'A new store starts with an empty menu on purpose — a '
+                  'starter menu that looks real is a sale waiting to be rung '
+                  'up against a dish this kitchen has never sold.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
             );
           }
 
@@ -185,11 +228,12 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
 
   Future<void> _openDialog({MenuItem? existing}) async {
     final isEdit = existing != null;
-    final nameController = TextEditingController(text: existing?.name ?? '');
-    final priceController =
-        TextEditingController(text: isEdit ? existing.price.toString() : '');
-    final costController = TextEditingController(
-        text: isEdit && existing.cost > 0 ? existing.cost.toString() : '');
+    // Reset rather than recreate — the same three controllers serve every
+    // dish, so each opening has to clear what the last one left behind.
+    nameController.text = existing?.name ?? '';
+    priceController.text = isEdit ? existing.price.toString() : '';
+    costController.text =
+        isEdit && existing.cost > 0 ? existing.cost.toString() : '';
     var iconCodePoint = existing?.icon ?? MenuItem.defaultIconCodePoint;
     var categoryId = existing?.categoryId ??
         (_categories.isNotEmpty ? _categories.first.id : null);
@@ -269,7 +313,19 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
                   ],
                   textInputAction: TextInputAction.done,
                 ),
-                if (_categories.isNotEmpty)
+                if (_categories.isEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context, false);
+                        _openCategories();
+                      },
+                      icon: const Icon(Icons.category_outlined, size: 18),
+                      label: const Text('Set up categories'),
+                    ),
+                  )
+                else
                   DropdownButtonFormField<String>(
                     initialValue: categoryId,
                     decoration: const InputDecoration(labelText: 'Category'),
@@ -341,10 +397,6 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
       }
       _snack(isEdit ? 'Dish updated' : 'Dish added');
     }
-
-    nameController.dispose();
-    priceController.dispose();
-    costController.dispose();
   }
 
   void _snack(String message) {

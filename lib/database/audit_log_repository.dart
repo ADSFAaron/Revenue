@@ -32,12 +32,6 @@ class AuditLogRepository {
         }
       );
 
-  /// For changes that are not already inside a transaction.
-  Future<void> record(String storeId, AuditLog log) async {
-    final (ref, data) = entryFor(storeId, log);
-    await ref.set(data);
-  }
-
   /// Newest first. Readable only by managers, per the security rules.
   Stream<List<AuditLog>> watchRecent(String storeId, {int limit = 100}) =>
       _logs(storeId)

@@ -353,23 +353,6 @@ class OrderRepository {
         .get();
     return snap.docs.map(Order.fromDoc).toList();
   }
-
-  /// Orders containing a given dish — the basis for basket analysis. Backed by
-  /// the `itemIds` array index.
-  Future<List<Order>> fetchContainingItem(
-    String storeId, {
-    required String itemId,
-    required String fromBusinessDate,
-    required String toBusinessDate,
-  }) async {
-    final snap = await _orders(storeId)
-        .where('itemIds', arrayContains: itemId)
-        .where('businessDate', isGreaterThanOrEqualTo: fromBusinessDate)
-        .where('businessDate', isLessThanOrEqualTo: toBusinessDate)
-        .orderBy('businessDate')
-        .get();
-    return snap.docs.map(Order.fromDoc).toList();
-  }
 }
 
 /// Running totals for one rollup key while building a stats delta.

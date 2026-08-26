@@ -1,0 +1,104 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": {
+    "//": "The WebAuthn relying party, and nothing else. Every function is capped with maxInstances in src/config.ts — Blaze bills by invocation, and an uncapped function is what turns a runaway into a bill.",
+    "source": "functions",
+    "codebase": "default",
+    "runtime": "nodejs22",
+    "predeploy": [
+      "npm --prefix \"$RESOURCE_DIR\" run build"
+    ],
+    "ignore": [
+      "node_modules",
+      ".git",
+      "*.log"
+    ]
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "//": "The catch-all below swallows everything, /.well-known/* included, which is why neither platform-association file was reachable. These two come first — within `rewrites`, Hosting applies the first rule whose pattern matches. The files themselves live in web/well-known/ (no leading dot) because the `ignore` glob `**/.*` drops any dotted directory before deploy, so a real web/.well-known/ would never be uploaded at all.",
+        "source": "/.well-known/assetlinks.json",
+        "destination": "/well-known/assetlinks.json"
+      },
+      {
+        "source": "/.well-known/apple-app-site-association",
+        "destination": "/well-known/apple-app-site-association"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "//": "Apple fetches this with no file extension and requires application/json. Android's assetlinks.json gets the type from its extension, but is pinned here too so neither depends on Hosting guessing. Both are declared against the /.well-known/ request path, not the rewritten one.",
+        "source": "/.well-known/apple-app-site-association",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ]
+      },
+      {
+        "source": "/.well-known/assetlinks.json",
+        "headers": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ]
+      },
+      {
+        "//": "Flutter web output is NOT content-hashed — main.dart.js keeps the same filename every build — so a long immutable max-age would pin browsers to the version they first loaded and no redeploy would reach them. But plain 'no-cache' is worse: Firebase Hosting stops honouring If-None-Match on it and re-sends the whole ~1 MB gzipped bundle on every page load. 'max-age=0, must-revalidate' is the pair that works: revalidate before every use, and get a 304 when the build has not changed.",
+        "source": "**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=0, must-revalidate"
+          }
+        ]
+      },
+      {
+        "//": "canvaskit is pinned to the Flutter SDK version, so it may be held longer.",
+        "source": "/canvaskit/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=604800"
+          }
+        ]
+      }
+    ]
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "revenueapp-b8849",
+          "appId": "1:984830610429:android:338f678898416549ce2794",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "revenueapp-b8849",
+          "configurations": {
+            "android": "1:984830610429:android:338f678898416549ce2794",
+            "web": "1:984830610429:web:5c3e49054aacfc46ce2794"
+          }
+        }
+      }
+    }
+  }
+}

@@ -5,6 +5,12 @@ rules_version = '2';
 // Model: every signed-in user has exactly one `users/{uid}` document, and that
 // document's `storeId` decides which store's data they may touch. Nothing is
 // readable without being a member of the store.
+//
+// The one thing to keep in mind while reading this file: `users/{uid}` is
+// written by the person it describes, and it is also the document every other
+// rule trusts. So it may not be allowed to say whatever it likes. A user
+// document may only claim a store that nobody owns yet, or one that an invite
+// code granted, and after that its `storeId` and `role` are pinned.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -28,9 +34,63 @@ service cloud.firestore {
       return meExists() && me().storeId == storeId;
     }
 
-    // Price changes, menu edits and store settings are manager-level actions.
+    // Price changes, menu edits, store settings and invite codes are
+    // manager-level actions.
     function managerOf(storeId) {
       return memberOf(storeId) && me().role in ['owner', 'manager'];
+    }
+
+    // ---------------------------------------------------------------------
+    // users
+    // ---------------------------------------------------------------------
+
+    // Opening a store: the id being claimed belongs to no store yet, so there
+    // is nobody to take it from. This is the only way to become an `owner`.
+    function claimsUnusedStore() {
+      return request.resource.data.role == 'owner' &&
+        !exists(/databases/$(database)/documents/stores/$(request.resource.data.storeId));
+    }
+
+    // Joining a store: the document names the invite it was created from, and
+    // that invite has to actually grant this store and this role, be unspent,
+    // and not have expired. Without this check a new account could simply
+    // declare itself a manager of any store whose id it knew.
+    //
+    // The invite is read at its pre-transaction state, which is what makes
+    // this work alongside the same transaction's write marking it used.
+    function redeemsValidInvite() {
+      return 'joinedViaCode' in request.resource.data &&
+        exists(/databases/$(database)/documents/invites/$(request.resource.data.joinedViaCode)) &&
+        inviteGrants(get(/databases/$(database)/documents/invites/$(request.resource.data.joinedViaCode)).data);
+    }
+
+    function inviteGrants(invite) {
+      return invite.storeId == request.resource.data.storeId &&
+        invite.role == request.resource.data.role &&
+        invite.usedBy == null &&
+        request.time < invite.expiresAt;
+    }
+
+    // You may edit your own profile, but not what you are allowed to do with
+    // it. `displayName` and everything else stay freely editable.
+    function keepsOwnStoreAndRole() {
+      return request.resource.data.storeId == resource.data.storeId &&
+        request.resource.data.role == resource.data.role;
+    }
+
+    // A manager may change a colleague's role and nothing else about them.
+    // Never their own — that is how somebody promotes themselves — and never
+    // the owner's, and never *to* owner: a store has exactly one, and it is
+    // whoever opened it.
+    function managerChangingSomeoneElsesRole(uid) {
+      return request.auth.uid != uid &&
+        managerOf(resource.data.storeId) &&
+        resource.data.role != 'owner' &&
+        request.resource.data.role in ['staff', 'manager'] &&
+        request.resource.data.storeId == resource.data.storeId &&
+        request.resource.data.uid == resource.data.uid &&
+        request.resource.data.email == resource.data.email &&
+        request.resource.data.displayName == resource.data.displayName;
     }
 
     match /users/{uid} {
@@ -38,17 +98,76 @@ service cloud.firestore {
       // what the staff list reads).
       allow read: if signedIn() &&
         (request.auth.uid == uid || (meExists() && resource.data.storeId == me().storeId));
-      // Registration writes this document before anything else exists, so it
-      // may only be gated on the uid matching.
-      allow create: if signedIn() && request.auth.uid == uid;
-      allow update: if signedIn() && request.auth.uid == uid;
+
+      allow create: if signedIn() &&
+        request.auth.uid == uid &&
+        request.resource.data.uid == uid &&
+        (claimsUnusedStore() || redeemsValidInvite());
+
+      allow update: if signedIn() && (
+        (request.auth.uid == uid && keepsOwnStoreAndRole()) ||
+        managerChangingSomeoneElsesRole(uid)
+      );
+
       allow delete: if false;
     }
+
+    // ---------------------------------------------------------------------
+    // invites
+    // ---------------------------------------------------------------------
+
+    // A single-use code that lets somebody join a store. Top level rather than
+    // under `stores/`, because it is validated by a person who does not belong
+    // to any store yet and so cannot be given a path under one.
+    match /invites/{code} {
+      // Deliberately open, and the one rule in this file that does not require
+      // sign-in. Registration validates the code on its *first* screen, before
+      // an account exists, so that a mistyped code is caught there instead of
+      // after a whole form has been filled in. Reading a code by its exact id
+      // is the only thing this allows: there are 31^6 ≈ 887 million codes, a
+      // handful are live at a time, and each expires in 30 minutes, so
+      // guessing one is not a practical attack. App Check is the proper
+      // mitigation if that ever stops being true.
+      allow get: if true;
+
+      // Listing is a different matter — that is how you would enumerate other
+      // stores' codes. Managers, own store only.
+      allow list: if managerOf(resource.data.storeId);
+
+      allow create: if managerOf(request.resource.data.storeId) &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.role in ['staff', 'manager'] &&
+        request.resource.data.usedBy == null &&
+        request.resource.data.expiresAt is timestamp;
+
+      // The only permitted update is spending the code on yourself, once,
+      // before it expires. Everything the code grants is frozen: nobody gets
+      // to redeem a staff code and rewrite it into a manager one on the way
+      // through.
+      allow update: if signedIn() &&
+        resource.data.usedBy == null &&
+        request.time < resource.data.expiresAt &&
+        request.resource.data.usedBy == request.auth.uid &&
+        request.resource.data.storeId == resource.data.storeId &&
+        request.resource.data.storeName == resource.data.storeName &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.createdBy == resource.data.createdBy &&
+        request.resource.data.expiresAt == resource.data.expiresAt;
+
+      // Revoking a code that was read out to the wrong person, and tidying
+      // away spent ones.
+      allow delete: if managerOf(resource.data.storeId);
+    }
+
+    // ---------------------------------------------------------------------
+    // stores
+    // ---------------------------------------------------------------------
 
     match /stores/{storeId} {
       allow read: if memberOf(storeId);
       // Registration creates the store right after the user document, so the
-      // membership check already resolves.
+      // membership check already resolves. The user document could only have
+      // claimed this id while no store held it.
       allow create: if memberOf(storeId);
       allow update: if managerOf(storeId);
       allow delete: if false;
@@ -82,6 +201,34 @@ service cloud.firestore {
         allow create: if memberOf(storeId);
         allow update, delete: if false;
       }
+    }
+
+    // ---------------------------------------------------------------------
+    // passkeys
+    // ---------------------------------------------------------------------
+
+    // Both collections are closed to every client, in both directions.
+    //
+    // `passkeyCredentials` holds public keys and signature counters, which are
+    // the security-critical half of WebAuthn: a client that could write a
+    // counter could replay a cloned authenticator, and one that could write a
+    // public key could sign in as anybody. `passkeyChallenges` is worse — a
+    // client that could read or write a challenge could hand itself one it had
+    // already captured an assertion for.
+    //
+    // Only the Admin SDK touches these, from functions/src/passkeys.ts, and
+    // the Admin SDK bypasses rules entirely. Denying everything here is not a
+    // restriction on the app; it is the statement that nothing but the relying
+    // party has any business in this data.
+    //
+    // Reading your own passkeys goes through the `listPasskeys` callable, and
+    // removing one through `deletePasskey`.
+    match /passkeyCredentials/{credentialId} {
+      allow read, write: if false;
+    }
+
+    match /passkeyChallenges/{challengeId} {
+      allow read, write: if false;
     }
 
     // In-app feedback: write-only from the app, readable only from the console.

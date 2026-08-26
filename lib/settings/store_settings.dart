@@ -21,11 +21,26 @@ class StoreSettings extends StatefulWidget {
 }
 
 class _StoreSettingsState extends State<StoreSettings> {
+  // Every dialog's controller is owned by this State, not created inside the
+  // method that shows the dialog.
+  //
+  // `showDialog`'s future completes the moment the route is popped, which is
+  // the *start* of the exit transition — the TextField is still mounted and
+  // still reading its controller for another frame or two. Disposing it there
+  // throws "A TextEditingController was used after being disposed", which is
+  // what made Cancel crash. Tying the lifetime to the screen instead means the
+  // dispose happens when nothing can still be reading it.
   final TextEditingController storeNameController = TextEditingController();
+  final TextEditingController rateController = TextEditingController();
+  final TextEditingController ordersController = TextEditingController();
+  final TextEditingController revenueController = TextEditingController();
 
   @override
   void dispose() {
     storeNameController.dispose();
+    rateController.dispose();
+    ordersController.dispose();
+    revenueController.dispose();
     super.dispose();
   }
 
@@ -59,17 +74,11 @@ class _StoreSettingsState extends State<StoreSettings> {
                   trailing: const Icon(Icons.keyboard_arrow_right_outlined),
                   onTap: () => _editStoreNameDialog(store),
                 ),
-                _buildListTile(
-                  icon: Icons.fingerprint,
-                  title: 'Store ID',
-                  subtitle: widget.storeId,
-                  trailing: const Icon(Icons.keyboard_arrow_right_outlined),
-                  onTap: () {
-                    Clipboard.setData(ClipboardData(text: widget.storeId));
-                    _showSnackBar('Store ID copied to clipboard');
-                  },
-                ),
-                _buildStaffTile(),
+                // No "Store ID" row. The id is an internal identifier now —
+                // generated at registration, never displayed and never typed.
+                // Colleagues are added with an invite code instead, from the
+                // Staff screen.
+                _buildStaffTile(store),
                 if (store.createdAt != null)
                   _buildListTile(
                     icon: Symbols.timer_arrow_up,
@@ -137,7 +146,7 @@ class _StoreSettingsState extends State<StoreSettings> {
 
   /// Staff are found by reverse lookup on `users.storeId` rather than from a
   /// list kept on the store document, which used to drift out of sync.
-  Widget _buildStaffTile() {
+  Widget _buildStaffTile(Store store) {
     return StreamBuilder<List<AppUser>>(
       stream: userRepository.watchStaff(widget.storeId),
       builder: (context, snapshot) {
@@ -146,8 +155,11 @@ class _StoreSettingsState extends State<StoreSettings> {
           icon: Icons.group_outlined,
           trailing: const Icon(Icons.keyboard_arrow_right_outlined),
           title: 'Staff',
-          subtitle: count == null ? 'Loading…' : '$count users',
-          onTap: () => _push(StoreStaff(widget.storeId)),
+          subtitle: count == null
+              ? 'Loading…'
+              : '$count ${count == 1 ? 'person' : 'people'} · invite a colleague',
+          onTap: () => _push(
+              StoreStaff(widget.storeId, storeName: store.name)),
         );
       },
     );
@@ -266,8 +278,7 @@ class _StoreSettingsState extends State<StoreSettings> {
   }
 
   Future<void> _editTaxDialog(Store store) async {
-    final rateController = TextEditingController(
-        text: (store.taxRate * 100).toStringAsFixed(0));
+    rateController.text = (store.taxRate * 100).toStringAsFixed(0);
     var included = store.taxIncluded;
 
     final saved = await showDialog<bool>(
@@ -312,7 +323,6 @@ class _StoreSettingsState extends State<StoreSettings> {
     );
 
     final percent = int.tryParse(rateController.text) ?? 0;
-    rateController.dispose();
     if (saved != true) return;
 
     await storeRepository.updateTax(
@@ -325,10 +335,8 @@ class _StoreSettingsState extends State<StoreSettings> {
 
   /// Feeds the statistics gauge, which used to be hard-coded to 60 / 200.
   Future<void> _editTargetsDialog(Store store) async {
-    final ordersController =
-        TextEditingController(text: store.targets.dailyOrders.toString());
-    final revenueController =
-        TextEditingController(text: store.targets.dailyRevenue.toString());
+    ordersController.text = store.targets.dailyOrders.toString();
+    revenueController.text = store.targets.dailyRevenue.toString();
 
     final saved = await showDialog<bool>(
       context: context,
@@ -368,8 +376,6 @@ class _StoreSettingsState extends State<StoreSettings> {
 
     final orders = int.tryParse(ordersController.text);
     final revenue = int.tryParse(revenueController.text);
-    ordersController.dispose();
-    revenueController.dispose();
     if (saved != true || orders == null || revenue == null) return;
 
     await storeRepository.updateTargets(

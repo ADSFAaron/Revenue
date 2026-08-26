@@ -36,7 +36,8 @@
         <li><a href="#1-clone-and-install-dependencies">1. Clone and install dependencies</a></li>
         <li><a href="#2-firebase-setup-required">2. Firebase setup (required)</a></li>
         <li><a href="#3-deploy-the-firestore-rules-and-indexes">3. Deploy the Firestore rules and indexes</a></li>
-        <li><a href="#4-run-the-app">4. Run the app</a></li>
+        <li><a href="#4-deploy-the-passkey-relying-party-optional">4. Deploy the passkey relying party (optional)</a></li>
+        <li><a href="#5-run-the-app">5. Run the app</a></li>
       </ul>
     </li>
     <li><a href="#web-and-firebase-hosting">Web and Firebase Hosting</a></li>
@@ -58,7 +59,7 @@
         <li><a href="#invite-codes">Invite codes</a></li>
         <li><a href="#the-rules-this-needs">The rules this needs</a></li>
         <li><a href="#sign-in-methods">Sign-in methods</a></li>
-        <li><a href="#passkeys-designed-not-built">Passkeys (designed, not built)</a></li>
+        <li><a href="#passkeys">Passkeys</a></li>
       </ul>
     </li>
     <li><a href="#troubleshooting">Troubleshooting</a></li>
@@ -82,11 +83,13 @@ into their phone and submit; the value is in what the numbers say afterwards.
 It covers order entry, order history, and a statistics page with charts and gauges.
 Data lives in Cloud Firestore, with Firebase Authentication for sign-in.
 
-> **Status.** The app is mid-refactor on branch `v3`. Phases 0–2 of
+> **Status.** The app is mid-refactor on branch `v3`. Phases 0–6 of
 > [docs/refactor-plan.md](docs/refactor-plan.md) are implemented — the Firestore schema,
-> the repository layer, security rules, menu editing and order entry are all on the new
-> design. Phases 3–5 (real Day/Week/Month ranges, menu engineering, Excel export) are
-> not. See [Roadmap](#roadmap) for exactly what is and is not done.
+> the repository layer, security rules, menu editing, order entry, the statistics and
+> analysis pages, Excel export, the stepped registration flow with invite codes, and
+> sign-in with Google or a passkey. The one feature still outstanding is importing a
+> menu from a photo, which is waiting on a decision about the recognition route. See
+> [Roadmap](#roadmap) for exactly what is and is not done.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -192,14 +195,13 @@ apply them. Until you deploy, a fresh project runs on whatever rules the console
 and the composite indexes the order queries need will not exist, so those queries fail with
 a `FAILED_PRECONDITION` error containing a link to create the missing index.
 
-> ⚠️ **`firebase.json` is git-ignored** (line 51 of `.gitignore`), so a fresh clone has
-> neither the `firestore` nor the `hosting` configuration, and both `firebase deploy`
-> commands in this README abort with *"Cannot understand what targets to deploy"*.
->
-> Consider removing that line: the file holds only a project id, an app id and file paths —
-> all values that are compiled into the client anyway, none of them secret. Until then,
-> every machine has to recreate the `firestore` and `hosting` blocks by hand.
-> `.firebaserc` (which pins the default project) *is* committed.
+> [firebase.json](firebase.json) **is committed**, as of the registration rewrite. It used
+> to be git-ignored, which meant a fresh clone had neither the `firestore` nor the
+> `hosting` configuration and both `firebase deploy` commands in this README aborted with
+> *"Cannot understand what targets to deploy"*. The file holds only a project id, an app id
+> and file paths — all values compiled into the client anyway, none of them secret. The API
+> key lives in `lib/firebase_options.dart`, which stays ignored. `.firebaserc` (which pins
+> the default project) is committed too.
 
 ```sh
 firebase deploy --only firestore:rules,firestore:indexes --project revenueapp-b8849
@@ -211,7 +213,43 @@ them as *Building* for a few minutes on a large collection.
 Because the rules deny everything not explicitly matched, **the app cannot read anything
 until this is deployed** on a project whose rules are still the default deny-all.
 
-### 4. Run the app
+### 4. Deploy the passkey relying party (optional)
+
+Everything except passkeys runs entirely client-side — the invite flow included, because a
+Firestore client transaction is a real cross-document transaction. [functions/](functions/)
+exists for the one thing that cannot: turning a verified WebAuthn assertion into a Firebase
+session needs the service account key to mint a custom token.
+
+```sh
+npm --prefix functions install
+firebase deploy --only functions --project revenueapp-b8849
+```
+
+Skip this and the app still works; the passkey button simply reports that the service is
+not deployed. Everything else — email/password, Google, invites, orders, statistics — is
+unaffected.
+
+Three things are worth knowing before the first deploy:
+
+* **It needs the Blaze plan.** Functions do. The usage here sits far inside the free
+  quota — see [What this costs](#passkeys) — but a card has to be on file.
+* **The region is `asia-east1`**, set in [functions/src/config.ts](functions/src/config.ts).
+  The Dart side hard-codes the same value in `passkeyFunctionsRegion`; a callable is
+  addressed by region *and* name, so if one moves the other must move with it or every call
+  fails with a bare "not found".
+* **`createCustomToken` needs a signer.** If deployment succeeds but sign-in fails with a
+  message about IAM, grant the function's runtime service account the **Service Account
+  Token Creator** role — minting a token is a signBlob call, and the default compute service
+  account does not always have it.
+
+Then enable the challenge TTL policy, once:
+
+```sh
+gcloud firestore fields ttls update expiresAt \
+  --collection-group=passkeyChallenges --enable-ttl --project revenueapp-b8849
+```
+
+### 5. Run the app
 
 Web is the current development target — it needs no device or emulator:
 
@@ -222,9 +260,11 @@ flutter run -d chrome
 For Android, `flutter devices` first to confirm a device or emulator is attached, then
 `flutter run`.
 
-Register a new account to get started. Entering a **new** store ID creates the store, makes
-you its owner and seeds a starter menu; entering an **existing** store ID joins that store
-as staff, and the store name field is ignored.
+Register a new account to get started. The first screen asks which you are doing:
+**open a new store**, which makes you its owner, or **join an existing store**, which needs
+a 6-character invite code from somebody who already manages it. A new store starts with an
+empty menu — add dishes under Store Settings → Edit Menu, and their categories under the 🏷
+button there. Invite codes are issued from Store Settings → Staff → **Invite**.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -323,10 +363,66 @@ buildTypes {
 
 | Platform | Status |
 | --- | --- |
-| Web | **Working — the current development and deployment target.** Builds, renders and initialises Firebase with no console errors; deployed via Firebase Hosting |
-| Android | Builds and runs. Not re-verified since the Phase 0–2 refactor — no device or emulator was available |
+| Web | **Working — the current development and deployment target.** Builds, renders and initialises Firebase with no console errors; deployed via Firebase Hosting. Google sign-in and passkeys both work here with no extra client setup |
+| Android | Compiles (`flutter build apk`). Not run on a device by me — none was available. Google sign-in needed its signing SHA-1 registered before Play Services would issue an ID token; that is done, see below |
 | iOS | **Not configured.** The app is registered in Firebase and `ios/Runner/GoogleService-Info.plist` exists, but `firebase_options.dart` still throws `UnsupportedError` for iOS. See below. |
 | Windows / macOS / Linux | Not configured |
+
+### Android: Google sign-in and `DEVELOPER_ERROR`
+
+Web needs no client-side setup at all. Android needs the signing certificate registered
+against the app, and until it is, Google Play Services refuses with
+
+```text
+W/GoogleApiManager: ConnectionResult{statusCode=DEVELOPER_ERROR, ...}
+```
+
+which is Play Services saying it cannot match *package name + signing SHA-1* to any
+registered Android OAuth client. It is a configuration error, never a code one — no
+amount of Dart changes it.
+
+Both halves are now done for `com.adsf.revenue`:
+
+| | State |
+| --- | --- |
+| Android OAuth client (`client_type: 1`) | ✅ registered, bound to `com.adsf.revenue` + SHA-1 `a3a4854d…` |
+| Web OAuth client (`client_type: 3`) | ✅ present in `google-services.json`, surfacing as the `default_web_client_id` string resource — this is what `google_sign_in` reads to ask for an ID token |
+
+Diagnosing this without guessing, next time:
+
+```sh
+# What certificate does this build actually sign with?
+cd android && ./gradlew signingReport        # or keytool -list -v -keystore …
+
+# What does the project think is registered?
+firebase apps:android:sha:list <appId> --project revenueapp-b8849
+
+# Empty oauth_client here is the smoking gun.
+firebase apps:sdkconfig ANDROID <appId> --project revenueapp-b8849
+```
+
+Registering a fingerprint is `firebase apps:android:sha:create <appId> <SHA>`, and
+**`google-services.json` must be re-pulled afterwards** — the Android OAuth client only
+appears in it once the fingerprint exists. `android/app/google-services.json` is
+git-ignored, so a fresh clone needs its own copy:
+
+```sh
+firebase apps:sdkconfig ANDROID 1:984830610429:android:338f678898416549ce2794 \
+  --project revenueapp-b8849 --out android/app/google-services.json
+```
+
+> ⚠️ **Release builds currently sign with the debug keystore**
+> (`signingConfig signingConfigs.debug`), so the registered fingerprint is the debug one:
+> SHA-1 `A3:A4:85:4D:EC:5D:52:E8:41:31:78:BF:21:DC:11:AA:05:FB:11:63`. A real release
+> keystore means registering its fingerprint too — and Play App Signing re-signs uploads,
+> so the fingerprint Play reports has to be registered as well or sign-in breaks only in
+> production.
+
+Passkeys on Android need neither of those — they need
+[`/.well-known/assetlinks.json`](web/well-known/assetlinks.json) published, which
+`firebase deploy --only hosting` does.
+
+### Finishing iOS
 
 To finish iOS you need CocoaPods and the `xcodeproj` Ruby gem — `flutterfire configure`
 uses the latter to add `GoogleService-Info.plist` to the Xcode build phase, and aborts with
@@ -346,20 +442,29 @@ lib/
 ├── main.dart                 # Entry point; Firebase init + auth-state routing
 ├── theme.dart                # Material theme (light/dark colour schemes)
 ├── login.dart / register.dart
+├── sign_in_options.dart      # Google and passkey buttons, shared by both of those
 ├── home.dart                 # Bottom-nav shell hosting the four pages below
 ├── page/
 │   ├── overview.dart         # Landing page: today's revenue and order count
 │   ├── transaction.dart      # Today's summary + last transactions
-│   ├── statistics.dart       # Charts and target gauge (Day only — see Roadmap)
+│   ├── statistics.dart       # Charts, target gauge, Day/Week/Month, period paging
+│   ├── analysis.dart         # Menu engineering, heatmap, basket analysis, prep list
 │   ├── store.dart            # Store card, lifetime totals, settings entry points
 │   └── addorder.dart         # Order entry
-├── settings/                 # App, user, store, staff, menu, order history
-├── models/                   # AppUser, Store, MenuItem, Order, OrderDraft, DailyStats
-├── database/                 # Repository layer — the only code that talks to Firestore
+├── settings/                 # App, user, store, staff, invites, menu, order history
+├── models/                   # AppUser, Store, MenuItem, Order, Invite, DailyStats, …
+├── analysis/                 # The pure functions the analysis page renders
+├── export/                   # Excel workbook building and saving
+├── database/                 # Repository layer — the only code that talks to Firebase
 └── animation/                # Shared page transitions
 
+functions/                    # The WebAuthn relying party, and nothing else
+├── src/config.ts             # RP ID, region, allowed origins, instance cap
+└── src/passkeys.ts           # The six callables that make up the two ceremonies
+
+web/well-known/assetlinks.json  # Digital Asset Links, so Android passkeys work
 firestore.rules               # Security rules
-firestore.indexes.json        # Composite indexes for the orders subcollection
+firestore.indexes.json        # Composite indexes for orders, dailyStats and invites
 
 android/app/src/main/kotlin/com/adsf/revenue/MainActivity.kt
                               # Must match the `namespace` in android/app/build.gradle
@@ -382,7 +487,16 @@ through one of the repositories in `lib/database/`, reached via the shared insta
 | `MenuRepository` | `stores/{storeId}/menuItems/{itemId}` |
 | `OrderRepository` | `stores/{storeId}/orders/{orderId}` + counters + rollups |
 | `StatsRepository` | `stores/{storeId}/dailyStats/{businessDate}` |
+| `InviteRepository` | `invites/{code}` — issuing, validating and redeeming join codes |
+| `AuditLogRepository` | `stores/{storeId}/auditLogs/{logId}` |
 | `FeedbackRepository` | `feedback/{feedbackId}` |
+| `AuthRepository` | Firebase Authentication — email/password, Google, custom tokens |
+| `PasskeyRepository` | The WebAuthn ceremony and the callables in `functions/` |
+
+The rule is about Firebase in general, not Firestore alone: `firebase_auth`,
+`cloud_functions` and the `passkeys` plugin are all confined to `lib/database/` too, so
+`grep -rlE 'firebase_auth|cloud_functions|package:passkeys' lib/` lists nothing outside it.
+Screens deal in uids, emails and typed exceptions.
 
 `loadSession()` resolves "signed-in user → their store" in one call; four screens used to
 repeat that lookup inline.
@@ -401,8 +515,8 @@ stores/{storeId}
   ├── orders/{orderId}                      one document per order
   ├── dailyStats/{businessDate}             pre-aggregated rollup, yyyy-MM-dd
   ├── counters/{businessDate}               nextOrderNo, resets daily
-  └── auditLogs/{logId}                     reserved; no UI yet
-invites/{code}                              planned; the code is the document id
+  └── auditLogs/{logId}                     voids, order edits and price changes
+invites/{code}                              single-use join codes; the code is the document id
 feedback/{feedbackId}                       write-only from the app
 
 planned, passkeys only — server-side collections, no client access at all:
@@ -426,6 +540,30 @@ Amounts are whole NTD integers throughout — no decimals, no floats. Rates (`ta
 
 The staff list is a reverse lookup — `where('storeId', '==', id)` — not an array kept on
 the store document.
+
+`storeId` and `role` are pinned by the rules once the document exists: you may rename
+yourself, but not move yourself to another store or promote yourself. A manager may change
+a colleague's `role` (never their own, never the owner's, never *to* owner) from Store
+Settings → Staff. A document carrying `joinedViaCode` is one that was created by redeeming
+an invite, and the rules check it against that invite — see
+[Registration and onboarding](#registration-and-onboarding).
+
+#### `invites/{code}` → [invite.dart](lib/models/invite.dart)
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `storeId` | string | The store being joined |
+| `storeName` | string | Denormalised: whoever redeems the code cannot read `stores/{id}` yet |
+| `role` | `staff` \| `manager` | Never `owner` — a store has one, and it is whoever opened it |
+| `createdBy` | string | uid of the manager who issued it |
+| `createdAt` / `expiresAt` | timestamp | 30 minutes |
+| `usedBy` | string \| null | Written as an explicit null so the rules can compare against it |
+| `usedAt` | timestamp? | |
+
+Six upper-case alphanumerics with `0 O 1 I L` left out of the alphabet, because this code
+gets read aloud across a noisy kitchen. Single use, and redeemed in one client transaction
+that marks the code spent and writes `users/{uid}` together — so two people racing on the
+same code produce exactly one member.
 
 #### `stores/{storeId}` → [store.dart](lib/models/store.dart)
 
@@ -536,7 +674,8 @@ managing requires `role in ['owner','manager']`.
 
 | Path | Read | Write |
 | --- | --- | --- |
-| `users/{uid}` | Self, or a colleague in the same store | Self only |
+| `users/{uid}` | Self, or a colleague in the same store | Create: own uid, and only in one of the two shapes below · Update: self except `storeId`/`role`, or a manager changing a colleague's `role` · Delete: never |
+| `invites/{code}` | `get`: anyone · `list`: manager | Create + delete: manager · Update: spending it on yourself, once |
 | `stores/{storeId}` | Member | Create: member · Update: manager · Delete: never |
 | `…/menuItems` | Member | Manager |
 | `…/orders` | Member | Create + update: member · **Delete: never** |
@@ -544,34 +683,40 @@ managing requires `role in ['owner','manager']`.
 | `…/auditLogs` | Manager | Create only |
 | `feedback` | Nobody (console only) | Create only, signed in |
 
-> Membership is asserted by the `users/{uid}` document, and a store ID is currently the
-> thing that grants it — a shared secret with no expiry and no revocation, handed to every
-> member of staff. [Registration and onboarding](#registration-and-onboarding) replaces it
-> with an invite flow and tightens these rules in the same change. The two are one piece of
-> work rather than two, and the ordering matters: the rules go in with the invite flow, not
-> after it.
+Membership is asserted by the `users/{uid}` document, which is written by the person it
+describes — so it is not allowed to say whatever it likes. A `create` is accepted in exactly
+two shapes: claiming a `storeId` that no store holds yet (the only route to `owner`), or
+naming a `joinedViaCode` that the rules then `get()` and check actually grants that store
+and that role, unspent and unexpired. After that `storeId` and `role` are pinned.
+
+This replaced the store ID, which used to be the thing that granted membership: a shared
+secret with no expiry and no revocation, handed to every member of staff and typed back in
+by hand. See [Registration and onboarding](#registration-and-onboarding).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Registration and onboarding
 
-> **Status: specification only.** Nothing in this section is implemented. The current
-> [register.dart](lib/register.dart) still asks for all six fields on one page and still
-> seeds the starter menu. This section is the agreed design for replacing it.
+> **Status: built**, except for the three items still marked open in the
+> [Roadmap](#roadmap) — photo menu import, Google sign-in and passkeys, each of which
+> needs infrastructure that does not exist yet. Everything else described below is what
+> [register.dart](lib/register.dart), [invite_repository.dart](lib/database/invite_repository.dart)
+> and [firestore.rules](firestore.rules) now do. The two paragraphs of past tense below
+> describe the flow this replaced.
 
 The person this app is for runs a small kitchen and does not want to operate software. The
-registration flow as it stands loses that person in the first minute, for four reasons:
+registration flow that was here lost that person in the first minute, for four reasons:
 
 1. **Six fields on one page** — email, password, confirm password, store ID, name, store name.
-2. **The store ID is a 36-character UUID that a human has to type or paste.** There is a
-   `Generate` button that produces the gibberish, and the owner is then expected to pass
-   that string to staff, who type it back in.
-3. **"Open a new store" and "join an existing one" are decided implicitly**, by whether the
-   store ID happens to exist. The only thing telling anyone which one they are doing is a
+2. **The store ID was a 36-character UUID that a human had to type or paste.** A `Generate`
+   button produced the gibberish, and the owner was then expected to pass that string to
+   staff, who typed it back in.
+3. **"Open a new store" and "join an existing one" were decided implicitly**, by whether the
+   store ID happened to exist. The only thing telling anyone which one they were doing was a
    line of helper text.
-4. **The seeded starter menu is not their menu.** They still have to delete it and type in
-   sixty dishes of their own. This is the single largest barrier to getting started, and it
-   arrives on day one.
+4. **The seeded starter menu was not their menu.** They still had to delete it and type in
+   sixty dishes of their own. This was the single largest barrier to getting started, and it
+   arrived on day one.
 
 ### The two paths
 
@@ -617,13 +762,19 @@ default it already has in code, and stays editable in Store Settings afterwards.
 | `dayCutoffHour` | `4` | `Store.defaultDayCutoffHour` |
 | `targets` | `dailyOrders 100` / `dailyRevenue 20000` | `StoreTargets` |
 | `currency` / `timezone` | `TWD` / `Asia/Taipei` | `Store` constructor |
-| `categories` | Taken from the imported menu; empty if skipped | **Changed** — no longer `MenuRepository.defaultCategories` |
+| `categories` | Empty | **Changed** — no longer `MenuRepository.defaultCategories`, which is gone. Created by hand in Store Settings → Edit Menu → 🏷, or taken from an imported menu once that exists |
 | `deliveryPlatforms` | Empty | Prompt for one the first time somebody picks the delivery channel |
 | `businessHours` | Empty | Nothing reads it yet |
 
-`MenuRepository.seedDefaults()` is **no longer called at registration**. An empty menu is
-honest; a fake menu that looks real invites somebody to ring up a sale against 牛肉麵 that
-this kitchen has never sold.
+`MenuRepository.seedDefaults()` is **gone**, not merely uncalled — along with
+`defaultMenu` and `defaultCategories`. An empty menu is honest; a fake menu that looks real
+invites somebody to ring up a sale against 牛肉麵 that this kitchen has never sold.
+
+Dropping the default categories left a hole: there was no way to create one, so the
+category dropdown on a new dish would have stayed empty forever. Hence the category editor
+in Store Settings → Edit Menu, which is not in the original design above. Deleting a
+category that still has dishes in it is refused rather than leaving them pointing at a
+`categoryId` nothing resolves.
 
 ### Invite codes
 
@@ -682,10 +833,20 @@ manager is not currently possible at all*. A second `update` clause allows
 
 | Operation | Allowed to |
 | --- | --- |
-| `create` | `managerOf(storeId)` |
-| `read` | Any signed-in user — at validation time they are not yet a member of anything |
-| `update` | Setting `usedBy` from null to your own uid, before `expiresAt` |
+| `create` | `managerOf(storeId)`, and only for `staff` or `manager` — never `owner` |
+| `get` | **Anyone, signed in or not.** See the note below |
+| `list` | `managerOf(storeId)` |
+| `update` | Setting `usedBy` from null to your own uid, before `expiresAt`, changing nothing the code grants |
 | `delete` | `managerOf(storeId)` |
+
+`get` ended up more open than this section originally specified — it said "any signed-in
+user". That does not survive contact with the flow: path B validates the code on its
+*first* screen, before an account exists, and the whole point of validating first is that
+a mistyped code is caught there rather than after a form has been filled in. So a single
+`get` by exact document id is unauthenticated. Guessing a code is not a practical attack —
+31⁶ ≈ 887 million codes, a handful live at a time, each dead after 30 minutes and after
+one use — but the proper mitigation if that ever changes is App Check, not a rule change.
+`list`, which is how you *would* enumerate other stores' codes, stays manager-only.
 
 ### Sign-in methods
 
@@ -693,19 +854,43 @@ manager is not currently possible at all*. A second `update` clause allows
 `grep -rl 'firebase_auth' lib/` lists nothing outside `lib/database/`, and screens deal
 only in uids, emails and `AuthException`. Adding a provider touches no caller.
 
-| Order | Method | Notes |
+| Method | Status | Notes |
 | --- | --- | --- |
-| 1 | Email / password | Current behaviour. Stays forever as the fallback |
-| 2 | Google | Removes three fields and fills `displayName` in automatically |
-| 3 | Passkey | See below |
-| 4 | Apple | Blocked on iOS configuration (see [Platform support status](#platform-support-status)). App Store review requires Sign in with Apple wherever another third-party sign-in is offered |
+| Email / password | ✅ | Stays forever as the fallback |
+| Google | ✅ | Removes three fields and fills `displayName` in automatically |
+| Passkey | ✅ | See below |
+| Apple | ❌ | Blocked on iOS configuration (see [Platform support status](#platform-support-status)). App Store review requires Sign in with Apple wherever another third-party sign-in is offered |
 
-### Passkeys (designed, not built)
+**Google takes two different routes, on purpose.** `google_sign_in_web` cannot do a
+custom-button flow at all — it reports `supportsAuthenticate() == false` and *throws* if
+`authenticate()` is called, offering only a Google-rendered button widget. So web goes
+through `firebase_auth`'s own `signInWithPopup`, which has no such restriction and needs no
+client id in `index.html`; Android goes through `google_sign_in`, which reads its client
+ids out of `google-services.json`. Both land in the same
+[`AuthRepository.signInWithGoogle`](lib/database/auth_repository.dart), and no screen knows
+the difference.
+
+> **Android needs two console-side things** that no amount of code substitutes for: the
+> build's signing SHA-1 registered on the Android app in the Firebase console, and a
+> `google-services.json` re-downloaded afterwards so it carries a `client_type: 3` web
+> OAuth client. Without them `authenticate()` returns no ID token and sign-in fails with a
+> configuration error. Web needs neither.
+
+Neither button is rendered speculatively. Google is hidden where the platform has no
+implementation, and the passkey button stays hidden until the device says it can actually
+use one — Android below API 28 cannot, and nor can an old browser. A button whose only
+possible outcome is an error is worse than no button.
+
+### Passkeys
 
 Firebase Authentication has no passkey provider, and `firebase_auth` has not exposed one
 either — [flutterfire#17201](https://github.com/firebase/flutterfire/issues/17201) has been
 open since March 2025, unassigned, labelled `blocked: firebase-sdk`. So this is a
-self-hosted WebAuthn relying party.
+self-hosted WebAuthn relying party, and it lives in [functions/](functions/) —
+[config.ts](functions/src/config.ts) holds the handful of values that tie it to this
+domain, [passkeys.ts](functions/src/passkeys.ts) is the ceremony. The client side is
+[passkey_repository.dart](lib/database/passkey_repository.dart); passkeys are added and
+removed under Settings → Passkeys, and used from the Login screen.
 
 [passkeys](https://pub.dev/packages/passkeys) covers Android, iOS, macOS, **Web** and
 Windows, but only the client half of the ceremony: it hands back signed data that something
@@ -747,40 +932,85 @@ time the user is not authenticated yet, so there is no store id to nest under.
 The credential id is the document id because sign-in has to resolve a credential to a uid
 before anybody is authenticated.
 
-`passkeyChallenges/{challengeId}` holds `challenge`, `uid?`, `type`
-(registration / authentication), `expiresAt` (60 seconds) and `usedAt`.
+`passkeyChallenges/{challengeId}` holds `challenge`, `uid?` (null for a sign-in, which by
+definition has no uid yet), `type` (registration / authentication), `createdAt` and
+`expiresAt` (60 seconds). There is no `usedAt`: a challenge is **deleted** when consumed
+rather than marked, and deleted *before* verification runs — a challenge that fails
+verification is spent too, or a captured assertion could be retried against it until
+something worked.
 
-**Both collections must be `allow read, write: if false`.** Only the Admin SDK touches
-them. Public keys and `signCount` are the security-critical half of WebAuthn and the client
-has no business reading, let alone writing, either.
+**Both collections are `allow read, write: if false`.** Only the Admin SDK touches them, and
+the Admin SDK bypasses rules entirely. Public keys and `signCount` are the security-critical
+half of WebAuthn and the client has no business reading, let alone writing, either — a
+client that could write a counter could replay a cloned authenticator. Which is why
+listing and removing your own passkeys goes through the `listPasskeys` and `deletePasskey`
+callables instead of a Firestore query, and why what comes back is metadata only.
 
-**Platform association files.** The RP ID is the Firebase Hosting domain, and Hosting
-serves both files:
+**Sign-in never asks who you are.** `beginPasskeyAuthentication` sends no
+`allowCredentials`, because the credentials are discoverable (`residentKey: 'required'`):
+the authenticator shows the person their own passkeys and reports which one they picked,
+and the server resolves that credential id to a uid. So the endpoint is unauthenticated and
+still leaks nothing — it cannot be asked whether a given email has an account, because it is
+never told an email.
 
-* `/.well-known/assetlinks.json` — Android
-* `/.well-known/apple-app-site-association` — iOS (no extension, served as `application/json`)
+**Platform association files.** The RP ID is `revenueapp-b8849.web.app`, and Hosting serves
+the file that proves the Android app belongs to it:
 
-> The hosting rewrite in [firebase.json](firebase.json) is currently `"source": "**"` →
-> `/index.html`, which swallows `/.well-known/*` along with everything else. It needs an
-> exception, or neither association file is reachable and passkeys fail on both platforms.
+* `/.well-known/assetlinks.json` — Android ✅ published, in [web/well-known/](web/well-known/)
+* `/.well-known/apple-app-site-association` — iOS, not written: it needs an Apple team id,
+  and iOS is unconfigured anyway
+
+> **A passkey is bound to its RP ID for good.** Moving the app to a custom domain does not
+> carry passkeys with it — every one would have to be registered again. If a custom domain
+> is coming, change `RP_ID` in [functions/src/config.ts](functions/src/config.ts) *before*
+> anybody registers one, not after.
+
+> **Two things blocked `/.well-known/*`, not one**, which is why the roadmap item outlived
+> several attempts at it. The catch-all rewrite `"source": "**"` → `/index.html` swallowed
+> the path, so [firebase.json](firebase.json) now lists the association paths as rewrites
+> *before* it (Hosting applies the first rule whose pattern matches). And the `ignore` glob
+> `**/.*` drops any dotted directory before upload, so a real `web/.well-known/` would
+> never have been deployed at all — hence the rewrite targets, which point at
+> `web/well-known/` with no leading dot. `apple-app-site-association` also gets an explicit
+> `Content-Type: application/json`, which Apple requires and Hosting cannot infer from a
+> file with no extension.
+
+> ⚠️ **The published fingerprint is the debug keystore's**, because
+> [android/app/build.gradle](android/app/build.gradle) still signs release builds with it
+> (`signingConfig signingConfigs.debug`). The moment a real release keystore appears, two
+> files need its SHA-256 or Android passkeys break with `domain-not-associated`:
+> `web/well-known/assetlinks.json` wants it as colon-separated hex, and `EXPECTED_ORIGINS`
+> in [functions/src/config.ts](functions/src/config.ts) wants the same bytes base64url-
+> encoded. They are two spellings of one value and must never disagree.
+>
+> ```sh
+> keytool -list -v -keystore <keystore> -alias <alias> | grep SHA256   # for assetlinks
+> ```
 
 **Passkeys are always additive, never the only way in.** Email and password stay. Losing or
 replacing a phone must not lock an owner out of their own books — that is not a recoverable
 failure for this audience.
 
-**What this costs.** Cloud Functions requires the Blaze plan, which the project is not on
-(there is no `functions/` directory today). Blaze carries the same free quotas as Spark plus
-two million function invocations a month; fifty stores at twenty sign-ins a day is around
-thirty thousand, some sixty times under the ceiling. The real barrier is putting a card on
-file, not the bill. Set a budget alert and `maxInstances` on every function — an unbounded
-function is the thing that actually generates a surprise.
+**What this costs: nothing, at this scale.** Cloud Functions needs the Blaze plan, which
+this project is now on. Blaze carries Spark's free quotas plus two million function
+invocations a month; fifty stores at twenty sign-ins a day is around thirty thousand, some
+sixty times under the ceiling. The storage side is two small collections against the same
+free Firestore quota. What actually generates a surprise bill is an unbounded function, so
+every one of them is capped — `MAX_INSTANCES` in
+[functions/src/config.ts](functions/src/config.ts), currently 3. Set a budget alert too.
 
-If a card is genuinely not an option, the relying party can live on Cloudflare Workers
-instead: 100,000 requests/day free with no card, `@simplewebauthn/server` runs there, and a
-Firebase custom token is just an RS256 JWT signed with the service account key, which Web
-Crypto can do without the Admin SDK. The cost is a second cloud provider to deploy and
-debug. Photo-based menu import will want a server too, so whichever way this goes, the two
-features share the bill.
+**Housekeeping.** A challenge is deleted the moment it is used, so the only ones that
+accumulate are abandoned ceremonies — somebody opened the sheet and walked away. `expiresAt`
+is stored as a timestamp specifically so a TTL policy can sweep those up; run this once:
+
+```sh
+gcloud firestore fields ttls update expiresAt \
+  --collection-group=passkeyChallenges --enable-ttl --project revenueapp-b8849
+```
+
+It is only housekeeping. Expiry is enforced by comparing against `expiresAt` in the
+function, never by the document having disappeared — TTL deletion can lag by up to 24 hours
+and is not a security boundary.
 
 **Not `corbado_auth_firebase`.** [corbado/flutter-passkeys](https://github.com/corbado/flutter-passkeys)
 is a useful reference for the flow above — it is the same shape, function verifies then
@@ -792,8 +1022,11 @@ Extension, a product being retired on 2027-03-31. It also puts the public keys o
 servers. The core `passkeys` package from the same repository has none of these problems and
 is the right client-side choice.
 
-**Sequencing.** The registration rewrite comes first — passkeys are a provider bolted onto a
-flow that has to exist. Then Cloud Functions, then the relying party, then iOS.
+**Sequencing.** The registration rewrite came first — passkeys are a provider bolted onto a
+flow that has to exist. Then Cloud Functions, then the relying party. iOS is what remains,
+and it is a platform-configuration job rather than a passkey one: the `passkeys` package
+already supports it, so what is missing is an Apple team id, an app-site-association file
+and the Xcode entitlement.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -904,39 +1137,43 @@ Tracked against the phases in [docs/refactor-plan.md](docs/refactor-plan.md).
 * [x] Overview, Transaction and Store pages on real data; the placeholder
       "Last Transactions" row and hard-coded growth badges are gone
 
-**Phase 3 — statistics** — not started
+**Phase 3 — statistics** ✅
 
 * [x] Target gauge reads the store's daily target
-* [ ] Day / Week / Month tabs over real date ranges (all three currently show the day)
-* [ ] Back / forward arrows to page through periods (disabled for now)
-* [ ] Comparison against the previous period
-* [ ] Weekday × hour heatmap
-* [ ] Item ranking with a date range and sorting
+* [x] Day / Week / Month tabs over real date ranges
+* [x] Back / forward arrows to page through periods
+* [x] Comparison against the previous period
+* [x] Weekday × hour heatmap
+* [x] Item ranking with a date range and sorting
 
-**Phase 4 — analysis** — not started
+**Phase 4 — analysis** ✅
 
-* [ ] Menu engineering matrix (needs `cost` filled in)
-* [ ] Basket analysis (which dishes are ordered together)
-* [ ] Prep forecasting
+* [x] Menu engineering matrix (needs `cost` filled in to say anything)
+* [x] Basket analysis (which dishes are ordered together)
+* [x] Prep forecasting
 
-**Phase 5 — export and audit** — not started
+**Phase 5 — export and audit** ✅
 
-* [ ] Excel export (the button currently only logs)
-* [ ] `auditLogs` UI
+* [x] Excel export
+* [x] `auditLogs` UI
 
-**Phase 6 — registration and onboarding** — specified, not started
+**Phase 6 — registration and onboarding**
 
 Design in [Registration and onboarding](#registration-and-onboarding).
 
-* [ ] Split registration into steps, with "open a store" and "join a store" as an explicit choice
-* [ ] Retire the store ID field and its `Generate` button — the id becomes internal
-* [ ] `invites/{code}` collection, manager-side code generator, redemption in a client transaction
-* [ ] Lock `storeId` and `role` in the rules; let managers change a colleague's role
-* [ ] Stop calling `MenuRepository.seedDefaults()` at registration
+* [x] Split registration into steps, with "open a store" and "join a store" as an explicit choice
+* [x] Retire the store ID field and its `Generate` button — the id becomes internal
+* [x] `invites/{code}` collection, manager-side code generator, redemption in a client transaction
+* [x] Lock `storeId` and `role` in the rules; let managers change a colleague's role
+* [x] Stop calling `MenuRepository.seedDefaults()` at registration
+* [x] A category editor, which dropping the seeded categories made necessary —
+      Store Settings → Edit Menu → 🏷
+* [x] `/.well-known/*` exception in the hosting rewrite (was blocking passkeys on both
+      mobile platforms)
+* [x] Google sign-in — `signInWithPopup` on web, `google_sign_in` on Android
+* [x] A Cloud Functions relying party in [functions/](functions/), then passkeys
 * [ ] Import a menu from a photo (needs the recognition route settled first)
-* [ ] Google sign-in
-* [ ] Cloud Functions or a Workers relying party, then passkeys
-* [ ] `/.well-known/*` exception in the hosting rewrite (blocks passkeys on both mobile platforms)
+* [ ] Apple sign-in (blocked on iOS configuration)
 
 **Not tied to a phase**
 

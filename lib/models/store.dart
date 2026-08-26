@@ -181,16 +181,6 @@ class Store {
   /// Today's trading day.
   String get currentBusinessDate => businessDateOf(DateTime.now());
 
-  /// The wall-clock instant a trading day starts at.
-  DateTime startOfBusinessDate(String businessDate) {
-    final day = parseBusinessDate(businessDate);
-    return DateTime(day.year, day.month, day.day, dayCutoffHour);
-  }
-
-  /// Exclusive end of a trading day.
-  DateTime endOfBusinessDate(String businessDate) =>
-      startOfBusinessDate(businessDate).add(const Duration(days: 1));
-
   DeliveryPlatform? platformById(String? id) {
     if (id == null) return null;
     for (final p in deliveryPlatforms) {

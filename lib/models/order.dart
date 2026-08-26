@@ -73,7 +73,6 @@ class OrderLine {
 
   int get lineRevenue => unitPrice * qty;
   int get lineCost => unitCost * qty;
-  int get lineProfit => lineRevenue - lineCost;
 
   factory OrderLine.fromMap(Map<String, dynamic> map) => OrderLine(
         itemId: map['itemId'] as String? ?? '',
@@ -188,8 +187,6 @@ class Order {
 
   List<String> get itemIds =>
       items.map((i) => i.itemId).where((id) => id.isNotEmpty).toSet().toList();
-
-  int get itemQty => items.fold(0, (total, i) => total + i.qty);
 
   factory Order.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) =>
       Order.fromMap(doc.id, doc.data() ?? const <String, dynamic>{});

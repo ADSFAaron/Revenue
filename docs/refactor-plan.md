@@ -3,9 +3,9 @@
 > 這份文件是給後續接手的 Claude session 的交接說明。
 > 產出於 2026-08-08，分支 `v3`。
 
-## 實作進度（2026-08-21 更新）
+## 實作進度（2026-08-26 更新）
 
-**Phase 0-5 全部實作完成。**
+**Phase 0-7 全部實作完成。**
 
 | Phase | 狀態 |
 |---|---|
@@ -15,9 +15,30 @@
 | 3 — 統計頁 Day/Week/Month 真實區間、翻頁、與前期比較 | ✅ 完成 |
 | 4 — 菜單工程矩陣、熱度圖、搭配分析、備料預估 | ✅ 完成 |
 | 5 — Excel 匯出、auditLog UI | ✅ 完成 |
+| 6 — 註冊分流、invite code、rules 鎖 `storeId`/`role`、分類編輯 | ✅ 完成 |
+| 7 — Google 登入、passkeys（Cloud Functions relying party） | ✅ 完成 |
 
 已修掉的項目：B1–B9 全部、F1–F6。**仍未修：F7**——Statistics 頁的 Gemini FAB
 仍只有 `debugPrint`。它不屬於任何 Phase，要不要做（以及做成什麼）還沒決定。
+
+Phase 6 的完整設計寫在 README 的
+[Registration and onboarding](../README.md#registration-and-onboarding)，
+這裡只記實作結果與偏離之處（見 §7 第 9-16 點）。
+
+### Phase 7 — Google 登入與 passkeys（2026-08-26 完成）
+
+Blaze 方案與 Google 登入都由使用者開通之後補上的：
+
+| 項目 | 做法 |
+|---|---|
+| Google 登入 | Web 走 `firebase_auth` 的 `signInWithPopup`，Android 走 `google_sign_in`。**不是同一條路**——`google_sign_in_web` 的 `supportsAuthenticate()` 回傳 false，呼叫 `authenticate()` 會直接丟例外，它只提供 Google 自己畫的按鈕 widget，而 Web 是本專案的主力平台 |
+| Passkeys | 自架 relying party，在 [functions/](../functions/)。`@simplewebauthn/server` 驗證，通過後用 Admin SDK `createCustomToken()` 換成 Firebase session |
+| RP ID | `revenueapp-b8849.web.app`。**passkey 綁死在這個網域上**，之後若換自訂網域，所有已註冊的 passkey 都要重新註冊一次 |
+| 平台 | Web + Android。Android 的 Digital Asset Links 在 [web/well-known/assetlinks.json](../web/well-known/assetlinks.json)，指紋取自 debug keystore（因為 release 目前就是用 debug 簽的） |
+| iOS | 沒做。缺 Apple team id，而且 iOS 本來就還沒設定 |
+
+**還沒做的只剩一件：照片匯入菜單。** 辨識路線還沒定，不論走哪條都要一台伺服器——
+現在 `functions/` 已經在了，所以這件事不再卡在基礎設施，只卡在「用哪個辨識服務」這個決定。
 
 Phase 0-2 之外另外補的：Firebase Auth 也收進 repository 層了
 （[auth_repository.dart](../lib/database/auth_repository.dart)）。原本
@@ -163,6 +184,7 @@ Firestore 只支援三個彙總函式：`count()`、`sum()`、`average()`，
 
 ```
 users/{uid}
+invites/{code}
 stores/{storeId}
 stores/{storeId}/menuItems/{itemId}
 stores/{storeId}/orders/{orderId}
@@ -172,6 +194,10 @@ stores/{storeId}/auditLogs/{logId}
 ```
 
 `tmporder` collection 整個廢除。
+
+`invites/{code}` 是 Phase 6 加的，欄位見 README 的
+[Invite codes](../README.md#invite-codes)。放在最上層而不是掛在 `stores/` 底下，
+是因為驗證 code 的人還不屬於任何一家店，給不出店底下的路徑。
 
 ### 3.1 `users/{uid}`
 
@@ -413,9 +439,11 @@ match /stores/{storeId}/{document=**} {
 | **0** | ✅ | 清空 Firestore；寫 security rules；建 repository 層；修註冊流程（uid 當 key、同時建 store doc） | [register.dart](../lib/register.dart)、[firestore.rules](../firestore.rules)、[firestore.indexes.json](../firestore.indexes.json)、[lib/database/](../lib/database/)、[lib/models/](../lib/models/) |
 | **1** | ✅ | `menuItems` subcollection + `cost` 欄位 + 分類 + 軟刪除 | [store_settings_edit_menu.dart](../lib/settings/store_settings_edit_menu.dart) |
 | **2** | ✅ | `orders` subcollection + AddOrder 改寫（channel / guestCount / paymentMethod / tax 真的寫進去）+ counters 取號 + `dailyStats` 同 transaction 累加 | [addorder.dart](../lib/page/addorder.dart)、[store_settings_history_order.dart](../lib/settings/store_settings_history_order.dart)、[store_setting_history_order_detail.dart](../lib/settings/store_setting_history_order_detail.dart)、[store_settings.dart](../lib/settings/store_settings.dart) |
-| **3** | ⬜ | 統計頁重寫（Day/Week/Month 真的能切、箭頭能翻頁、與前期比較） | [statistics.dart](../lib/page/statistics.dart) |
+| **3** | ✅ | 統計頁重寫（Day/Week/Month 真的能切、箭頭能翻頁、與前期比較） | [statistics.dart](../lib/page/statistics.dart) |
 | **4** | ✅ | 菜單工程矩陣、星期×小時熱度圖、品項搭配分析、備料預估 | [lib/analysis/](../lib/analysis/)、[analysis.dart](../lib/page/analysis.dart)（統計頁右上 Insights 進入） |
 | **5** | ✅ | Excel 匯出、auditLog UI | [lib/export/](../lib/export/)、[audit_log_repository.dart](../lib/database/audit_log_repository.dart)、[store_settings_audit_log.dart](../lib/settings/store_settings_audit_log.dart) |
+| **6** | ✅ | 註冊拆成兩條路徑（開店／加入）、`invites/{code}`、rules 鎖 `storeId` 與 `role`、店長改同事角色、不再 seed 假菜單、分類編輯器 | [register.dart](../lib/register.dart)、[invite_repository.dart](../lib/database/invite_repository.dart)、[invite.dart](../lib/models/invite.dart)、[store_invites.dart](../lib/settings/store_invites.dart)、[store_staff.dart](../lib/settings/store_staff.dart)、[store_categories.dart](../lib/settings/store_categories.dart)、[firestore.rules](../firestore.rules) |
+| **7** | ✅ | Google 登入、passkeys relying party、passkey 管理畫面 | [functions/](../functions/)、[auth_repository.dart](../lib/database/auth_repository.dart)、[passkey_repository.dart](../lib/database/passkey_repository.dart)、[sign_in_options.dart](../lib/sign_in_options.dart)、[user_passkeys.dart](../lib/settings/user_passkeys.dart)、[login.dart](../lib/login.dart) |
 
 **Phase 0-2 之間資料結構不相容，要一次做完再上。**
 Phase 3 之後每一步都能獨立出貨。
@@ -494,11 +522,79 @@ Phase 0-2 實作時偏離本文件的地方，都是刻意的：
 7. **`orders` 的翻頁查詢用 `placedAt` 單欄索引**（Firestore 自動建），
    §3.8 那三個 composite index 留給依營業日與依品項的查詢。
 
-8. ⚠️ **`firebase.json` 在 `.gitignore` 裡。**
-   rules 與 indexes 要靠它的 `firestore` 區塊才 deploy 得出去，
-   但那個區塊不會進版控——換一台機器 clone 下來得自己補回去（README 有寫）。
-   要一勞永逸就是把 `firebase.json` 從 `.gitignore` 拿掉；
-   裡面只有 projectId 與 appId，都是會編進 client 的公開值，不是密鑰。
+8. ✅ **`firebase.json` 已經從 `.gitignore` 拿掉**（Phase 6 一併處理）。
+   理由就是這一條原本寫的：rules 與 indexes 要靠它的 `firestore` 區塊才 deploy 得出去，
+   而 `/.well-known/*` 的 hosting rewrite 例外也只活在這個檔案裡——
+   兩者都不該在 clone 之後消失。裡面只有 projectId 與 appId，
+   都是會編進 client 的公開值；API key 在 `lib/firebase_options.dart`，那個仍然 ignore。
+
+Phase 6 的偏離：
+
+9. ⚠️ **`invites/{code}` 的 `get` 是完全不需要登入的**，README 原本寫的是
+   「any signed-in user」。因為路徑 B 的第一個畫面就要驗證 code，那時帳號根本還不存在，
+   而「先驗證再問其他事」正是這條路徑的重點。只開放「用完整 document id 讀單一份」，
+   `list` 仍然只有店長能做。31⁶ ≈ 8.87 億組、同時有效的通常只有個位數、30 分鐘過期、
+   只能用一次——猜不出來。真的要再收緊就是上 App Check，不是改 rule。
+
+10. **註冊時的 `categories` 改成空的，於是補了一個分類編輯器**
+    （[store_categories.dart](../lib/settings/store_categories.dart)，
+    從 Edit Menu 右上角進入）。規劃只寫「不再 seed 預設分類」，但沒有分類編輯器的話，
+    新店家永遠沒辦法建立第一個分類，加菜色的分類下拉選單會一直是空的——
+    等於把「不要假資料」做成了功能倒退。刪除分類時若底下還有菜色會擋下來，
+    不會留下對不到分類的孤兒 `categoryId`。
+
+11. **`MenuRepository.seedDefaults()` / `defaultMenu` / `defaultCategories` 整組刪掉**，
+    不是留著不呼叫。留著遲早會有人再叫一次。
+
+12. **rules 有 54 條測試**（`@firebase/rules-unit-testing` + Firestore emulator），
+    但沒有進版控——那要在這個 repo 裡開一份 node 專案。跑法：在暫存目錄
+    `npm i @firebase/rules-unit-testing firebase`，再
+    `firebase emulators:exec --only firestore "node run.mjs"`。
+    涵蓋兩條註冊路徑、code 重放、角色越權、跨店存取，以及 passkey 兩個集合的全面封閉。
+
+Phase 7 的偏離與注意事項：
+
+13. **Google 登入在 Web 與 Android 走兩條不同的路，是刻意的。**
+    `google_sign_in_web` 的 `supportsAuthenticate()` 回傳 false、呼叫 `authenticate()`
+    會丟例外，它只給 Google 自己畫的按鈕 widget；而 Web 是本專案的主力平台。
+    所以 Web 用 `firebase_auth` 的 `signInWithPopup`（不需要在 index.html 放 client id），
+    Android 用 `google_sign_in`（client id 從 google-services.json 讀）。
+    兩邊都收在 `AuthRepository.signInWithGoogle()` 後面，畫面看不出差別。
+
+14. **Android 的 `DEVELOPER_ERROR` 已修，但要知道它為什麼會發生。**
+    第一次在真機上按 Google 登入時噴
+    `GoogleApiManager: ConnectionResult{statusCode=DEVELOPER_ERROR}`——
+    這是 Play Services 在說「package name + 簽章 SHA-1 對不到任何已註冊的
+    Android OAuth client」。查出來的實際狀態是兩件事都缺：
+
+    - `1:984830610429:android:338f678898416549ce2794`（`com.adsf.revenue`）
+      **一個 SHA 憑證都沒註冊**，所以根本沒有 `client_type: 1` 的 OAuth client。
+      舊的 `com.example.adsf.revenue` 有註冊，但那是不同 package、不同憑證。
+    - 本機的 `android/app/google-services.json` 停留在 8/8，`oauth_client` 是空陣列，
+      連 `client_type: 3`（web client）都沒有——那是 `google_sign_in` 拿 ID token
+      要用的 `default_web_client_id`。
+
+    修法：`firebase apps:android:sha:create <appId> <SHA>` 註冊 debug keystore 的
+    SHA-1 與 SHA-256，**然後重新拉一次 `google-services.json`**——
+    Android OAuth client 是註冊指紋之後才會出現在裡面的。
+    驗證方式是看 `build/app/generated/res/processDebugGoogleServices/values/values.xml`
+    有沒有 `default_web_client_id`。Web 完全不需要這些。
+
+    ⚠️ 註冊的是 **debug** keystore 的指紋，因為 release 目前就是用 debug 簽的。
+    之後若有正式 keystore，指紋要再註冊一次；上架後 Play App Signing 會重簽，
+    Play 那邊報的指紋也要一起註冊，否則只有正式版會壞。
+
+15. **`passkeyChallenges` 用完就刪，而且是在驗證*之前*刪。**
+    規劃寫的是 `usedAt` 標記。改成刪除是因為「驗證失敗的 challenge 也必須算用掉」——
+    否則攔截到 assertion 的人可以對同一個 challenge 重試到成功為止。
+    `expiresAt` 存成 Timestamp（不是數字）是為了讓 Firestore TTL policy 能掛在上面，
+    清掉「開了視窗就走人」留下的孤兒 challenge；那只是打掃，過期判斷仍然在函式裡比對。
+
+16. **Android Gradle Plugin 8.11.1 → 8.12.1、`package_info_plus` 8 → 9、
+    Gradle heap 1536M → 4096M。** 連鎖反應：`passkeys` 依賴 `passkeys_doctor`，
+    後者要 `package_info_plus >= 9`，而 9.0.0 要 AGP >= 8.12.1。
+    heap 則是加了三個 plugin 之後 JetifyTransform 直接 OOM，
+    在編到任何一行程式碼之前就死了。`PackageInfo` 的 API 本身沒變。
 
 ---
 

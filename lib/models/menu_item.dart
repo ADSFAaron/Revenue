@@ -78,8 +78,6 @@ class MenuItem {
     return (price - cost) / price;
   }
 
-  int get unitProfit => price - cost;
-
   MenuItem copyWith({
     String? name,
     String? categoryId,

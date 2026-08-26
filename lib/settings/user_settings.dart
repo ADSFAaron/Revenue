@@ -3,15 +3,35 @@ import 'package:flutter/material.dart';
 import '../database/repositories.dart';
 import '../models/app_user.dart';
 import 'change_password.dart';
+import 'user_passkeys.dart';
 
 /// The signed-in user's own profile.
 ///
 /// This used to read the whole `users` collection and display whichever
 /// document came back first, which showed a stranger's name as often as not.
-class UserSettings extends StatelessWidget {
-  const UserSettings(this.usermail, {super.key});
+class UserSettings extends StatefulWidget {
+  const UserSettings({super.key});
 
-  final String usermail;
+  @override
+  State<UserSettings> createState() => _UserSettingsState();
+}
+
+class _UserSettingsState extends State<UserSettings> {
+  /// Stateful purely so this has an owner.
+  ///
+  /// It used to be created inside [_editDisplayName] and disposed straight
+  /// after the await, which throws "A TextEditingController was used after
+  /// being disposed": `showDialog`'s future completes when the route is
+  /// popped, which is the *start* of the exit transition, and the TextField is
+  /// still mounted and still reading the controller. Cancel crashed every
+  /// time.
+  final _nameController = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,18 +88,29 @@ class UserSettings extends StatelessWidget {
             MaterialPageRoute(builder: (context) => const ChangePassword()),
           ),
         ),
+        ListTile(
+          leading: const Icon(Icons.fingerprint),
+          title: const Text('Passkeys'),
+          subtitle: const Text(
+              'Sign in with a fingerprint, face or screen lock'),
+          trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const UserPasskeys()),
+          ),
+        ),
       ],
     );
   }
 
   Future<void> _editDisplayName(BuildContext context, AppUser user) async {
-    final controller = TextEditingController(text: user.displayName);
+    _nameController.text = user.displayName;
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('User Name'),
         content: TextField(
-          controller: controller,
+          controller: _nameController,
           autofocus: true,
           decoration: const InputDecoration(labelText: 'Name'),
         ),
@@ -89,13 +120,13 @@ class UserSettings extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            onPressed: () =>
+                Navigator.pop(context, _nameController.text.trim()),
             child: const Text('Save'),
           ),
         ],
       ),
     );
-    controller.dispose();
 
     if (name != null && name.isNotEmpty) {
       await userRepository.updateDisplayName(user.uid, name);

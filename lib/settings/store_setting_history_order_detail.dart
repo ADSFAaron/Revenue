@@ -31,10 +31,22 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
   /// True when anything was changed, so the list behind can refresh.
   bool _changed = false;
 
+  /// Owned by this State, not by the void dialog. Disposing it straight after
+  /// `await showDialog` throws "A TextEditingController was used after being
+  /// disposed" — the future completes as the exit transition starts, while the
+  /// TextField is still mounted and still reading it.
+  final reasonController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _loadStore();
+  }
+
+  @override
+  void dispose() {
+    reasonController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadStore() async {
@@ -239,7 +251,7 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
   }
 
   Future<void> _confirmVoid() async {
-    final reasonController = TextEditingController();
+    reasonController.clear();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -274,7 +286,6 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
     );
 
     final reason = reasonController.text.trim();
-    reasonController.dispose();
     if (confirmed != true) return;
 
     final store = _store;

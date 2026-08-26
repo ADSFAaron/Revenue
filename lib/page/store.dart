@@ -85,7 +85,7 @@ class _StorePageState extends State<StorePage> {
                   title: 'User Settings',
                   subtitle: 'User name, Change password',
                   icon: Icons.manage_accounts_outlined,
-                  onTap: () => _navigateTo(UserSettings(session.user.email)),
+                  onTap: () => _navigateTo(const UserSettings()),
                 ),
                 _buildListTile(
                   title: 'App Settings',

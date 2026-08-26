@@ -4,8 +4,10 @@ import '../models/store.dart';
 import 'audit_log_repository.dart';
 import 'auth_repository.dart';
 import 'feedback_repository.dart';
+import 'invite_repository.dart';
 import 'menu_repository.dart';
 import 'order_repository.dart';
+import 'passkey_repository.dart';
 import 'stats_repository.dart';
 import 'store_repository.dart';
 import 'user_repository.dart';
@@ -13,8 +15,10 @@ import 'user_repository.dart';
 export 'audit_log_repository.dart';
 export 'auth_repository.dart';
 export 'feedback_repository.dart';
+export 'invite_repository.dart';
 export 'menu_repository.dart';
 export 'order_repository.dart';
+export 'passkey_repository.dart';
 export 'stats_repository.dart';
 export 'store_repository.dart';
 export 'user_repository.dart';
@@ -29,7 +33,9 @@ final userRepository = UserRepository(auth: authRepository);
 final storeRepository = StoreRepository();
 final menuRepository = MenuRepository();
 final orderRepository = OrderRepository();
+final passkeyRepository = PasskeyRepository(auth: authRepository);
 final statsRepository = StatsRepository();
+final inviteRepository = InviteRepository();
 final feedbackRepository = FeedbackRepository();
 final auditLogRepository = AuditLogRepository();
 
@@ -86,8 +92,8 @@ Future<Session> loadSession() async {
       'Signed in as ${authRepository.currentEmail ?? uid}, but this account '
       'has no profile document yet.\n\n'
       'This happens when a sign-in account outlives its Firestore data — for '
-      'example after the database was cleared. Sign out and register again '
-      'with the same store ID.',
+      'example after the database was cleared. Sign out and register again, '
+      'either opening a store or joining one with an invite code.',
     );
   }
   if (user.storeId.isEmpty) {

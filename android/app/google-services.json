@@ -13,7 +13,20 @@
           "package_name": "com.adsf.revenue"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "984830610429-pe88j2gm8lqvcm927625vrj9j45k9u60.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.adsf.revenue",
+            "certificate_hash": "a3a4854dec5d52e8413178bf21dc11aa05fb1163"
+          }
+        },
+        {
+          "client_id": "984830610429-4g399umjf1465ivd07ckrcrc693gk8vs.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDPn9zW09yvU0aqFxjj3k4sccjJuNLeCDw"
@@ -21,7 +34,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "984830610429-4g399umjf1465ivd07ckrcrc693gk8vs.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "984830610429-1q7v0vfn5t1u0v22mt8dhbom608kja6g.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.adsf.revenue.revenueStatisticsV2"
+              }
+            }
+          ]
         }
       }
     },
@@ -32,7 +57,12 @@
           "package_name": "com.adsf.revenueStatistics"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "984830610429-4g399umjf1465ivd07ckrcrc693gk8vs.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDPn9zW09yvU0aqFxjj3k4sccjJuNLeCDw"
@@ -40,7 +70,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "984830610429-4g399umjf1465ivd07ckrcrc693gk8vs.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "984830610429-1q7v0vfn5t1u0v22mt8dhbom608kja6g.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.adsf.revenue.revenueStatisticsV2"
+              }
+            }
+          ]
         }
       }
     },
@@ -51,7 +93,12 @@
           "package_name": "com.example.adsf.revenue"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "984830610429-4g399umjf1465ivd07ckrcrc693gk8vs.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDPn9zW09yvU0aqFxjj3k4sccjJuNLeCDw"
@@ -59,7 +106,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "984830610429-4g399umjf1465ivd07ckrcrc693gk8vs.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "984830610429-1q7v0vfn5t1u0v22mt8dhbom608kja6g.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.adsf.revenue.revenueStatisticsV2"
+              }
+            }
+          ]
         }
       }
     }

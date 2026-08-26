@@ -56,3 +56,7 @@ android/app/google-services.json
 
 # Local-only notes, never published (security findings, private context)
 *.local.md
+
+# Agent skills fetched from upstream per skills-lock.json — the lock file is
+# committed, the fetched content is not (same split as pubspec.lock/.dart_tool).
+.agents/

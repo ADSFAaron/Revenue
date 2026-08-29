@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../database/repositories.dart';
 import '../models/app_user.dart';
+import '../widgets/feedback.dart';
 import 'change_password.dart';
 import 'user_passkeys.dart';
 
@@ -128,8 +129,16 @@ class _UserSettingsState extends State<UserSettings> {
       ),
     );
 
-    if (name != null && name.isNotEmpty) {
+    if (name == null || name.isEmpty) return;
+
+    // The name is stamped onto every audit entry this person writes from here
+    // on, so a rename that quietly failed would leave the log naming somebody
+    // who no longer goes by that.
+    try {
       await userRepository.updateDisplayName(user.uid, name);
+      if (context.mounted) showInfo(context, 'Name updated');
+    } catch (e) {
+      if (context.mounted) showFailure(context, e);
     }
   }
 }

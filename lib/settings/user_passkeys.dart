@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../database/repositories.dart';
+import '../widgets/feedback.dart';
 
 /// The signed-in person's passkeys — one per device they want to sign in from.
 ///
@@ -221,9 +222,9 @@ class _UserPasskeysState extends State<UserPasskeys> {
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
-          TextButton(
+          DestructiveButton(
+            label: 'Remove',
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove'),
           ),
         ],
       ),
@@ -244,11 +245,7 @@ class _UserPasskeysState extends State<UserPasskeys> {
 
   void _snack(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message),
-      backgroundColor: isError ? Colors.red : null,
-      duration: Duration(seconds: isError ? 6 : 3),
-    ));
+    showSnack(context, message, isError: isError);
   }
 }
 

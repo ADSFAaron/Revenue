@@ -4,7 +4,7 @@
     "indexes": "firestore.indexes.json"
   },
   "functions": {
-    "//": "The WebAuthn relying party, and nothing else. Every function is capped with maxInstances in src/config.ts — Blaze bills by invocation, and an uncapped function is what turns a runaway into a bill.",
+    "//": "The WebAuthn relying party and the photo menu import. Every function is capped with maxInstances in src/config.ts — Blaze bills by invocation, and an uncapped function is what turns a runaway into a bill. Menu import additionally needs the GEMINI_API_KEY secret: firebase functions:secrets:set GEMINI_API_KEY",
     "source": "functions",
     "codebase": "default",
     "runtime": "nodejs22",

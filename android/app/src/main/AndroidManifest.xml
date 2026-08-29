@@ -6,6 +6,26 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      Declared because the menu importer drives the camera itself rather than
+      handing the job to another app — see lib/settings/menu_capture_page.dart
+      for why it has to. A borrowed camera needs no permission here; an opened
+      sensor does, and Android asks the person for it at first use.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- The camera is a convenience, not a requirement: Choose image works on
+         a device without one, so this must not narrow who can install. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!--
+      No <queries> for ACTION_IMAGE_CAPTURE, deliberately. Package visibility
+      would only let this app *see* a camera app; it cannot conjure one, and on
+      a device whose camera app was replaced or disabled there is nothing to
+      see. The importer opens the sensor itself instead, so what other apps are
+      installed stops mattering — lib/settings/menu_capture_page.dart.
+    -->
+
    <application
         android:label="Revenue"
         android:name="${applicationName}"

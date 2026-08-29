@@ -5,6 +5,7 @@ import 'package:passkeys/authenticator.dart';
 import 'package:passkeys/types.dart';
 
 import 'auth_repository.dart';
+import 'data_exception.dart';
 
 /// Which region the relying party is deployed to.
 ///
@@ -61,10 +62,12 @@ enum PasskeyFailure {
   unknown,
 }
 
-class PasskeyException implements Exception {
+class PasskeyException implements AppException {
   const PasskeyException(this.failure, this.message);
 
   final PasskeyFailure failure;
+
+  @override
   final String message;
 
   @override

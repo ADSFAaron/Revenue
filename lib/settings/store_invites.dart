@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../database/repositories.dart';
 import '../models/app_user.dart';
 import '../models/invite.dart';
+import '../widgets/feedback.dart';
 
 /// Where a manager issues invite codes.
 ///
@@ -36,6 +37,13 @@ class _StoreInvitesState extends State<StoreInvites> {
   Timer? _ticker;
 
   bool _issuing = false;
+
+  /// Held in a field, not built inside `build`. The ticker below calls
+  /// `setState` every 30 seconds, and a stream created in `build` is a new
+  /// object each time — the StreamBuilder would tear the subscription down and
+  /// re-read the whole list twice a minute.
+  late Stream<List<Invite>> _invites =
+      inviteRepository.watchForStore(widget.storeId);
 
   /// The code issued in this session, so it can be shown large and at the top
   /// rather than the person having to find it in the list.
@@ -69,13 +77,24 @@ class _StoreInvitesState extends State<StoreInvites> {
       ),
       body: SafeArea(
         child: StreamBuilder<List<Invite>>(
-          stream: inviteRepository.watchForStore(widget.storeId),
+          stream: _invites,
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              return _CenteredMessage(
-                icon: Icons.lock_outline,
-                title: 'Cannot list invite codes',
-                detail: '${snapshot.error}',
+              // Was `'${snapshot.error}'`, which put
+              // `[cloud_firestore/permission-denied] Missing or insufficient
+              // permissions.` in front of a shop owner. ErrorView runs it
+              // through describeFailure and offers a retry where retrying can
+              // actually help.
+              final failure = describeFailure(snapshot.error!).failure;
+              return ErrorView(
+                snapshot.error!,
+                // Retrying a refused permission just refuses again.
+                onRetry: failure == DataFailure.denied
+                    ? null
+                    : () => setState(() {
+                          _invites =
+                              inviteRepository.watchForStore(widget.storeId);
+                        }),
               );
             }
             if (!snapshot.hasData) {
@@ -217,11 +236,7 @@ class _StoreInvitesState extends State<StoreInvites> {
 
   void _snack(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message),
-      backgroundColor: isError ? Colors.red : null,
-      duration: Duration(seconds: isError ? 6 : 3),
-    ));
+    showSnack(context, message, isError: isError);
   }
 }
 

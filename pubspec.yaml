@@ -50,7 +50,6 @@ dependencies:
   flutter_native_splash: ^2.4.4
 
   # Use for statistics graph
-  syncfusion_flutter_gauges: ^29.1.35
   syncfusion_flutter_charts: ^29.1.35
 
   # Use for output Excel file
@@ -67,6 +66,10 @@ dependencies:
   # Android Gradle Plugin bump to 8.12.1 (android/settings.gradle) and nothing
   # else — the PackageInfo API itself is unchanged.
   package_info_plus: ^9.0.1
+
+  # Remembers the light/dark choice between launches. The only thing this app
+  # keeps on the device — everything else belongs to the store, not the phone.
+  shared_preferences: ^2.3.3
 
   # Use for register generate uuid
   uuid: ^4.5.1
@@ -90,6 +93,23 @@ dependencies:
 
   # Use for app name
   rename: ^3.0.2
+
+  # Capturing a menu in-app rather than borrowing another app's camera.
+  #
+  # `image_picker`'s camera source fires ACTION_IMAGE_CAPTURE and hands the job
+  # to whatever answers it. On a Sony Xperia nothing does — the stock camera is
+  # disabled and its replacements (Photography Pro, camerax) register only
+  # STILL_IMAGE_CAMERA, which opens a camera but never returns a picture. The
+  # phone then reports `no_available_camera` while holding three cameras.
+  # Driving the hardware directly is the only route that does not depend on
+  # which camera app the manufacturer shipped.
+  camera: ^0.12.0+2
+
+  # Photographing a menu so it can be read into dishes. `maxWidth` downsamples
+  # natively on the way out, which is why there is no separate `image` package:
+  # a 1568px long edge is all the recogniser wants and a 12MP original is
+  # several seconds of upload for no gain.
+  image_picker: ^1.1.2
 
   # Use for edit menu icon
   flutter_iconpicker: ^4.0.1
@@ -144,7 +164,6 @@ flutter:
   assets:
     - assets/welcome.svg
     - assets/login_bg.svg
-    - assets/google-gemini-icon.svg
     - assets/google-icon.svg
 
   # An images asset can refer to one or more resolution-specific "variants", see

@@ -46,7 +46,9 @@
 		<key>UIStatusBarHidden</key>
 		<false/>
 		<key>NSPhotoLibraryUsageDescription</key>
-		<string>This app need to output excel file</string>
+		<string>Revenue saves exported spreadsheets here, and reads a photo of your menu when you import one.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>Revenue uses the camera to photograph your menu so its dishes and prices can be read in.</string>
 		<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

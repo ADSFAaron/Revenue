@@ -63,7 +63,8 @@ class StoreAuditLog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(denied ? Icons.lock_outline : Icons.error_outline,
-                size: 48, color: Colors.grey),
+                size: 48,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
             const SizedBox(height: 16),
             Text(
               denied

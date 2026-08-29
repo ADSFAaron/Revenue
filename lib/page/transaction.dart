@@ -1,12 +1,27 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../database/repositories.dart';
 import '../models/daily_stats.dart';
 import '../models/order.dart';
+import '../settings/store_setting_history_order_detail.dart';
 import '../settings/store_settings_history_order.dart';
+import '../widgets/feedback.dart';
+import '../widgets/money.dart';
+import '../widgets/setup_checklist.dart';
+import '../widgets/stat_card.dart';
 import 'addorder.dart';
 
+/// The shop's day: today's figures, the last few tickets, and the way in to
+/// ringing one up.
+///
+/// This is now the first tab. There used to be an Overview page ahead of it
+/// showing today's revenue and order count — both of which are here, alongside
+/// guests and average ticket, the recent orders, and the same Add Order
+/// button. All it held that this does not was a greeting and a clock, and the
+/// greeting has moved here.
 class TransactionPage extends StatefulWidget {
   const TransactionPage({super.key});
 
@@ -16,6 +31,25 @@ class TransactionPage extends StatefulWidget {
 
 class _TransactionPageState extends State<TransactionPage> {
   late final Future<Session> _session = loadSession();
+  Timer? _clock;
+  late DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    // Only the greeting line depends on the time, so only it is rebuilt. The
+    // old Overview page put this timer around a `setState` on the whole page
+    // and tore down the tree once a minute for one line of text.
+    _clock = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +60,7 @@ class _TransactionPageState extends State<TransactionPage> {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
+          return ErrorView(snapshot.error!);
         }
         return _buildTransactionPage(snapshot.data!);
       },
@@ -35,7 +69,8 @@ class _TransactionPageState extends State<TransactionPage> {
 
   Widget _buildTransactionPage(Session session) {
     final businessDate = session.store.currentBusinessDate;
-    final money = NumberFormat.decimalPattern();
+    final money = moneyFormat(session.store);
+    final counts = NumberFormat.decimalPattern();
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
@@ -47,86 +82,101 @@ class _TransactionPageState extends State<TransactionPage> {
         label: const Text('Add Order'),
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
-          child: SingleChildScrollView(
-            child: Column(
-              children: <Widget>[
-                const Padding(
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 16, vertical: 32.0),
-                  child: Row(
-                    children: [
-                      Text(
-                        "Today's Summary",
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _buildGreeting(session),
+              const SizedBox(height: 20),
+              // Disappears on its own once the store is set up.
+              SetupChecklist(session: session),
+              // Reads the day's rollup document, not the orders themselves.
+              StreamBuilder<DailyStats>(
+                stream:
+                    statsRepository.watchDay(session.storeId, businessDate),
+                builder: (context, snapshot) {
+                  final stats =
+                      snapshot.data ?? DailyStats(businessDate: businessDate);
+                  return Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: <Widget>[
+                      StatCard(
+                        title: 'Revenue',
+                        icon: Icons.savings_rounded,
+                        value: money.format(stats.revenue),
+                      ),
+                      StatCard(
+                        title: 'Orders',
+                        icon: Icons.grading_rounded,
+                        value: counts.format(stats.orderCount),
+                      ),
+                      StatCard(
+                        title: 'Guests',
+                        icon: Icons.groups_rounded,
+                        value: counts.format(stats.guestCount),
+                      ),
+                      StatCard(
+                        title: 'Per order',
+                        icon: Icons.receipt_long_rounded,
+                        value:
+                            money.format(stats.averageOrderValue.round()),
                       ),
                     ],
-                  ),
-                ),
-                // Reads the day's rollup document, not the orders themselves.
-                StreamBuilder<DailyStats>(
-                  stream:
-                      statsRepository.watchDay(session.storeId, businessDate),
-                  builder: (context, snapshot) {
-                    final stats =
-                        snapshot.data ?? DailyStats(businessDate: businessDate);
-                    return Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: <Widget>[
-                        _buildCard(
-                          title: 'Revenue',
-                          icon: Icons.savings_rounded,
-                          value: money.format(stats.revenue),
-                        ),
-                        _buildCard(
-                          title: 'Orders',
-                          icon: Icons.grading_rounded,
-                          value: money.format(stats.orderCount),
-                        ),
-                        _buildCard(
-                          title: 'Guests',
-                          icon: Icons.groups_rounded,
-                          value: money.format(stats.guestCount),
-                        ),
-                        _buildCard(
-                          title: 'Per order',
-                          icon: Icons.receipt_long_rounded,
-                          value: money
-                              .format(stats.averageOrderValue.round()),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 10),
-                _buildLastTransactions(session),
-              ],
-            ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+              _buildLastTransactions(session),
+            ],
           ),
         ),
       ),
     );
   }
 
+  Widget _buildGreeting(Session session) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${_greeting(_now)}, ${session.user.displayName}',
+          style: theme.textTheme.headlineMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          DateFormat('EEEE, d MMMM · HH:mm').format(_now),
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+
+  static String _greeting(DateTime now) {
+    if (now.hour >= 6 && now.hour <= 12) return '☀️ Morning';
+    if (now.hour >= 13 && now.hour <= 18) return '🌻 Afternoon';
+    if (now.hour >= 19 && now.hour <= 23) return '🌆 Evening';
+    return '🌝 Night';
+  }
+
   /// Real orders, newest first — this list used to be a single hard-coded row
   /// reading "Order No / Transaction Time".
   Widget _buildLastTransactions(Session session) {
+    final money = moneyFormat(session.store);
+
     return Card(
-      elevation: 0,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
             Row(
               children: [
-                const SizedBox(width: 10),
-                const Text('Last Transactions',
-                    style: TextStyle(fontSize: 20)),
+                Text('Last Transactions',
+                    style: Theme.of(context).textTheme.titleMedium),
                 const Spacer(),
                 TextButton(
                   onPressed: () => Navigator.push(
@@ -144,10 +194,7 @@ class _TransactionPageState extends State<TransactionPage> {
               stream: orderRepository.watchRecent(session.storeId, limit: 5),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  return Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text('Error: ${snapshot.error}'),
-                  );
+                  return ErrorView(snapshot.error!);
                 }
                 if (!snapshot.hasData) {
                   return const Padding(
@@ -170,24 +217,39 @@ class _TransactionPageState extends State<TransactionPage> {
                   itemCount: orders.length,
                   itemBuilder: (context, index) {
                     final order = orders[index];
+                    final strikethrough = order.isVoided
+                        ? const TextStyle(
+                            decoration: TextDecoration.lineThrough)
+                        : null;
                     return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Theme.of(context).splashColor,
-                        child: Text('#${order.orderNo}'),
+                      contentPadding: EdgeInsets.zero,
+                      // The rows looked exactly like the tappable ones behind
+                      // View All, and were not.
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => StoreHistoryOrderDetail(
+                              session.storeId, order),
+                        ),
                       ),
-                      title: Text(
-                        'Order #${order.orderNo}',
-                        style: order.isVoided
-                            ? const TextStyle(
-                                decoration: TextDecoration.lineThrough)
-                            : null,
+                      leading: StatIcon(
+                        icon: order.isVoided
+                            ? Icons.block_rounded
+                            : order.channel.icon,
+                        size: 40,
                       ),
+                      title: Text('Order #${order.orderNo}',
+                          style: strikethrough),
                       subtitle: Text(
                         '${DateFormat.MMMd().add_Hm().format(order.placedAt)}'
                         '  ·  ${order.channel.label}',
                       ),
-                      trailing: Text('NTD ${order.total}',
-                          style: const TextStyle(fontSize: 16)),
+                      trailing: Text(
+                        money.format(order.total),
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.merge(strikethrough),
+                      ),
                     );
                   },
                   separatorBuilder: (context, index) => const Divider(),
@@ -195,54 +257,6 @@ class _TransactionPageState extends State<TransactionPage> {
               },
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCard({
-    required String title,
-    String? value,
-    IconData? icon,
-  }) {
-    return Card(
-      elevation: 0,
-      child: SizedBox(
-        width: MediaQuery.of(context).size.width / 2 - 30,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).splashColor,
-                      borderRadius: BorderRadius.circular(48),
-                    ),
-                    height: 48,
-                    width: 48,
-                    child: Icon(icon, color: Theme.of(context).iconTheme.color),
-                  ),
-                  const SizedBox(width: 10),
-                  Flexible(child: Text(title)),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Flexible(
-                    child: FittedBox(
-                      child: Text(value ?? '',
-                          style: const TextStyle(fontSize: 24)),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
         ),
       ),
     );

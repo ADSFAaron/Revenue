@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../database/repositories.dart';
 import '../models/store.dart';
+import '../widgets/feedback.dart';
 
 /// Menu categories — 主餐 / 小菜 / 飲料, or whatever this kitchen actually calls
 /// its sections.
@@ -50,23 +51,35 @@ class _StoreCategoriesState extends State<StoreCategories> {
     super.dispose();
   }
 
+  /// Reads the categories and counts what sits in each, so a category holding
+  /// dishes can refuse to be deleted.
+  ///
+  /// `_loading` is cleared in both outcomes. Left only on the success path, a
+  /// failed read held the screen on its spinner for good — and a spinner that
+  /// never resolves is the one failure a person cannot even describe.
   Future<void> _load() async {
-    final store = await storeRepository.fetch(widget.storeId);
-    final items = await menuRepository.fetchAll(widget.storeId);
+    try {
+      final store = await storeRepository.fetch(widget.storeId);
+      final items = await menuRepository.fetchAll(widget.storeId);
 
-    final usage = <String, int>{};
-    for (final item in items) {
-      final id = item.categoryId;
-      if (id != null) usage[id] = (usage[id] ?? 0) + 1;
+      final usage = <String, int>{};
+      for (final item in items) {
+        final id = item.categoryId;
+        if (id != null) usage[id] = (usage[id] ?? 0) + 1;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _categories = [...?store?.categories]
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+        _usage = usage;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      showFailure(context, e);
     }
-
-    if (!mounted) return;
-    setState(() {
-      _categories = [...?store?.categories]
-        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
-      _usage = usage;
-      _loading = false;
-    });
   }
 
   @override
@@ -106,7 +119,8 @@ class _StoreCategoriesState extends State<StoreCategories> {
     final count = _usage[category.id] ?? 0;
     return ListTile(
       key: ValueKey(category.id),
-      leading: const Icon(Icons.drag_indicator, color: Colors.black26),
+      leading: Icon(Icons.drag_indicator,
+          color: Theme.of(context).colorScheme.outlineVariant),
       title: Text(category.name),
       subtitle: Text(count == 0
           ? 'No dishes'
@@ -199,9 +213,9 @@ class _StoreCategoriesState extends State<StoreCategories> {
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
-          TextButton(
+          DestructiveButton(
+            label: 'Delete',
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
           ),
         ],
       ),
@@ -233,9 +247,10 @@ class _StoreCategoriesState extends State<StoreCategories> {
       await storeRepository.updateCategories(widget.storeId, numbered);
     } catch (e) {
       // Put back what the store actually holds rather than leaving the screen
-      // showing an edit that never landed.
+      // showing an edit that never landed. `_load` reports its own failures,
+      // so a reload that also fails does not swallow this one.
       await _load();
-      _snack('Could not save: $e', isError: true);
+      _snack(describeFailure(e).message, isError: true);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -243,11 +258,7 @@ class _StoreCategoriesState extends State<StoreCategories> {
 
   void _snack(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message),
-      backgroundColor: isError ? Colors.red : null,
-      duration: Duration(seconds: isError ? 5 : 3),
-    ));
+    showSnack(context, message, isError: isError);
   }
 }
 

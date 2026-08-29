@@ -75,6 +75,20 @@
   </style>
 </head>
 <body>
+  <!--
+    The Passkeys web SDK, vendored from
+    https://github.com/corbado/flutter-passkeys/releases/download/2.4.0/bundle.js
+
+    `passkeys_web`'s registerWith() ends in a bare `PasskeyAuthenticator.init()`
+    against this global, and its own guard does not catch the miss: it probes
+    with `window['PasskeyAuthenticator']`, which returns undefined rather than
+    throwing, so the try/catch never fires and the call runs anyway. That is a
+    TypeError inside registerPlugins(), which runs before main() — so without
+    this tag the entire web build dies at startup with a blank page, passkeys
+    or not. It must load before the Flutter bootstrap below.
+  -->
+  <script src="passkeys/bundle.js"></script>
+
   <div id="loading">
     <div class="spinner"></div>
     <div>Revenue</div>

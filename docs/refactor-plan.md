@@ -5,7 +5,7 @@
 
 ## 實作進度（2026-08-26 更新）
 
-**Phase 0-7 全部實作完成。**
+**Phase 0-8 全部實作完成。**
 
 | Phase | 狀態 |
 |---|---|
@@ -17,6 +17,7 @@
 | 5 — Excel 匯出、auditLog UI | ✅ 完成 |
 | 6 — 註冊分流、invite code、rules 鎖 `storeId`/`role`、分類編輯 | ✅ 完成 |
 | 7 — Google 登入、passkeys（Cloud Functions relying party） | ✅ 完成 |
+| 8 — 照片匯入菜單（視覺模型 + 確認畫面） | ✅ 完成 |
 
 已修掉的項目：B1–B9 全部、F1–F6。**仍未修：F7**——Statistics 頁的 Gemini FAB
 仍只有 `debugPrint`。它不屬於任何 Phase，要不要做（以及做成什麼）還沒決定。
@@ -25,20 +26,26 @@ Phase 6 的完整設計寫在 README 的
 [Registration and onboarding](../README.md#registration-and-onboarding)，
 這裡只記實作結果與偏離之處（見 §7 第 9-16 點）。
 
+> **UI/UX 與資訊架構的修正另立一份**：[ui-ux-plan.md](ui-ux-plan.md)（2026-08-27 起執行）。
+> 那份計畫決定 **F7 不做**——Statistics 頁的 Gemini FAB 直接移除；同時砍掉
+> Overview 頁、把 Insights 從 AppBar 按鈕升成一級 tab。這份文件裡對
+> `overview.dart` 的引用屆時會失效。
+
 ### Phase 7 — Google 登入與 passkeys（2026-08-26 完成）
 
 Blaze 方案與 Google 登入都由使用者開通之後補上的：
 
 | 項目 | 做法 |
 |---|---|
-| Google 登入 | Web 走 `firebase_auth` 的 `signInWithPopup`，Android 走 `google_sign_in`。**不是同一條路**——`google_sign_in_web` 的 `supportsAuthenticate()` 回傳 false，呼叫 `authenticate()` 會直接丟例外，它只提供 Google 自己畫的按鈕 widget，而 Web 是本專案的主力平台 |
+| Google 登入 | Web 走 `firebase_auth` 的 `signInWithPopup`，Android 走 `google_sign_in`。**不是同一條路**——`google_sign_in_web` 的 `supportsAuthenticate()` 回傳 false，呼叫 `authenticate()` 會直接丟例外，它只提供 Google 自己畫的按鈕 widget，而兩邊的登入畫面必須長得一樣 |
 | Passkeys | 自架 relying party，在 [functions/](../functions/)。`@simplewebauthn/server` 驗證，通過後用 Admin SDK `createCustomToken()` 換成 Firebase session |
 | RP ID | `revenueapp-b8849.web.app`。**passkey 綁死在這個網域上**，之後若換自訂網域，所有已註冊的 passkey 都要重新註冊一次 |
 | 平台 | Web + Android。Android 的 Digital Asset Links 在 [web/well-known/assetlinks.json](../web/well-known/assetlinks.json)，指紋取自 debug keystore（因為 release 目前就是用 debug 簽的） |
 | iOS | 沒做。缺 Apple team id，而且 iOS 本來就還沒設定 |
 
-**還沒做的只剩一件：照片匯入菜單。** 辨識路線還沒定，不論走哪條都要一台伺服器——
-現在 `functions/` 已經在了，所以這件事不再卡在基礎設施，只卡在「用哪個辨識服務」這個決定。
+**照片匯入菜單也做完了**，見 §8。辨識路線最後選的是視覺模型直接吃圖，不是 OCR——
+理由跟成本無關，是因為 OCR 回的是文字行不是菜色，名稱↔價格的配對得自己寫，
+而那才是這件事真正的工作量。
 
 Phase 0-2 之外另外補的：Firebase Auth 也收進 repository 層了
 （[auth_repository.dart](../lib/database/auth_repository.dart)）。原本
@@ -60,6 +67,10 @@ Phase 0-2 之外另外補的：Firebase Auth 也收進 repository 層了
 
 **設計時請記住：這是一個分析型 app，不是交易型 app。**
 所有結構決策都應該優先服務「查詢與彙總」，而不是「寫入速度」。
+
+**平台：出貨的是 Android 與 iOS。** Web 只是開發時的除錯介面與對外展示用——
+不必接裝置或開模擬器，改一行看一眼很快。功能在 Web 上要跑得動，但當一個決策
+必須二選一時以行動端為準：真正在用這個 app 的人是站在櫃檯拿著手機的店員。
 
 ---
 
@@ -556,7 +567,8 @@ Phase 7 的偏離與注意事項：
 
 13. **Google 登入在 Web 與 Android 走兩條不同的路，是刻意的。**
     `google_sign_in_web` 的 `supportsAuthenticate()` 回傳 false、呼叫 `authenticate()`
-    會丟例外，它只給 Google 自己畫的按鈕 widget；而 Web 是本專案的主力平台。
+    會丟例外，它只給 Google 自己畫的按鈕 widget；而 Web 就算只是除錯與展示用的
+    介面，登入畫面仍然要跟 Android 上長得一樣。
     所以 Web 用 `firebase_auth` 的 `signInWithPopup`（不需要在 index.html 放 client id），
     Android 用 `google_sign_in`（client id 從 google-services.json 讀）。
     兩邊都收在 `AuthRepository.signInWithGoogle()` 後面，畫面看不出差別。
@@ -598,7 +610,58 @@ Phase 7 的偏離與注意事項：
 
 ---
 
-## 8. 參考資料
+## 8. 照片匯入菜單（2026-08-26 完成）
+
+完整設計寫在 README 的
+[Importing a menu from a photo](../README.md#importing-a-menu-from-a-photo)，
+這裡只記為什麼選這條路，以及實作上幾個容易踩的點。
+
+### 為什麼不是 OCR
+
+難的不是認字，是**版面**。台灣菜單常是兩欄、價格右對齊、每十道插一個裝飾標題，
+「牛肉麵」跟屬於它的「120」中間隔半頁空白。文字辨識回給你的是 text line 加
+bounding box，名稱↔價格的配對留給呼叫端——那才是真正的工作量，而且每家店的排版都不一樣，
+第一張兩欄卡片或第一個「大130/小100」就會破。
+
+| 路線 | 結論 |
+|---|---|
+| 端上 OCR（ML Kit） | 免費、離線，但回的是文字行不是菜色。而且 Flutter 這層只有 `TextRecognitionScript.chinese` 一個選項，**沒有地方傳 `zh-Hant`**——同一顆漢字模型涵蓋簡繁，台灣菜單愛用的毛筆體、藝術字辨識率掉得厲害 |
+| 雲端 OCR（Vision API） | 要錢，而且配對還是留給你。對這件事嚴格劣於上一列 |
+| **視覺模型** | 自己做配對，因為它是靠語意在讀不是靠字形。一次呼叫同時回菜色、價格、份量、分類標題 |
+
+端上 OCR 沒有淘汰，只是不是第一版：**哪天要求沒網路也能用，它就是答案。**
+
+### 三個實作上的決定
+
+1. **`name` 與 `variant` 分開存，字串在 Dart 端組。**
+   問模型要單一欄位，它這次回 `牛肉麵 大`、下次回 `牛肉麵(大)`，
+   只差一個分隔符就是兩道不同的菜、兩份不同的銷售歷史。
+   一道菜兩個價格 = 兩筆 item 共用同一個 `name`，這正是之後
+   [menu_engineering.dart](../lib/analysis/menu_engineering.dart) 能分開看大小份誰賺的前提。
+
+2. **函式只辨識，不寫 Firestore。**
+   草稿回到 app、人在畫面上改完才寫，而且是走既有的 client 端寫入路徑，
+   rules 已經在管了。伺服器端直接寫的話，店家想反悔就得一道一道刪，
+   而 menuItems 是軟刪除，「undo」會留下一抽屜沒人解釋得了的 inactive 菜。
+
+3. **五個 flag 裡有四個是 app 算的，不是模型標的。**
+   模型的自我懷疑抓得到模糊跟反光，但抓不到**它有把握卻讀錯的價格**——
+   120 讀成 720 在它眼裡是個再清楚不過的數字。離群值檢查就是為了這一類存在的。
+   3 倍的帶寬是刻意放寬的，中位數也要該分類至少四道菜才採信：
+   一個亂叫的規則會訓練人不看就按確認，那比沒有這個功能還糟。
+
+### 兩個會踩到的坑
+
+- **timeout 兩邊都要調。** 函式端預設 60 秒、Dart client 端預設 70 秒，
+  一張菜單辨識要 20–40 秒，四張一起送必爆。兩邊都拉到五分鐘
+  （`TIMEOUT_SECONDS` 與 `menuImportTimeout`）。維持預設的話會變成
+  「client 已經失敗、server 還在跑」——看起來像 bug，而且那次呼叫的錢照付。
+- **分類是兩段式寫入。** 分類 inline 在 store doc、菜色在 subcollection，
+  菜色先寫就會指向一個不存在的 `categoryId`。兩者放進同一個 `WriteBatch`。
+
+---
+
+## 9. 參考資料
 
 - [22 Restaurant KPIs to Track — Lightspeed](https://www.lightspeedhq.com/blog/restaurant-kpis/)
 - [Top 11 Benchmark KPIs Every Restaurant Owner Should Measure — NetSuite](https://www.netsuite.com/portal/resource/articles/erp/restaurant-kpis.shtml)

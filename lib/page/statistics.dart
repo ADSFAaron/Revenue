@@ -1,9 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
-import 'package:syncfusion_flutter_gauges/gauges.dart';
 
 import '../database/repositories.dart';
 import '../export/statistics_workbook.dart';
@@ -11,9 +11,11 @@ import '../export/workbook_saver.dart';
 import '../models/daily_stats.dart';
 import '../models/stats_period.dart';
 import '../models/store.dart';
-import 'analysis.dart';
-
-// The Gemini button (F7) is still unwired.
+import '../widgets/chart_theme.dart';
+import '../widgets/feedback.dart';
+import '../widgets/money.dart';
+import '../widgets/stat_card.dart';
+import 'addorder.dart';
 
 class StatisticsPage extends StatefulWidget {
   const StatisticsPage({super.key});
@@ -38,13 +40,16 @@ class _StatisticsPageState extends State<StatisticsPage>
   /// for the same documents again.
   Stream<PeriodReport>? _reportStream;
 
-  bool isDark = false;
-  bool _exporting = false;
+  /// The most recent report off [_reportStream].
+  ///
+  /// Export moved to the app bar, which sits outside the `StreamBuilder` that
+  /// holds the report, so the page has to keep hold of it. Reading it back off
+  /// the stream instead would mean waiting for Firestore's *next* snapshot —
+  /// on an idle shop, indefinitely.
+  PeriodReport? _latestReport;
+  StreamSubscription<PeriodReport>? _reportSub;
 
-  Map<String, bool> featureSelected = {
-    'Income': false,
-    'Export': false,
-  };
+  bool _exporting = false;
 
   TooltipBehavior? _tooltipBehavior;
 
@@ -73,6 +78,7 @@ class _StatisticsPageState extends State<StatisticsPage>
 
   @override
   void dispose() {
+    _reportSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -85,9 +91,20 @@ class _StatisticsPageState extends State<StatisticsPage>
   /// inside a `setState`.
   void _setPeriod(StatsPeriod period) {
     _period = period;
+    _latestReport = null;
     _reportStream = statsRepository
         .watchPeriod(_session!.storeId, period, today: _today)
         .asBroadcastStream();
+
+    _reportSub?.cancel();
+    _reportSub = _reportStream!.listen((report) {
+      final wasExportable = _latestReport?.isEmpty == false;
+      _latestReport = report;
+      // Only when the app bar's export button has to change state — the
+      // StreamBuilder below redraws the body on its own, and rebuilding the
+      // whole page on every snapshot would do that work twice.
+      if (wasExportable != !report.isEmpty && mounted) setState(() {});
+    });
   }
 
   void _onTabChanged() {
@@ -104,6 +121,16 @@ class _StatisticsPageState extends State<StatisticsPage>
   /// Encoding a workbook is slow enough to be noticed, so the card is latched
   /// while it runs — tapping twice would otherwise start a second export and
   /// hand back two files.
+  /// Exports whatever the page is currently showing.
+  Future<void> _exportCurrent() {
+    final session = _session;
+    final report = _latestReport;
+    if (session == null || report == null || report.isEmpty) {
+      return Future.value();
+    }
+    return _export(session, report);
+  }
+
   Future<void> _export(Session session, PeriodReport report) async {
     setState(() => _exporting = true);
     try {
@@ -117,20 +144,19 @@ class _StatisticsPageState extends State<StatisticsPage>
         fileName: workbook.fileName,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(outcome.description)),
-      );
+      showInfo(context, outcome.description);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.red,
-          content: Text('Export failed: $error'),
-        ),
-      );
+      showError(context, 'Export failed: $error');
     } finally {
       if (mounted) setState(() => _exporting = false);
     }
+  }
+
+  /// Back to the period containing today, however far away it is.
+  void _jumpToPresent() {
+    setState(() => _setPeriod(
+        StatsPeriod.current(_session!.store, _period!.granularity)));
   }
 
   void _step(int direction) {
@@ -140,31 +166,27 @@ class _StatisticsPageState extends State<StatisticsPage>
 
   @override
   Widget build(BuildContext context) {
-    const String assetName = 'assets/google-gemini-icon.svg';
-    final Widget svg = SvgPicture.asset(
-      assetName,
-      semanticsLabel: 'Gemini Logo',
-      height: 24,
-      width: 24,
-      colorFilter: isDark
-          ? const ColorFilter.mode(Colors.white, BlendMode.srcIn)
-          : const ColorFilter.mode(Colors.black, BlendMode.srcIn),
-    );
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Statistics'),
+        title: const Text('Reports'),
         actions: [
+          // Was three taps and two scrolls down: an unlabelled "+" card at the
+          // foot of the page opened a sheet, ticking Export there closed the
+          // sheet, and the export card then appeared back at the foot. The
+          // selection also lived in memory only, so it was gone on the next
+          // visit.
           IconButton(
-            icon: const Icon(Icons.insights_rounded),
-            tooltip: 'Insights',
-            // Only once the session is in hand: every report behind here needs
-            // the store's cutoff hour to know which days it is looking at.
-            onPressed: _session == null
+            tooltip: 'Export to Excel',
+            icon: _exporting
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.download_outlined),
+            onPressed: _exporting || _latestReport?.isEmpty != false
                 ? null
-                : () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => AnalysisPage(session: _session!),
-                    )),
+                : _exportCurrent,
           ),
         ],
         bottom: TabBar(
@@ -176,16 +198,12 @@ class _StatisticsPageState extends State<StatisticsPage>
         ),
       ),
       body: _buildBody(),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => debugPrint('FloatingActionButton tapped'),
-        child: GestureDetector(child: svg),
-      ),
     );
   }
 
   Widget _buildBody() {
     if (_sessionError != null) {
-      return Center(child: Text('Error: $_sessionError'));
+      return ErrorView(_sessionError!);
     }
     if (_session == null || _period == null) {
       return const Center(child: CircularProgressIndicator());
@@ -205,24 +223,47 @@ class _StatisticsPageState extends State<StatisticsPage>
           // period loads, and above all on an empty period, which is otherwise
           // a dead end you cannot page out of.
           _buildHeaderRow(period),
+          // The tabs share a body rather than sitting in a TabBarView (see
+          // above), which also took the swipe gesture away. This puts paging
+          // through time on it instead, which is the more useful of the two:
+          // the tabs are three taps, the periods are unbounded.
           Expanded(
-            child: StreamBuilder<PeriodReport>(
+            child: GestureDetector(
+              onHorizontalDragEnd: (details) {
+                final velocity = details.primaryVelocity ?? 0;
+                if (velocity.abs() < 200) return;
+                if (velocity < 0) {
+                  if (!period.contains(_today)) _step(1);
+                } else {
+                  _step(-1);
+                }
+              },
+              child: StreamBuilder<PeriodReport>(
               stream: _reportStream,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}'));
+                  return ErrorView(
+                    snapshot.error!,
+                    onRetry: () => setState(() => _setPeriod(period)),
+                  );
                 }
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final report = snapshot.data!;
                 if (report.isEmpty) {
-                  return Center(
-                    child: Text('No orders in ${period.label(_today)}'),
+                  // Reached constantly — every closed day the arrows page
+                  // through lands here — and it used to be one sentence with
+                  // nowhere to go.
+                  return _EmptyPeriod(
+                    label: period.label(_today),
+                    atPresent: period.contains(_today),
+                    storeId: session.storeId,
                   );
                 }
                 return _buildReport(session, report);
               },
+              ),
             ),
           ),
         ],
@@ -240,23 +281,51 @@ class _StatisticsPageState extends State<StatisticsPage>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          ElevatedButton(
+          IconButton.filledTonal(
             onPressed: () => _step(-1),
-            style: ElevatedButton.styleFrom(elevation: 0),
-            child: const Icon(Icons.arrow_back),
+            tooltip: 'Previous',
+            icon: const Icon(Icons.arrow_back),
           ),
           Flexible(
-            child: Text(
-              period.label(_today),
-              style: const TextStyle(fontSize: 20),
-              textAlign: TextAlign.center,
-              overflow: TextOverflow.ellipsis,
+            // Paging back a month and then wanting to be back at today meant
+            // thirty taps on the forward arrow. The label itself is the
+            // obvious place to put the way home.
+            child: Tooltip(
+              message: atPresent ? '' : 'Back to today',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: atPresent ? null : _jumpToPresent,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          period.label(_today),
+                          style: Theme.of(context).textTheme.titleLarge,
+                          textAlign: TextAlign.center,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (!atPresent) ...[
+                        const SizedBox(width: 6),
+                        Icon(Icons.today_outlined,
+                            size: 18,
+                            color:
+                                Theme.of(context).colorScheme.primary),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
-          ElevatedButton(
+          IconButton.filledTonal(
             onPressed: atPresent ? null : () => _step(1),
-            style: ElevatedButton.styleFrom(elevation: 0),
-            child: const Icon(Icons.arrow_forward),
+            tooltip: 'Next',
+            icon: const Icon(Icons.arrow_forward),
           ),
         ],
       ),
@@ -267,7 +336,7 @@ class _StatisticsPageState extends State<StatisticsPage>
     final period = report.period;
     final total = report.total;
     final previous = report.previousTotal;
-    final money = _moneyFormat(session.store);
+    final money = moneyFormat(session.store);
 
     return SingleChildScrollView(
       child: Padding(
@@ -276,33 +345,44 @@ class _StatisticsPageState extends State<StatisticsPage>
           spacing: 20,
           children: <Widget>[
             Wrap(
+              spacing: 10,
+              runSpacing: 10,
               children: [
-                _buildCard(
+                StatCard(
                   title: 'Revenue',
                   icon: Symbols.money_bag,
                   value: money.format(total.revenue),
-                  change: PeriodReport.change(total.revenue, previous.revenue),
+                  trailing: ChangeBadge(
+                    change:
+                        PeriodReport.change(total.revenue, previous.revenue),
+                  ),
                 ),
-                _buildCard(
+                StatCard(
                   title: 'Orders',
                   icon: Icons.receipt_long_outlined,
                   value: NumberFormat.decimalPattern().format(total.orderCount),
-                  change: PeriodReport.change(
-                      total.orderCount, previous.orderCount),
+                  trailing: ChangeBadge(
+                    change: PeriodReport.change(
+                        total.orderCount, previous.orderCount),
+                  ),
                 ),
-                _buildCard(
+                StatCard(
                   title: 'Gross profit',
                   icon: Icons.trending_up_rounded,
                   value: money.format(total.grossProfit),
-                  change: PeriodReport.change(
-                      total.grossProfit, previous.grossProfit),
+                  trailing: ChangeBadge(
+                    change: PeriodReport.change(
+                        total.grossProfit, previous.grossProfit),
+                  ),
                 ),
-                _buildCard(
+                StatCard(
                   title: 'Per head',
                   icon: Icons.groups_outlined,
                   value: money.format(total.averageGuestSpend.round()),
-                  change: PeriodReport.change(
-                      total.averageGuestSpend, previous.averageGuestSpend),
+                  trailing: ChangeBadge(
+                    change: PeriodReport.change(
+                        total.averageGuestSpend, previous.averageGuestSpend),
+                  ),
                 ),
               ],
             ),
@@ -313,29 +393,6 @@ class _StatisticsPageState extends State<StatisticsPage>
             _buildTargetGauge(session.store, period, total),
             _buildTrendChart(session.store, report),
             _buildTopDishesChart(total),
-            Wrap(
-              children: [
-                if (featureSelected['Income']!)
-                  _buildCard(
-                    title: 'Income',
-                    icon: Symbols.money_bag,
-                    value: money.format(total.revenue),
-                    onTap: () => debugPrint('money Card tapped'),
-                  ),
-                if (featureSelected['Export']!)
-                  _buildCard(
-                    title: 'Export',
-                    icon: _exporting
-                        ? Icons.hourglass_top_rounded
-                        : Icons.download_outlined,
-                    value: 'Excel',
-                    // Exports exactly the period on screen, so what lands in
-                    // the file is what the page is showing.
-                    onTap: _exporting ? null : () => _export(session, report),
-                  ),
-                _buildAddMoreCard(context),
-              ],
-            ),
           ],
         ),
       ),
@@ -351,9 +408,9 @@ class _StatisticsPageState extends State<StatisticsPage>
   Widget _buildTargetGauge(
       Store store, StatsPeriod period, DailyStats total) {
     final elapsed = period.elapsedDays(_today).clamp(1, period.dayCount);
-    return _buildRangePointerGauge(
-      total.orderCount,
-      store.targets.dailyOrders * elapsed,
+    return _TargetProgress(
+      current: total.orderCount,
+      target: store.targets.dailyOrders * elapsed,
     );
   }
 
@@ -407,99 +464,81 @@ class _StatisticsPageState extends State<StatisticsPage>
 
   /// Best sellers by units. Capped, because a month can span the whole menu and
   /// forty columns on a phone are unreadable.
+  /// Best sellers, as horizontal bars.
+  ///
+  /// Was ten vertical columns with the dish names rotated 45° underneath.
+  /// Dish names are long, categorical, and frequently Chinese — none of which
+  /// survives being turned on its side and squeezed under a column. Laid
+  /// horizontally the names sit flat and left-aligned, the bars read as a
+  /// ranking, and the chart grows downward rather than being crushed sideways.
   Widget _buildTopDishesChart(DailyStats total) {
     final data = total.itemsByQty
         .take(10)
         .map((item) => ChartSampleData(x: item.name, yValue: item.qty))
         .toList();
-    return _buildCartesianChart('Top dishes', data);
-  }
+    if (data.isEmpty) return const SizedBox.shrink();
 
-  NumberFormat _moneyFormat(Store store) => NumberFormat.currency(
-        // Firestore holds money as whole units — see the schema notes in
-        // docs/refactor-plan.md — so a decimal place would only ever show '.00'.
-        name: store.currency,
-        symbol: store.currency == 'TWD' ? 'NT\$' : null,
-        decimalDigits: 0,
-      );
-
-  Widget _buildAddMoreCard(BuildContext context) {
-    return Card(
-      elevation: 0,
-      child: InkWell(
-        onTap: () => showModalBottomSheet(
-          context: context,
-          builder: (context) => _buildAddMoreSheet(context),
-        ),
-        child: SizedBox(
-          width: MediaQuery.of(context).size.width / 2 - 30,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).splashColor,
-                    borderRadius: BorderRadius.circular(48),
-                  ),
-                  height: 48,
-                  width: 48,
-                  child:
-                      Icon(Icons.add, color: Theme.of(context).iconTheme.color),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAddMoreSheet(BuildContext context) {
-    Widget toggle(String key, String subtitle) => ListTile(
-          leading: Icon(featureSelected[key]!
-              ? Icons.check_box_outlined
-              : Icons.check_box_outline_blank),
-          title: Text(key),
-          subtitle: Text(subtitle),
-          onTap: () {
-            setState(() => featureSelected[key] = !featureSelected[key]!);
-            Navigator.pop(context);
-          },
-        );
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final axisLabel =
+        theme.textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant);
 
     return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.3,
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Text('More Feature', style: TextStyle(fontSize: 20)),
-              toggle('Income', 'Selected Date Income'),
-              toggle('Export', 'Export data to Excel'),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Close'),
-                  ),
-                ],
-              ),
-            ],
-          ),
+      // Ranked bars want a fixed row height, not a fixed chart height: ten
+      // dishes and three dishes are different-sized pictures.
+      height: 80 + data.length * 30,
+      child: SfCartesianChart(
+        plotAreaBorderWidth: 0,
+        title: ChartTitle(
+          text: 'Top dishes',
+          alignment: ChartAlignment.near,
+          textStyle: theme.textTheme.titleMedium,
         ),
+        primaryXAxis: CategoryAxis(
+          majorGridLines: const MajorGridLines(width: 0),
+          majorTickLines: const MajorTickLines(size: 0),
+          axisLine: AxisLine(color: scheme.outlineVariant),
+          labelStyle: axisLabel,
+          // Longest first is the order a ranking is read in, and
+          // CategoryAxis draws the first entry at the bottom.
+          isInversed: true,
+        ),
+        primaryYAxis: NumericAxis(
+          minimum: 0,
+          isVisible: false,
+        ),
+        series: <BarSeries<ChartSampleData, String>>[
+          BarSeries<ChartSampleData, String>(
+            dataSource: data,
+            xValueMapper: (item, _) => item.x,
+            yValueMapper: (item, _) => item.yValue,
+            color: scheme.primary,
+            borderRadius:
+                const BorderRadius.horizontal(right: Radius.circular(4)),
+            dataLabelSettings: DataLabelSettings(
+              isVisible: true,
+              labelAlignment: ChartDataLabelAlignment.outer,
+              textStyle: axisLabel,
+            ),
+          ),
+        ],
+        tooltipBehavior: _tooltipBehavior,
       ),
     );
   }
 
   /// Return the Cartesian Chart with Column series.
+  ///
+  /// Colours come from the app's scheme rather than Syncfusion's defaults —
+  /// otherwise the three charts here are blue, the gauge below is purple, and
+  /// the rest of the page is green.
   SfCartesianChart _buildCartesianChart(
       String chartTitle, List<ChartSampleData> data) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final axisLabel = theme.textTheme.labelSmall
+        ?.copyWith(color: scheme.onSurfaceVariant);
+
     num max = 0;
     for (final point in data) {
       if ((point.yValue ?? 0) > max) max = point.yValue!;
@@ -507,16 +546,27 @@ class _StatisticsPageState extends State<StatisticsPage>
 
     return SfCartesianChart(
       plotAreaBorderWidth: 0,
-      title: ChartTitle(text: chartTitle),
-      primaryXAxis: const CategoryAxis(
-        majorGridLines: MajorGridLines(width: 0),
+      palette: chartPalette(scheme),
+      title: ChartTitle(
+        text: chartTitle,
+        alignment: ChartAlignment.near,
+        textStyle: theme.textTheme.titleMedium,
+      ),
+      primaryXAxis: CategoryAxis(
+        majorGridLines: const MajorGridLines(width: 0),
         labelIntersectAction: AxisLabelIntersectAction.rotate45,
+        axisLine: AxisLine(color: scheme.outlineVariant),
+        labelStyle: axisLabel,
       ),
       primaryYAxis: NumericAxis(
         minimum: 0,
         maximum: max.toDouble() == 0 ? 1 : max.toDouble(),
         isVisible: true,
         labelFormat: '{value}',
+        axisLine: const AxisLine(width: 0),
+        majorTickLines: const MajorTickLines(size: 0),
+        majorGridLines: MajorGridLines(color: scheme.outlineVariant),
+        labelStyle: axisLabel,
       ),
       series: _buildColumnSeries(data),
       tooltipBehavior: _tooltipBehavior,
@@ -526,109 +576,148 @@ class _StatisticsPageState extends State<StatisticsPage>
   /// Returns the list of Cartesian Column series.
   List<ColumnSeries<ChartSampleData, String>> _buildColumnSeries(
       List<ChartSampleData> source) {
+    final scheme = Theme.of(context).colorScheme;
     return <ColumnSeries<ChartSampleData, String>>[
       ColumnSeries<ChartSampleData, String>(
         dataSource: source,
         xValueMapper: (ChartSampleData data, int index) => data.x,
         yValueMapper: (ChartSampleData data, int index) => data.yValue,
         pointColorMapper: (ChartSampleData data, int index) => data.pointColor,
-        dataLabelSettings: const DataLabelSettings(isVisible: true),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+        dataLabelSettings: DataLabelSettings(
+          // A single day has a handful of columns and the numbers on top are
+          // useful. A month has thirty-one, and thirty-one numbers jammed
+          // across a phone is a grey smear — the tooltip serves that case.
+          isVisible: source.length <= 12,
+          textStyle: Theme.of(context)
+              .textTheme
+              .labelSmall
+              ?.copyWith(color: scheme.onSurfaceVariant),
+        ),
       ),
     ];
   }
 
-  Widget _buildCard({
-    required String title,
-    String? value,
-    IconData? icon,
-    VoidCallback? onTap,
-    double? change,
-  }) {
-    return Card(
-      elevation: 0,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          width: MediaQuery.of(context).size.width / 2 - 30,
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).splashColor,
-                        borderRadius: BorderRadius.circular(48),
-                      ),
-                      height: 48,
-                      width: 48,
-                      child:
-                          Icon(icon, color: Theme.of(context).iconTheme.color),
-                    ),
-                    const SizedBox(width: 10),
-                    Flexible(child: Text(title)),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Flexible(
-                      child: FittedBox(
-                        child: Text(value ?? '',
-                            style: const TextStyle(fontSize: 24)),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _ChangeBadge(change: change),
-                  ],
-                ),
-              ],
-            ),
+}
+
+/// Orders rung up against the target for the days that have actually happened.
+///
+/// Replaces an `SfRadialGauge`: a half-circle dial that took a third of the
+/// screen to say "118 / 200, 59%" — three facts a bar and a line of text carry
+/// in a fraction of the space, leaving it for the trend chart underneath,
+/// which has far more to say. The dial's sweep gradient and Times italic were
+/// also lifted from a Syncfusion sample and matched nothing else in the app.
+class _TargetProgress extends StatelessWidget {
+  const _TargetProgress({required this.current, required this.target});
+
+  final num current;
+  final num target;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final safeTarget = target <= 0 ? 1 : target;
+    final fraction = (current / safeTarget).clamp(0.0, 1.0).toDouble();
+    final percent = (current / safeTarget * 100).round();
+    final met = current >= safeTarget;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text('Orders against target',
+                style: theme.textTheme.titleMedium),
+            const Spacer(),
+            Text('$current',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  color: met ? scheme.primary : scheme.onSurface,
+                  fontWeight: FontWeight.bold,
+                )),
+            Text(' / $safeTarget',
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: fraction,
+            minHeight: 12,
+            backgroundColor: scheme.surfaceContainerHighest,
+            valueColor: AlwaysStoppedAnimation(
+                met ? scheme.tertiary : scheme.primary),
           ),
         ),
-      ),
+        const SizedBox(height: 6),
+        Text(
+          met
+              ? '$percent% of target — met'
+              : '$percent% of target so far',
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+      ],
     );
   }
 }
 
-/// The "+12%" pill next to a figure.
-///
-/// A null [change] renders as an em dash rather than as 0%: "no comparison
-/// available" and "flat against last month" are different things, and a shop's
-/// first week would otherwise read as though it had gone nowhere.
-class _ChangeBadge extends StatelessWidget {
-  const _ChangeBadge({this.change});
+/// Shown for a period with no trade in it.
+class _EmptyPeriod extends StatelessWidget {
+  const _EmptyPeriod({
+    required this.label,
+    required this.atPresent,
+    required this.storeId,
+  });
 
-  final double? change;
+  final String label;
+
+  /// Whether the period on screen contains today — the only case where
+  /// "ring one up" is a sensible offer rather than a confusing one.
+  final bool atPresent;
+
+  final String storeId;
 
   @override
   Widget build(BuildContext context) {
-    final change = this.change;
-    if (change == null) {
-      return Text('—', style: Theme.of(context).textTheme.bodySmall);
-    }
-
-    final rising = change >= 0;
-    final color = rising ? Colors.green : Colors.red;
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: rising ? Colors.green[100] : Colors.red[100],
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(rising ? Icons.trending_up_rounded : Icons.trending_down_rounded,
-              size: 16, color: color),
-          Text(
-            ' ${(change * 100).toStringAsFixed(0)}%',
-            style: TextStyle(color: color, fontWeight: FontWeight.bold),
-          ),
-        ],
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.receipt_long_outlined,
+                size: 48, color: scheme.onSurfaceVariant),
+            const SizedBox(height: 16),
+            Text('Nothing was sold in $label',
+                style: Theme.of(context).textTheme.titleMedium,
+                textAlign: TextAlign.center),
+            const SizedBox(height: 8),
+            Text(
+              atPresent
+                  ? 'Orders appear here the moment they are rung up.'
+                  : 'Swipe, or use the arrows above, to look at another '
+                      'period.',
+              style: Theme.of(context).textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+            if (atPresent) ...[
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => AddOrder(storeId)),
+                ),
+                icon: const Icon(Icons.add),
+                label: const Text('Add an order'),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -649,70 +738,3 @@ class ChartSampleData {
   final Color? pointColor;
 }
 
-SfRadialGauge _buildRangePointerGauge(num currentOrders, num expectOrders) {
-  final safeTarget = expectOrders <= 0 ? 1 : expectOrders;
-  final ordersPercent = (currentOrders / safeTarget) * 100;
-
-  return SfRadialGauge(
-    axes: <RadialAxis>[
-      RadialAxis(
-        showLabels: true,
-        showTicks: false,
-        maximum: safeTarget.toDouble(),
-        radiusFactor: 0.8,
-        axisLineStyle: const AxisLineStyle(
-          thicknessUnit: GaugeSizeUnit.factor,
-          thickness: 0.15,
-        ),
-        annotations: <GaugeAnnotation>[
-          GaugeAnnotation(
-            angle: 200,
-            widget: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      '$currentOrders',
-                      style: const TextStyle(
-                        fontFamily: 'Times',
-                        fontSize: 22,
-                        fontWeight: FontWeight.w400,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                    Text(
-                      ' / $safeTarget',
-                      style: const TextStyle(
-                        fontFamily: 'Times',
-                        fontSize: 22,
-                        fontWeight: FontWeight.w400,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
-                ),
-                Text('${ordersPercent.toStringAsFixed(0)}%'),
-              ],
-            ),
-          ),
-        ],
-        pointers: <GaugePointer>[
-          RangePointer(
-            value: currentOrders.toDouble().clamp(0, safeTarget.toDouble()),
-            enableAnimation: true,
-            animationDuration: 1000,
-            sizeUnit: GaugeSizeUnit.factor,
-            gradient: const SweepGradient(
-              colors: <Color>[Color(0xFF6A6EF6), Color(0xFFDB82F5)],
-              stops: <double>[0.25, 0.75],
-            ),
-            color: const Color(0xFF00A8B5),
-            width: 0.15,
-          ),
-        ],
-      ),
-    ],
-  );
-}

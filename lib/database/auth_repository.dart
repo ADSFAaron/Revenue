@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
+import 'data_exception.dart';
 
 /// Why an authentication call failed, in terms the app cares about.
 ///
@@ -54,10 +55,12 @@ class SignInResult {
 }
 
 /// An authentication failure, already translated out of Firebase's vocabulary.
-class AuthException implements Exception {
+class AuthException implements AppException {
   const AuthException(this.failure, this.message);
 
   final AuthFailure failure;
+
+  @override
   final String message;
 
   @override
@@ -218,6 +221,21 @@ class AuthRepository {
       displayName: user.displayName ?? '',
       isNewAccount: credential.additionalUserInfo?.isNewUser ?? false,
     );
+  }
+
+  /// Emails a password reset link.
+  ///
+  /// Succeeds silently for an address with no account. That is deliberate on
+  /// Firebase's side and worth keeping: reporting "no such user" here turns
+  /// the reset form into a way of asking whether a given email has an account.
+  Future<void> sendPasswordReset(String email) async {
+    try {
+      await _auth.sendPasswordResetEmail(email: email.trim());
+    } on FirebaseAuthException catch (e) {
+      // `user-not-found` never surfaces — see above — so anything arriving
+      // here is a malformed address or a transport failure.
+      throw _translate(e);
+    }
   }
 
   Future<void> signOut() => _auth.signOut();

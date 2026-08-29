@@ -6,7 +6,10 @@ import 'package:flutter_iconpicker/flutter_iconpicker.dart';
 import '../database/repositories.dart';
 import '../models/menu_item.dart';
 import '../models/store.dart';
+import '../widgets/feedback.dart';
+import '../widgets/money.dart';
 import 'store_categories.dart';
+import 'store_settings_import_menu.dart';
 
 class StoreEditMenu extends StatefulWidget {
   final String storeID;
@@ -22,7 +25,25 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
   /// brought back without breaking the orders that reference them.
   bool _showRetired = false;
 
-  List<StoreCategory> _categories = const [];
+  /// Narrows the list to the dishes with no cost on file.
+  ///
+  /// Every report under Insights is built on `cost`: with it blank a dish
+  /// cannot be placed on the menu matrix, and the food-cost rate silently
+  /// omits it. Insights can now say so, but it could only send someone here to
+  /// a full menu with no indication of which rows were the problem.
+  bool _onlyUncosted = false;
+
+  /// Free-text filter over dish names.
+  ///
+  /// A menu is a long reorderable list, and finding one dish to reprice meant
+  /// reading it. Kept in the State rather than in the controller alone so the
+  /// list rebuilds as it is typed.
+  String _query = '';
+  final _searchController = TextEditingController();
+
+  Store? _store;
+
+  List<StoreCategory> get _categories => _store?.categories ?? const [];
 
   // Owned by this State rather than created inside _openDialog. Disposing a
   // controller straight after `await showDialog` throws "A
@@ -45,6 +66,7 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
     nameController.dispose();
     priceController.dispose();
     costController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -58,9 +80,32 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
     await _loadCategories();
   }
 
+  /// Imported dishes land in the same subcollection this screen already
+  /// watches, so the list updates itself. Only the categories need reloading —
+  /// an import may have created some, and the dish dialog's dropdown is built
+  /// from that list.
+  Future<void> _importFromPhoto() async {
+    final added = await Navigator.push<int>(
+      context,
+      MaterialPageRoute(builder: (_) => StoreImportMenu(widget.storeID)),
+    );
+    await _loadCategories();
+    if (added != null && added > 0) {
+      _snack(added == 1 ? '1 dish added' : '$added dishes added');
+    }
+  }
+
+  /// Failure here is not fatal to the screen — the dish list comes from its own
+  /// stream and still works — but it must be said, because the only visible
+  /// symptom is a category dropdown that is silently empty, which reads as
+  /// "this store has no categories" rather than as "they could not be read".
   Future<void> _loadCategories() async {
-    final store = await storeRepository.fetch(widget.storeID);
-    if (mounted) setState(() => _categories = store?.categories ?? const []);
+    try {
+      final store = await storeRepository.fetch(widget.storeID);
+      if (mounted) setState(() => _store = store);
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
   }
 
   @override
@@ -69,6 +114,11 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
       appBar: AppBar(
         title: const Text('Edit Menu'),
         actions: [
+          IconButton(
+            tooltip: 'Import from a photo',
+            icon: const Icon(Icons.document_scanner_outlined),
+            onPressed: _importFromPhoto,
+          ),
           IconButton(
             tooltip: 'Menu categories',
             icon: const Icon(Icons.category_outlined),
@@ -87,17 +137,48 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
         stream: menuRepository.watchAll(widget.storeID),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            return ErrorView(snapshot.error!);
           }
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
           final all = snapshot.data!;
-          final visible =
+          var visible =
               _showRetired ? all : all.where((i) => i.isActive).toList();
 
-          if (visible.isEmpty) {
+          if (_query.isNotEmpty) {
+            final needle = _query.toLowerCase();
+            visible = visible
+                .where((i) => i.name.toLowerCase().contains(needle))
+                .toList();
+          }
+
+          // Counted over the active menu whatever the filters are showing:
+          // this is a statement about the shop, not about the current view.
+          final uncosted =
+              all.where((i) => i.isActive && i.cost <= 0).toList();
+          if (_onlyUncosted) {
+            visible = visible.where((i) => i.cost <= 0).toList();
+          }
+
+          if (visible.isEmpty && _query.isNotEmpty) {
+            return Column(
+              children: [
+                _buildSearchField(),
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Text('No dish matches “$_query”.'),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }
+
+          if (visible.isEmpty && !_onlyUncosted) {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
@@ -112,17 +193,46 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
             );
           }
 
-          return ReorderableListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 8, 0, 88),
-            itemBuilder: (context, index) => _buildMenuTile(visible[index]),
-            itemCount: visible.length,
-            // onReorderItem hands back an index already adjusted for the
-            // removal, unlike the deprecated onReorder.
-            onReorderItem: (oldIndex, newIndex) {
-              final reordered = [...visible];
-              reordered.insert(newIndex, reordered.removeAt(oldIndex));
-              menuRepository.reorder(widget.storeID, reordered);
-            },
+          // Dragging inside a filtered view would write an order derived
+          // from a subset back over the whole menu, so while a filter is on
+          // the list is a plain one.
+          final filtered = _query.isNotEmpty || _onlyUncosted;
+          final list = filtered
+              ? ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 0, 88),
+                  itemBuilder: (context, index) =>
+                      _buildMenuTile(visible[index]),
+                  itemCount: visible.length,
+                )
+              : ReorderableListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 0, 88),
+                  itemBuilder: (context, index) =>
+                      _buildMenuTile(visible[index]),
+                  itemCount: visible.length,
+                  // onReorderItem hands back an index already adjusted for the
+                  // removal, unlike the deprecated onReorder.
+                  onReorderItem: (oldIndex, newIndex) {
+                    final reordered = [...visible];
+                    reordered.insert(newIndex, reordered.removeAt(oldIndex));
+                    menuRepository.reorder(widget.storeID, reordered);
+                  },
+                );
+
+          return Column(
+            children: [
+              _buildSearchField(),
+              if (uncosted.isNotEmpty) _buildUncostedBanner(uncosted.length),
+              Expanded(
+                child: visible.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(32),
+                          child: Text('Every dish shown has a cost on it.'),
+                        ),
+                      )
+                    : list,
+              ),
+            ],
           );
         },
       ),
@@ -133,11 +243,81 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
     );
   }
 
+  Widget _buildSearchField() => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        child: TextField(
+          controller: _searchController,
+          onChanged: (value) => setState(() => _query = value.trim()),
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: 'Search dishes',
+            prefixIcon: const Icon(Icons.search),
+            border: const OutlineInputBorder(),
+            suffixIcon: _query.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear',
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _query = '');
+                    },
+                  ),
+          ),
+        ),
+      );
+
+  /// Says how many dishes are missing a cost, and filters down to them.
+  Widget _buildUncostedBanner(int count) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: _onlyUncosted ? scheme.secondaryContainer : scheme.surfaceContainerHighest,
+      child: InkWell(
+        onTap: () => setState(() => _onlyUncosted = !_onlyUncosted),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(
+            children: [
+              Icon(Icons.savings_outlined, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$count ${count == 1 ? 'dish has' : 'dishes have'} no '
+                      'cost recorded',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    Text(
+                      _onlyUncosted
+                          ? 'Showing only those. Tap to show everything.'
+                          : 'Insights cannot tell you what they earn. Tap to '
+                              'show just them.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(_onlyUncosted ? Icons.filter_alt : Icons.filter_alt_outlined,
+                  color: scheme.onSurfaceVariant),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMenuTile(MenuItem item) {
-    final subtitle = StringBuffer('NTD ${item.price}');
+    final money = moneyFormat(_store);
+    final subtitle = StringBuffer(money.format(item.price));
     if (item.cost > 0) {
       final margin = ((item.marginRate ?? 0) * 100).round();
-      subtitle.write('  ·  cost ${item.cost}  ·  margin $margin%');
+      subtitle.write('  ·  cost ${money.format(item.cost)}  ·  '
+          'margin $margin%');
     } else {
       subtitle.write('  ·  cost not set');
     }
@@ -151,7 +331,8 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
         mainAxisSize: MainAxisSize.min,
         spacing: 12,
         children: [
-          const Icon(Icons.drag_indicator, color: Colors.black26),
+          Icon(Icons.drag_indicator,
+              color: Theme.of(context).colorScheme.outlineVariant),
           Icon(item.iconData),
         ],
       ),
@@ -217,13 +398,21 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
     );
     if (confirmed != true) return;
 
-    await menuRepository.deactivate(widget.storeID, item.id);
-    _snack('${item.name} retired');
+    try {
+      await menuRepository.deactivate(widget.storeID, item.id);
+      _snack('${item.name} retired');
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
   }
 
   Future<void> _restoreItem(MenuItem item) async {
-    await menuRepository.reactivate(widget.storeID, item.id);
-    _snack('${item.name} is back on the menu');
+    try {
+      await menuRepository.reactivate(widget.storeID, item.id);
+      _snack('${item.name} is back on the menu');
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
   }
 
   Future<void> _openDialog({MenuItem? existing}) async {
@@ -364,10 +553,17 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
       ),
     );
 
-    if (saved == true) {
-      final price = int.parse(priceController.text);
-      final cost = int.tryParse(costController.text) ?? 0;
+    if (saved != true) return;
 
+    final price = int.parse(priceController.text);
+    final cost = int.tryParse(costController.text) ?? 0;
+
+    // The confirmation must depend on the write having happened. Unguarded,
+    // a rejected write threw past this method and the screen said nothing at
+    // all — no error, no "Dish added" — and the dish list, which is a live
+    // query, simply never showed the dish. That reads as the app ignoring the
+    // Save button rather than as a failure worth retrying.
+    try {
       if (isEdit) {
         await menuRepository.update(
           widget.storeID,
@@ -396,6 +592,8 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
         );
       }
       _snack(isEdit ? 'Dish updated' : 'Dish added');
+    } catch (e) {
+      if (mounted) showFailure(context, e);
     }
   }
 

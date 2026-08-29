@@ -62,6 +62,15 @@
         <li><a href="#passkeys">Passkeys</a></li>
       </ul>
     </li>
+    <li>
+      <a href="#importing-a-menu-from-a-photo">Importing a menu from a photo</a>
+      <ul>
+        <li><a href="#why-a-vision-model-rather-than-ocr">Why a vision model rather than OCR</a></li>
+        <li><a href="#what-is-asked-of-the-model-and-what-is-not">What is asked of the model, and what is not</a></li>
+        <li><a href="#nothing-is-written-until-somebody-says-yes">Nothing is written until somebody says yes</a></li>
+        <li><a href="#writing">Writing</a></li>
+      </ul>
+    </li>
     <li><a href="#troubleshooting">Troubleshooting</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contributing">Contributing</a></li>
@@ -83,12 +92,12 @@ into their phone and submit; the value is in what the numbers say afterwards.
 It covers order entry, order history, and a statistics page with charts and gauges.
 Data lives in Cloud Firestore, with Firebase Authentication for sign-in.
 
-> **Status.** The app is mid-refactor on branch `v3`. Phases 0–6 of
+> **Status.** The app is mid-refactor on branch `v3`. Phases 0–7 of
 > [docs/refactor-plan.md](docs/refactor-plan.md) are implemented — the Firestore schema,
 > the repository layer, security rules, menu editing, order entry, the statistics and
-> analysis pages, Excel export, the stepped registration flow with invite codes, and
-> sign-in with Google or a passkey. The one feature still outstanding is importing a
-> menu from a photo, which is waiting on a decision about the recognition route. See
+> analysis pages, Excel export, the stepped registration flow with invite codes, sign-in
+> with Google or a passkey, and importing a menu from a photograph. What remains is
+> platform work rather than features: iOS configuration, and Apple sign-in behind it. See
 > [Roadmap](#roadmap) for exactly what is and is not done.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -213,34 +222,71 @@ them as *Building* for a few minutes on a large collection.
 Because the rules deny everything not explicitly matched, **the app cannot read anything
 until this is deployed** on a project whose rules are still the default deny-all.
 
-### 4. Deploy the passkey relying party (optional)
+### 4. Deploy the Cloud Functions (optional)
 
-Everything except passkeys runs entirely client-side — the invite flow included, because a
-Firestore client transaction is a real cross-document transaction. [functions/](functions/)
-exists for the one thing that cannot: turning a verified WebAuthn assertion into a Firebase
-session needs the service account key to mint a custom token.
+Almost everything runs entirely client-side — the invite flow included, because a Firestore
+client transaction is a real cross-document transaction. [functions/](functions/) exists
+for the two things that cannot, and both are there for the same reason: they need a
+credential the app must not be trusted to hold.
+
+| Function | Why it cannot live in the app |
+| --- | --- |
+| The passkey relying party | Turning a verified WebAuthn assertion into a Firebase session needs the service account key to mint a custom token |
+| Photo menu import | Reading a menu off a photograph needs a model API key, and a key shipped inside an APK is a key anybody can read out of it |
 
 ```sh
 npm --prefix functions install
+firebase functions:secrets:set GEMINI_API_KEY   # paste a key from aistudio.google.com/apikey
 firebase deploy --only functions --project revenueapp-b8849
 ```
 
-Skip this and the app still works; the passkey button simply reports that the service is
-not deployed. Everything else — email/password, Google, invites, orders, statistics — is
-unaffected.
+Skip the whole step and the app still works; the passkey button and the menu importer each
+report that their service is not deployed. Everything else — email/password, Google,
+invites, orders, statistics — is unaffected.
+
+**The secret is not optional if you deploy at all.** `defineSecret` binds `GEMINI_API_KEY`
+to the menu import function, and the CLI refuses the deploy outright rather than deploying
+the rest without it:
+
+```
+Error: In non-interactive mode but have no value for the secret GEMINI_API_KEY
+```
+
+Setting the secret needs the **Secret Manager API** enabled on the project. The CLI enables
+Cloud Build, Artifact Registry and Extensions by itself but not this one, so a first deploy
+on a fresh project stops with a 403 naming `secretmanager.googleapis.com`. Enable it
+[here](https://console.cloud.google.com/apis/library/secretmanager.googleapis.com), or with
+`gcloud services enable secretmanager.googleapis.com`, then set the secret and deploy.
+
+`firebase deploy --dry-run` runs every check up to the point of writing anything, which is
+the cheapest way to find out which of these is missing before spending a real deploy on it.
 
 Three things are worth knowing before the first deploy:
 
 * **It needs the Blaze plan.** Functions do. The usage here sits far inside the free
   quota — see [What this costs](#passkeys) — but a card has to be on file.
 * **The region is `asia-east1`**, set in [functions/src/config.ts](functions/src/config.ts).
-  The Dart side hard-codes the same value in `passkeyFunctionsRegion`; a callable is
-  addressed by region *and* name, so if one moves the other must move with it or every call
-  fails with a bare "not found".
+  The Dart side hard-codes the same value in `passkeyFunctionsRegion` and in
+  `menuImportFunctionsRegion`; a callable is addressed by region *and* name, so if one
+  moves the others must move with it or every call fails with a bare "not found".
 * **`createCustomToken` needs a signer.** If deployment succeeds but sign-in fails with a
   message about IAM, grant the function's runtime service account the **Service Account
   Token Creator** role — minting a token is a signBlob call, and the default compute service
   account does not always have it.
+
+* **Menu import needs a Gemini API key**, set as the `GEMINI_API_KEY` secret above and
+  bound to that one function so the passkey functions never see it. The call is
+  `POST /v1beta/models/{model}:generateContent` under a response schema, against
+  `gemini-3.7-flash` falling back to `gemini-3.6-flash` and `gemini-3.5-flash`. A menu
+  photo measured 1,345 prompt + 1,014 output tokens — well under a New Taiwan dollar, and
+  it is a once-per-store action, not a per-order one.
+* **Timeouts are raised on both sides.** Recognition takes 20–40 seconds for one photo and
+  longer for four; the function's default is 60 seconds and the Dart client's is 70. Both
+  are lifted to five minutes (`TIMEOUT_SECONDS` in
+  [functions/src/menu_import.ts](functions/src/menu_import.ts), `menuImportTimeout` in
+  [lib/database/menu_import_repository.dart](lib/database/menu_import_repository.dart)).
+  Left at the defaults, a two-page menu fails on the client while the server is still
+  working — which looks like a bug and costs the call anyway.
 
 Then enable the challenge TTL policy, once:
 
@@ -251,7 +297,8 @@ gcloud firestore fields ttls update expiresAt \
 
 ### 5. Run the app
 
-Web is the current development target — it needs no device or emulator:
+Web is the development and demo surface — it needs no device or emulator, so it is the
+fastest way to see a change. Android and iOS are what actually ship:
 
 ```sh
 flutter run -d chrome
@@ -286,6 +333,64 @@ Without the flag the build fails with *"Avoid non-constant invocations of IconDa
 > On macOS the hosting emulator often reports *"unable to start on port 5000"* and moves to
 > 5002 — port 5000 belongs to AirPlay Receiver. Either use the port it prints, or turn
 > AirPlay Receiver off in System Settings → General → AirDrop & Handoff.
+
+### The Passkeys web SDK is not optional
+
+[web/passkeys/bundle.js](web/passkeys/bundle.js) is vendored into this repo, and
+[web/index.html](web/index.html) loads it **before** the Flutter bootstrap:
+
+```html
+<script src="passkeys/bundle.js"></script>
+```
+
+Remove either one and the web build does not merely lose passkeys — **it does not start
+at all.** The page shows the loading spinner, the engine initialises, the spinner is
+removed, and then a blank `#eae9e4` screen. Nothing renders, on every route, for every
+user, signed in or not.
+
+The reason is in `passkeys_web`'s plugin registration
+([passkeys_web-2.10.0/lib/passkeys_web.dart](https://pub.dev/packages/passkeys_web)):
+
+```dart
+static void registerWith([Object? registrar]) {
+  PasskeysPlatform.instance = PasskeysWeb();
+
+  try {
+    final _ = window['PasskeyAuthenticator'];   // never throws
+  } catch (_) {
+    debugPrint('Error: Passkeys Web SDK not loaded. ...');
+    window.close();
+  }
+
+  init();   // @JS('PasskeyAuthenticator.init')
+}
+```
+
+The guard is broken. Reading a missing property off `window` in JavaScript yields
+`undefined` — it does not throw — so the `catch` never runs and execution falls through to
+`init()`, which dereferences `undefined`:
+
+```text
+Error: Null check operator used on a null value
+TypeError: Cannot read properties of undefined (reading 'init')
+```
+
+That runs inside `registerPlugins()`, which Flutter's generated web entrypoint calls
+*before* `main()`. So the failure is not scoped to the passkey button, or to the Login
+screen, or to anything the user did. It is the whole application, before the first frame.
+
+The bundle is taken from the release the package's own error message points at
+([flutter-passkeys 2.4.0](https://github.com/corbado/flutter-passkeys/releases/download/2.4.0/bundle.js),
+13.5 KB). It is the only release that ships the asset, and the seven functions it exports —
+`init`, `register`, `login`, `cancelCurrentAuthenticatorOperation`, `hasPasskeySupport`,
+`isUserVerifyingPlatformAuthenticatorAvailable`, `isConditionalMediationAvailable` — are
+exactly the seven `passkeys_web` 2.10.0 binds in its `interop.dart`. It is committed rather
+than fetched from a CDN so that a build never depends on a third-party host being up, and
+so no third party gets to run script on the auth origin.
+
+> Upgrading `passkeys` is the moment to re-check this. If a future `passkeys_web` binds a
+> function the vendored bundle does not export, the symptom is the same blank page — so
+> after any bump, load the built app once and confirm it renders before deploying.
 
 ### Deploy
 
@@ -458,9 +563,10 @@ lib/
 ├── database/                 # Repository layer — the only code that talks to Firebase
 └── animation/                # Shared page transitions
 
-functions/                    # The WebAuthn relying party, and nothing else
+functions/                    # The two jobs that need a credential the app must not hold
 ├── src/config.ts             # RP ID, region, allowed origins, instance cap
-└── src/passkeys.ts           # The six callables that make up the two ceremonies
+├── src/passkeys.ts           # The six callables that make up the two ceremonies
+└── src/menu_import.ts        # Reads a menu off a photo. Recognises only — writes nothing
 
 web/well-known/assetlinks.json  # Digital Asset Links, so Android passkeys work
 firestore.rules               # Security rules
@@ -762,7 +868,7 @@ default it already has in code, and stays editable in Store Settings afterwards.
 | `dayCutoffHour` | `4` | `Store.defaultDayCutoffHour` |
 | `targets` | `dailyOrders 100` / `dailyRevenue 20000` | `StoreTargets` |
 | `currency` / `timezone` | `TWD` / `Asia/Taipei` | `Store` constructor |
-| `categories` | Empty | **Changed** — no longer `MenuRepository.defaultCategories`, which is gone. Created by hand in Store Settings → Edit Menu → 🏷, or taken from an imported menu once that exists |
+| `categories` | Empty | **Changed** — no longer `MenuRepository.defaultCategories`, which is gone. Created by hand in Store Settings → Edit Menu → 🏷, or taken from the section headings of [an imported menu](#importing-a-menu-from-a-photo) |
 | `deliveryPlatforms` | Empty | Prompt for one the first time somebody picks the delivery channel |
 | `businessHours` | Empty | Nothing reads it yet |
 
@@ -897,6 +1003,11 @@ Windows, but only the client half of the ceremony: it hands back signed data tha
 trusted has to verify. Minting a Firebase custom token needs the Admin SDK's service
 account key, so the function in the middle cannot be skipped.
 
+> **Web carries a hard prerequisite.** `passkeys_web` needs a JavaScript SDK loaded from
+> `index.html`, and if it is absent the plugin takes the whole app down at startup rather
+> than degrading. See
+> [The Passkeys web SDK is not optional](#the-passkeys-web-sdk-is-not-optional).
+
 ```text
 Adding a passkey:
   beginRegistration()   → server issues a challenge (single use, 60s)
@@ -1016,7 +1127,8 @@ and is not a security boundary.
 is a useful reference for the flow above — it is the same shape, function verifies then
 mints a custom token — but its Firebase package is not the route here, for four independent
 reasons: its README states the package is currently broken with no ETA; its support table
-marks **Web as untested**, and Web is this project's primary platform; it still needs
+marks **Web as untested**, and Web is where this project is developed and demonstrated; it
+still needs
 Firebase Functions, so it saves nothing on infrastructure; and it deploys as a Firebase
 Extension, a product being retired on 2027-03-31. It also puts the public keys on Corbado's
 servers. The core `passkeys` package from the same repository has none of these problems and
@@ -1030,7 +1142,248 @@ and the Xcode entitlement.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+## Importing a menu from a photo
+
+Typing forty dishes into a phone is the moment a new store gives up on the app, and it is
+the moment it is least invested in seeing it through. So registration offers a photograph
+first — Step 3 of [the two paths](#the-two-paths) — and Store Settings &rarr; Edit Menu
+keeps the same entry point behind the 🖹 button for the second page of the menu, or the
+one that changed last week.
+
+### Why a vision model rather than OCR
+
+The hard part is not reading the characters. It is that a menu is a **layout**: two
+columns, prices right-aligned, a decorative heading every ten dishes, and half a page of
+whitespace between 牛肉麵 and the 120 that belongs to it. A text recogniser hands back lines
+and bounding boxes and leaves the pairing to the caller — and the pairing is the whole job,
+different for every shop, breaking on the first two-column card or 大130/小100 double price.
+
+| Route | Verdict |
+| --- | --- |
+| On-device OCR (ML Kit) | Free and offline, but it returns text lines, not dishes. The name↔price pairing, section headings, and double prices are all left as heuristics to write and maintain. There is no way to ask for `zh-Hant` specifically either — one Chinese script model covers both, and Taiwanese menus love brush and display faces |
+| Cloud OCR (Vision API) | Costs money and still leaves the pairing to the caller. Strictly worse than the row above for this |
+| **Vision model** | Does the pairing itself, because it is reading for meaning rather than for glyphs. One call returns dishes, prices, portions and section headings together |
+
+Kept in mind, not discarded: on-device OCR is the right route the day this has to work with
+no signal. It is not the right route for the first version.
+
+### What is asked of the model, and what is not
+
+The split is deliberate. Ask the model for what only a reader can know; do everything a
+rule can do in code, where it is testable.
+
+| The model | The app |
+| --- | --- |
+| Reading the characters | Matching a section heading to an existing `categoryId`, or creating one |
+| Pairing a dish with its price | De-duplicating against dishes already on the menu |
+| Which section a dish sits under | Checking the price arithmetic |
+| Flagging rows it is unsure of | Generating ids, assigning `sortOrder`, picking icons |
+
+Two schema decisions carry weight:
+
+**`name` and `variant` are separate fields, joined once, in the app.** Asked for a single
+field the model returns `牛肉麵 大` one time and `牛肉麵(大)` the next, and two dishes
+differing only by a separator are two dishes forever. A dish sold at two prices arrives as
+two entries sharing a `name` — which is exactly what lets
+[menu engineering](lib/analysis/menu_engineering.dart) say later which size actually sells.
+
+**Icons are never asked for.** `MenuItem.icon` is a MaterialIcons code point; a model
+guessing at code points produces dishes with an icon nobody chose and no way to tell which
+were guesses. Every imported dish starts on `Icons.restaurant`.
+
+### Taking the photograph
+
+The app opens the camera itself. It does not fire `ACTION_IMAGE_CAPTURE` and let
+another app take the picture, which is what `image_picker`'s camera source does.
+
+That route works on most phones and cannot be relied on for any of them. Whether an app
+answers the capture intent is not a property of Android — it is a property of whatever the
+manufacturer, the carrier and the owner left installed and enabled, and a shop's phone is
+exactly the phone nobody curated. Sony ships the case that proves it: on an Xperia the
+stock camera is disabled and its replacements register only `STILL_IMAGE_CAMERA`, which
+opens a camera and never hands a file back, so the intent resolves to nothing:
+
+```
+$ adb shell cmd package query-activities -a android.media.action.IMAGE_CAPTURE
+No activities found
+```
+
+The phone reports `no_available_camera` while holding three cameras. Package visibility
+(`<queries>`) does not help — it lets an app *see* a camera app, and there is none to see.
+The same hole opens on any device whose camera app was replaced, disabled, or restricted
+by a work profile, so the fix is not to special-case a brand but to stop depending on
+other apps: [menu_capture_page.dart](lib/settings/menu_capture_page.dart) drives the
+sensor. On Android that is `camera_android_camerax` — CameraX, Google's own
+device-compatibility layer, written for this exact problem.
+
+Three consequences worth knowing:
+
+* **The app declares `android.permission.CAMERA`** — an opened sensor needs it, a borrowed
+  one does not. `<uses-feature android:required="false" />` keeps a camera-less tablet able
+  to install, because *Choose image* still works there.
+* **Resolution is requested, not guaranteed.** The controller tries 1080p, then 720p, then
+  480p. `max` is never asked for: a dense menu wants resolution, but a 12MP frame is
+  megabytes of upload and the recogniser works at a 1568px edge anyway. Failing outright on
+  a handset that cannot do 1080p would mean the app works on the developer's phone and not
+  on the shop's.
+* **Web keeps `image_picker`.** In a browser there is no sensor to open, only
+  `getUserMedia` behind a permission prompt and an HTTPS origin; the file input is what
+  browsers are good at, and on a phone browser it offers the camera anyway.
+
+### Which API, and how that was established
+
+`POST /v1beta/models/{model}:generateContent`, taken from the service's own **discovery
+document** rather than from a documentation page:
+
+```sh
+curl 'https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta'
+```
+
+This is worth spelling out because the documentation and the service disagree. The docs
+describe an "Interactions API" at `/v1beta2/interactions` and recommend it for new work.
+No such resource exists in the discovery document for `v1`, `v1beta`, `v1beta2` or
+`v1alpha`, and posting to it returns 404. `v1beta2` is real but is the PaLM-era version —
+`generateText`, `generateMessage` — not the Interactions API. When the two disagree, the
+discovery document is the one generated from the running service.
+
+The same source settles the request shape, and it is not what a prose page suggests:
+
+| | Documentation page said | Discovery document says |
+| --- | --- | --- |
+| Schema types | `"type": "object"` | `"type": "OBJECT"` — an enum of `STRING`/`NUMBER`/`INTEGER`/`BOOLEAN`/`ARRAY`/`OBJECT`/`NULL` |
+| Optional fields | `"type": ["string", "null"]` | A separate `"nullable": true` |
+| Payload | `input: [...]`, `response_format` | `contents: [{ role, parts }]`, `generationConfig.responseSchema` |
+| Images | `{ type: "image", data }` | `{ inlineData: { mimeType, data } }` |
+| Reading the answer | `output_text` | `candidates[0].content.parts[]` |
+
+Two of those would fail silently rather than loudly. Parts carry a `thought` flag and the
+model's reasoning arrives in the same array, so joining every part concatenates reasoning
+into the JSON and turns a good response into a parse error; and a `finishReason` of
+`MAX_TOKENS` yields a half-written object that fails three lines later with a far less
+useful message. Both are handled explicitly.
+
+**Model fallback is not belt-and-braces.** `gemini-3.7-flash` returned 503 UNAVAILABLE four
+times in a row during testing. Retrying one model is not a plan when that model is the
+thing failing, so the call falls through three of them. `gemini-2.5-flash` is deliberately
+not among them — it answers 404 with "no longer available to new users".
+
+### Nothing is written until somebody says yes
+
+The function recognises and returns. It writes nothing — the draft goes back to the app, a
+person corrects it on screen, and the write happens client-side under the rules that
+already govern `menuItems`. Writing server-side would mean a store that wanted to undo an
+import had to delete dishes one at a time, and menu items are *retired* rather than
+deleted, so "undo" would leave a drawer of inactive dishes nobody can explain.
+
+That review screen is where the feature is won or lost. A menu is forty to eighty dishes,
+and asking somebody to read eighty rows on a phone is asking them to stop reading at about
+row twelve — at which point "saves typing" has been traded for "saves typing and is
+sometimes silently wrong", which is worse than not having it. So rows are shown in two
+groups, and only the flagged ones are expanded.
+
+A row is flagged for five reasons, and the split between them is the point:
+
+| Flag | Source |
+| --- | --- |
+| Unclear in the photo | The model's own doubt — blur, glare, a corner cut off |
+| No price read | The app |
+| Unusual price | The app — not a multiple of five, which Taiwanese menus almost always are |
+| Price out of line with the section | The app — more than 3× either side of that section's median |
+| Appears twice | The app |
+
+Four of the five are the app's, because **the model's hedge misses the case that matters
+most**: a price read *confidently* and wrongly. 120 transcribed as 720 raises no doubt in
+the reader and would sail straight through. The outlier check is the one that catches it.
+
+The 3× band is deliberately wide, and the median needs a section of at least four dishes
+before it is trusted. A section really can hold a 60 dollar side next to a 180 dollar main,
+and a rule that cried wolf would train people to approve without looking — which is the one
+outcome that makes this worse than typing it in. The rules are in
+[menu_import_repository.dart](lib/database/menu_import_repository.dart) and tested against
+the shapes a misread digit actually makes in
+[test/database/menu_import_test.dart](test/database/menu_import_test.dart).
+
+Flags recompute across the whole draft on every edit, not per row: two of the checks are
+about a row's neighbours, so correcting one price can clear an outlier flag on a different
+one, and renaming a dish can create or resolve a duplicate.
+
+### Writing
+
+Categories live inline on the store document while dishes live in a subcollection, so a
+dish written before its category exists points at a `categoryId` nothing resolves. Both go
+in the same `WriteBatch`, which is what stops that happening halfway. Category names match
+case-folded, so an import does not create a second "Drinks" beside the existing "drinks",
+and only headings that dishes actually ended up under get created.
+
+Imported dishes land *after* whatever is already on the menu. Nothing is reordered by an
+import — a shop that has arranged its menu should not find it rearranged because somebody
+photographed a second page.
+
+No audit entry is written. The log covers the four actions that can move money without a
+sale happening — voiding, editing, discounting, repricing — and adding dishes is none of
+them, any more than typing them in by hand is.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- TROUBLESHOOTING -->
 ## Troubleshooting
+
+<details>
+<summary>The web build shows the spinner, then a blank screen — <code>Cannot read properties of undefined (reading 'init')</code></summary>
+
+The Passkeys web SDK is missing. Either [web/passkeys/bundle.js](web/passkeys/bundle.js) is
+not there, or the `<script src="passkeys/bundle.js">` tag ahead of the Flutter bootstrap in
+[web/index.html](web/index.html) was dropped.
+
+This is not a passkey bug — it kills the entire app before `main()` runs, so every screen is
+blank for every user. The full explanation is in
+[The Passkeys web SDK is not optional](#the-passkeys-web-sdk-is-not-optional).
+
+Confirm it in the browser console before assuming anything else: the giveaway is
+`TypeError: Cannot read properties of undefined (reading 'init')`, thrown twice, with a
+`registerPlugins` frame in the stack. Nothing on the page will say so — a Dart exception at
+plugin-registration time leaves no error text behind, only the background colour.
+</details>
+
+<details>
+<summary><code>PlatformException(no_available_camera, No cameras available for taking pictures.)</code></summary>
+
+Almost never true. Since Android 11 the system hides every app this one has not declared an
+interest in, so resolving the capture intent returns null and `image_picker` reports it as
+a missing camera — on a phone that plainly has two. The fix is the `<queries>` block in
+[android/app/src/main/AndroidManifest.xml](android/app/src/main/AndroidManifest.xml):
+
+```xml
+<queries>
+    <intent>
+        <action android:name="android.media.action.IMAGE_CAPTURE" />
+    </intent>
+</queries>
+```
+
+It is declared as an intent rather than a package name so it matches whichever camera app
+the phone ships with. No `CAMERA` permission is needed — the photo is taken by that other
+app, and declaring the permission would only oblige this one to ask for it at runtime.
+
+On a device that really has no camera, *Choose image* still works.
+</details>
+
+<details>
+<summary><code>The menu reader is not deployed</code> / <code>The passkey service is not deployed</code></summary>
+
+Not a bug — the callables genuinely are not there. Check with:
+
+```sh
+firebase functions:list --project revenueapp-b8849
+```
+
+"No functions found" means [step 4](#4-deploy-the-cloud-functions-optional) has not been
+run against this project, or was run against a different one. Both features report this
+independently, so seeing it from only one of them means something narrower: either the
+`GEMINI_API_KEY` secret was never set (menu import fails, passkeys work), or the region in
+the Dart client and `functions/src/config.ts` have drifted apart — a callable is addressed
+by region *and* name, and a mismatch reads as "not found" rather than as a wrong region.
+</details>
 
 <details>
 <summary><code>Error when reading 'lib/firebase_options.dart': No such file or directory</code></summary>
@@ -1172,7 +1525,7 @@ Design in [Registration and onboarding](#registration-and-onboarding).
       mobile platforms)
 * [x] Google sign-in — `signInWithPopup` on web, `google_sign_in` on Android
 * [x] A Cloud Functions relying party in [functions/](functions/), then passkeys
-* [ ] Import a menu from a photo (needs the recognition route settled first)
+* [x] Import a menu from a photo — see [Importing a menu from a photo](#importing-a-menu-from-a-photo)
 * [ ] Apple sign-in (blocked on iOS configuration)
 
 **Not tied to a phase**

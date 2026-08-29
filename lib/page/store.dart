@@ -6,6 +6,9 @@ import '../models/app_user.dart';
 import '../settings/app_settings.dart';
 import '../settings/store_settings.dart';
 import '../settings/user_settings.dart';
+import '../widgets/feedback.dart';
+import '../widgets/money.dart';
+import '../widgets/stat_card.dart';
 
 class StorePage extends StatefulWidget {
   const StorePage({super.key});
@@ -32,7 +35,13 @@ class _StorePageState extends State<StorePage> {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
+          // Retryable on purpose: the two calls behind this are a profile read
+          // and a rollup read, and the usual reason either fails is a network
+          // that has since come back.
+          return ErrorView(
+            snapshot.error!,
+            onRetry: () => setState(() => _future = _load()),
+          );
         }
         return _buildStorePage(snapshot.data!);
       },
@@ -44,7 +53,8 @@ class _StorePageState extends State<StorePage> {
     // Lifetime revenue is summed from the daily rollups rather than kept as a
     // running counter on the store document, and formatted with separators
     // instead of being truncated once it got long.
-    final money = NumberFormat.decimalPattern();
+    final money = moneyFormat(session.store);
+    final counts = NumberFormat.decimalPattern();
 
     return Scaffold(
       body: SafeArea(
@@ -61,16 +71,15 @@ class _StorePageState extends State<StorePage> {
                   spacing: 10,
                   runSpacing: 10,
                   children: <Widget>[
-                    _buildCard(
+                    StatCard(
                       title: 'Revenue',
                       icon: Icons.savings_rounded,
-                      value: '${session.store.currency == 'TWD' ? 'NTD' : session.store.currency} '
-                          '${money.format(overview.totals.revenue)}',
+                      value: money.format(overview.totals.revenue),
                     ),
-                    _buildCard(
+                    StatCard(
                       title: 'Orders',
                       icon: Icons.grading_rounded,
-                      value: money.format(overview.totals.orderCount),
+                      value: counts.format(overview.totals.orderCount),
                     ),
                   ],
                 ),
@@ -96,7 +105,9 @@ class _StorePageState extends State<StorePage> {
                 _buildListTile(
                   title: 'Logout',
                   icon: Icons.logout_outlined,
-                  onTap: authRepository.signOut,
+                  // Was a bare call, sitting in a row of navigation tiles: one
+                  // mis-tap and you are out and typing a password again.
+                  onTap: _confirmLogout,
                 ),
               ],
             ),
@@ -115,12 +126,13 @@ class _StorePageState extends State<StorePage> {
           children: [
             Row(
               children: [
-                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     session.store.name,
-                    style: const TextStyle(
-                        fontSize: 28, fontWeight: FontWeight.bold),
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.bold),
                   ),
                 ),
                 TextButton(
@@ -134,6 +146,16 @@ class _StorePageState extends State<StorePage> {
             StreamBuilder<List<AppUser>>(
               stream: userRepository.watchStaff(session.storeId),
               builder: (context, snapshot) {
+                // An errored stream must not render as an empty roster: a
+                // store whose staff could not be read looks exactly like a
+                // store with no staff, and the second is a normal state.
+                if (snapshot.hasError) {
+                  return Text(
+                    describeFailure(snapshot.error!).message,
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.error),
+                  );
+                }
                 final staff = snapshot.data ?? const <AppUser>[];
                 if (staff.isEmpty) return const SizedBox.shrink();
                 return ListView.separated(
@@ -143,8 +165,12 @@ class _StorePageState extends State<StorePage> {
                   itemBuilder: (context, index) {
                     final user = staff[index];
                     return ListTile(
+                      contentPadding: EdgeInsets.zero,
                       leading: CircleAvatar(
-                        backgroundColor: Theme.of(context).splashColor,
+                        backgroundColor:
+                            Theme.of(context).colorScheme.secondaryContainer,
+                        foregroundColor:
+                            Theme.of(context).colorScheme.onSecondaryContainer,
                         child: Text(user.initials),
                       ),
                       title: Text(user.email),
@@ -156,56 +182,6 @@ class _StorePageState extends State<StorePage> {
               },
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCard({
-    required String title,
-    String? value,
-    IconData? icon,
-  }) {
-    return Card(
-      elevation: 0,
-      child: SizedBox(
-        width: MediaQuery.of(context).size.width / 2 - 30,
-        height: MediaQuery.of(context).size.height / 7,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).splashColor,
-                      borderRadius: BorderRadius.circular(48),
-                    ),
-                    height: 48,
-                    width: 48,
-                    child: Icon(icon, color: Theme.of(context).iconTheme.color),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(title),
-                ],
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Flexible(
-                    child: FittedBox(
-                      child: Text(
-                        value ?? '',
-                        style: const TextStyle(fontSize: 24),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -223,6 +199,37 @@ class _StorePageState extends State<StorePage> {
       leading: Icon(icon),
       onTap: onTap,
     );
+  }
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text(
+            'You will need your password, or a passkey, to get back in.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Stay'),
+          ),
+          DestructiveButton(
+            label: 'Log out',
+            onPressed: () => Navigator.pop(context, true),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    // Signing out rarely fails, but when it does the person is still signed in
+    // and the screen has not changed — so without this they would tap Log out,
+    // watch nothing happen, and have no idea why.
+    try {
+      await authRepository.signOut();
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
   }
 
   void _navigateTo(Widget page) {

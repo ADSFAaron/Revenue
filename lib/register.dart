@@ -8,7 +8,9 @@ import 'models/app_user.dart';
 import 'models/invite.dart';
 import 'models/store.dart';
 import 'settings/store_settings_edit_menu.dart';
+import 'settings/store_settings_import_menu.dart';
 import 'sign_in_options.dart';
+import 'widgets/pre_auth_theme.dart';
 
 /// The first thing registration asks: are you opening a store, or joining one?
 ///
@@ -21,7 +23,8 @@ class RegisterPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PreAuthTheme(
+      child: Scaffold(
       appBar: buildRegistrationAppBar(context),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -70,6 +73,7 @@ class RegisterPage extends StatelessWidget {
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -166,7 +170,8 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
+    return PreAuthTheme(
+      child: PopScope(
       canPop: _step == 0,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && !_submitting) _back();
@@ -194,6 +199,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -270,24 +276,36 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
   /// The menu is deliberately left empty rather than seeded with a starter one.
   /// A fake menu that looks real invites somebody to ring up a sale against a
   /// dish this kitchen has never sold.
+  ///
+  /// Which is exactly why the photo goes first. Typing forty dishes into a
+  /// phone is the moment a new store gives up on the app, and it is the moment
+  /// it is least invested in seeing it through. Nothing is written without
+  /// being checked on screen either way.
   Widget _menuStep() => _StepBody(
         title: 'Your store is ready',
         subtitle: 'The menu is empty. Nothing can be rung up until it is not.',
         children: [
           _PrimaryButton(
-            label: 'Add dishes',
-            onPressed: () => _finish(openMenuEditor: true),
+            label: 'Import menu from a photo',
+            onPressed: () => _finish(next: _MenuStart.importFromPhoto),
           ),
           const SizedBox(height: 12),
           Center(
             child: TextButton(
-              onPressed: () => _finish(openMenuEditor: false),
+              onPressed: () => _finish(next: _MenuStart.addByHand),
+              child: const Text('Add dishes manually'),
+            ),
+          ),
+          Center(
+            child: TextButton(
+              onPressed: () => _finish(next: _MenuStart.later),
               child: const Text('Skip for now'),
             ),
           ),
           const SizedBox(height: 16),
           const _Note(
-            'Dishes can be added at any time from Store Settings → Edit Menu.',
+            'Dishes can be added at any time from Store Settings → Edit Menu, '
+            'by photo or by hand.',
           ),
         ],
       );
@@ -298,7 +316,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
     // is signed in, so there is nothing to go back to and change. Backing out
     // of it is just declining to add dishes right now.
     if (_step == 2) {
-      _finish(openMenuEditor: false);
+      _finish(next: _MenuStart.later);
       return;
     }
     setState(() => _step -= 1);
@@ -439,7 +457,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
     }
   }
 
-  void _finish({required bool openMenuEditor}) {
+  void _finish({required _MenuStart next}) {
     final storeId = _createdStoreId;
     // Resolved before the pop: popUntil takes this route off the tree, and
     // `context` is defunct from that moment on — looking the navigator up
@@ -449,13 +467,21 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
     // Back to the root, which is watching auth state and will show the shell
     // through the session gate.
     navigator.popUntil((route) => route.isFirst);
-    if (openMenuEditor && storeId != null) {
-      navigator.push(
-        MaterialPageRoute(builder: (_) => StoreEditMenu(storeId)),
-      );
+    if (storeId == null || next == _MenuStart.later) return;
+
+    navigator.push(MaterialPageRoute(builder: (_) => StoreEditMenu(storeId)));
+    if (next == _MenuStart.importFromPhoto) {
+      // Pushed on top of Edit Menu rather than instead of it, so closing the
+      // importer lands on the menu it just filled. An import is where setting
+      // a menu up starts, not where it finishes — icons still need picking and
+      // costs still need filling in.
+      navigator.push(MaterialPageRoute(builder: (_) => StoreImportMenu(storeId)));
     }
   }
 }
+
+/// Where somebody is sent once their store exists.
+enum _MenuStart { importFromPhoto, addByHand, later }
 
 // ---------------------------------------------------------------------------
 // Path B — join an existing store
@@ -496,7 +522,8 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
+    return PreAuthTheme(
+      child: PopScope(
       canPop: _step == 0,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && !_submitting) _back();
@@ -520,6 +547,7 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -875,6 +903,7 @@ PreferredSizeWidget buildRegistrationAppBar(
     scrolledUnderElevation: 0,
     elevation: 0,
     leading: IconButton(
+      tooltip: 'Back',
       icon: Icon(Icons.arrow_back, color: Colors.grey[700], size: 20),
       onPressed: onBack ?? () => Navigator.pop(context),
     ),

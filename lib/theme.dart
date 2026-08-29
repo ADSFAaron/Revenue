@@ -123,14 +123,35 @@ class MaterialTheme {
   }
 
   ThemeData theme(ColorScheme colorScheme) => ThemeData(
-     useMaterial3: true,
-     brightness: colorScheme.brightness,
-     colorScheme: colorScheme,
-     textTheme: textTheme.apply(
-       bodyColor: colorScheme.onSurface,
-       displayColor: colorScheme.onSurface,
-     ),
-     scaffoldBackgroundColor: colorScheme.background,
-     canvasColor: colorScheme.surface,
-  );
+        useMaterial3: true,
+        brightness: colorScheme.brightness,
+        colorScheme: colorScheme,
+        textTheme: textTheme.apply(
+          bodyColor: colorScheme.onSurface,
+          displayColor: colorScheme.onSurface,
+        ),
+        // `colorScheme.background` was deprecated in Flutter 3.22 and is just
+        // `surface` now; naming it kept the analyzer complaining and said
+        // nothing the default did not already do.
+        scaffoldBackgroundColor: colorScheme.surface,
+        canvasColor: colorScheme.surface,
+        // Every card in the app asks for `elevation: 0`, and Material 3's
+        // default card colour is `surfaceContainerLow` — one step from the
+        // scaffold. Cards and background came out near-identical, which is why
+        // the pages read as one flat sheet. Two steps up separates them
+        // without reaching for a shadow.
+        cardTheme: CardThemeData(
+          elevation: 0,
+          color: colorScheme.surfaceContainer,
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: colorScheme.inverseSurface,
+          contentTextStyle: TextStyle(color: colorScheme.onInverseSurface),
+        ),
+      );
 }

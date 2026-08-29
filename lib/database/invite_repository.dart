@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/app_user.dart';
 import '../models/invite.dart';
+import 'data_exception.dart';
 
 /// Why an invite code could not be used.
 ///
@@ -24,10 +25,12 @@ enum InviteFailure {
   unknown,
 }
 
-class InviteException implements Exception {
+class InviteException implements AppException {
   const InviteException(this.failure, this.message);
 
   final InviteFailure failure;
+
+  @override
   final String message;
 
   @override
@@ -216,13 +219,24 @@ class InviteRepository {
   /// Capped rather than unbounded: this list is a working view of what is
   /// currently live, not an archive, and a store that has invited people for
   /// years should not pay to read all of it.
+  ///
+  /// Stream failures are translated here rather than left raw. A snapshot
+  /// error arrives as a `FirebaseException` on the stream, not as a throw the
+  /// call site can catch, so without this the screen had nothing to show but
+  /// `[cloud_firestore/permission-denied] Missing or insufficient
+  /// permissions.` — which tells a shop owner nothing and tells a developer
+  /// only half of it.
   Stream<List<Invite>> watchForStore(String storeId, {int limit = 20}) =>
       _invites
           .where('storeId', isEqualTo: storeId)
           .orderBy('createdAt', descending: true)
           .limit(limit)
           .snapshots()
-          .map((snap) => snap.docs.map(Invite.fromDoc).toList());
+          .map((snap) => snap.docs.map(Invite.fromDoc).toList())
+          .handleError(
+            (Object e) => throw _translate(e as FirebaseException),
+            test: (e) => e is FirebaseException,
+          );
 
   /// Withdraws a code that has not been used. A manager who reads a code out
   /// to the wrong person needs a way to take it back before it expires.
@@ -261,7 +275,16 @@ class InviteRepository {
         'permission-denied' => const InviteException(
             InviteFailure.denied,
             'You do not have permission to do that. Only a manager or the '
-                'owner can issue invite codes.',
+                'owner can issue invite codes — and the store\'s security '
+                'rules have to be deployed for this screen to read them.',
+          ),
+        // Almost always the invites composite index (storeId + createdAt) not
+        // being deployed. The server's message carries the console link that
+        // creates it, so it is passed through rather than reworded.
+        'failed-precondition' => InviteException(
+            InviteFailure.unknown,
+            'The database needs an index for this list. '
+                '${e.message ?? ''}',
           ),
         'unavailable' => const InviteException(
             InviteFailure.unknown,

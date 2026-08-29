@@ -6,6 +6,8 @@ import 'package:material_symbols_icons/material_symbols_icons.dart';
 import '../database/repositories.dart';
 import '../models/app_user.dart';
 import '../models/store.dart';
+import '../widgets/feedback.dart';
+import '../widgets/money.dart';
 import 'store_settings_audit_log.dart';
 import 'store_settings_edit_menu.dart';
 import 'store_settings_history_order.dart';
@@ -52,7 +54,7 @@ class _StoreSettingsState extends State<StoreSettings> {
         stream: storeRepository.watch(widget.storeId),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            return ErrorView(snapshot.error!);
           }
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
@@ -110,7 +112,7 @@ class _StoreSettingsState extends State<StoreSettings> {
                   icon: Icons.flag_outlined,
                   title: 'Daily targets',
                   subtitle: '${store.targets.dailyOrders} orders · '
-                      'NTD ${store.targets.dailyRevenue}',
+                      '${moneyFormat(store).format(store.targets.dailyRevenue)}',
                   trailing: const Icon(Icons.keyboard_arrow_right_outlined),
                   onTap: () => _editTargetsDialog(store),
                 ),
@@ -218,8 +220,12 @@ class _StoreSettingsState extends State<StoreSettings> {
     );
 
     if (newName == null || newName.isEmpty) return;
-    await storeRepository.updateName(widget.storeId, newName);
-    _showSnackBar('Store name updated successfully');
+    try {
+      await storeRepository.updateName(widget.storeId, newName);
+      _showSnackBar('Store name updated successfully');
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
   }
 
   /// The hour a trading day rolls over. A late-night kitchen counts 02:00 as
@@ -270,11 +276,15 @@ class _StoreSettingsState extends State<StoreSettings> {
     );
 
     if (saved != true) return;
-    await storeRepository.updateDayCutoffHour(widget.storeId, hour);
-    // Existing orders keep the trading day they were written with; only new
-    // ones use the new cutoff.
-    _showSnackBar('Trading day now starts at '
-        '${hour.toString().padLeft(2, '0')}:00 for new orders');
+    try {
+      await storeRepository.updateDayCutoffHour(widget.storeId, hour);
+      // Existing orders keep the trading day they were written with; only new
+      // ones use the new cutoff.
+      _showSnackBar('Trading day now starts at '
+          '${hour.toString().padLeft(2, '0')}:00 for new orders');
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
   }
 
   Future<void> _editTaxDialog(Store store) async {
@@ -325,12 +335,16 @@ class _StoreSettingsState extends State<StoreSettings> {
     final percent = int.tryParse(rateController.text) ?? 0;
     if (saved != true) return;
 
-    await storeRepository.updateTax(
-      widget.storeId,
-      taxRate: percent / 100,
-      taxIncluded: included,
-    );
-    _showSnackBar('Tax settings updated');
+    try {
+      await storeRepository.updateTax(
+        widget.storeId,
+        taxRate: percent / 100,
+        taxIncluded: included,
+      );
+      _showSnackBar('Tax settings updated');
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
   }
 
   /// Feeds the statistics gauge, which used to be hard-coded to 60 / 200.
@@ -378,11 +392,15 @@ class _StoreSettingsState extends State<StoreSettings> {
     final revenue = int.tryParse(revenueController.text);
     if (saved != true || orders == null || revenue == null) return;
 
-    await storeRepository.updateTargets(
-      widget.storeId,
-      StoreTargets(dailyOrders: orders, dailyRevenue: revenue),
-    );
-    _showSnackBar('Targets updated');
+    try {
+      await storeRepository.updateTargets(
+        widget.storeId,
+        StoreTargets(dailyOrders: orders, dailyRevenue: revenue),
+      );
+      _showSnackBar('Targets updated');
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
   }
 
   void _showSnackBar(String message) {

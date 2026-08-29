@@ -7,6 +7,8 @@ import '../database/repositories.dart';
 import '../models/order.dart';
 import '../models/store.dart';
 import 'store_setting_history_order_detail.dart';
+import '../widgets/feedback.dart';
+import '../widgets/money.dart';
 
 /// Order history, newest first, grouped by trading day.
 ///
@@ -23,7 +25,7 @@ class StoreHistoryOrder extends StatefulWidget {
 
 class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
   static const _pageSize = 30;
-  static const String currency = 'NTD';
+  NumberFormat get _money => moneyFormat(_store);
 
   final _scrollController = ScrollController();
   final List<Order> _orders = [];
@@ -32,7 +34,30 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
   bool _loading = true;
   bool _loadingMore = false;
   bool _hasMore = true;
-  String? _error;
+  /// The error itself, not its message: ErrorView needs the object to tell a
+  /// refused permission (no retry) from a dropped connection (retry).
+  Object? _error;
+
+  /// Client-side filters over what has been paged in so far.
+  ///
+  /// Deliberately not Firestore `where` clauses. Each combination would need
+  /// its own composite index, and this list already pages a fixed window of
+  /// recent orders — filtering what is on screen is what someone reconciling a
+  /// till actually wants, and voided orders in particular are the ones they
+  /// come here to find.
+  OrderChannel? _channel;
+  PaymentMethod? _payment;
+  bool _onlyVoided = false;
+
+  bool get _filtering =>
+      _channel != null || _payment != null || _onlyVoided;
+
+  List<Order> get _visible => _orders.where((order) {
+        if (_onlyVoided && !order.isVoided) return false;
+        if (_channel != null && order.channel != _channel) return false;
+        if (_payment != null && order.paymentMethod != _payment) return false;
+        return true;
+      }).toList();
 
   @override
   void initState() {
@@ -70,7 +95,7 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = '$e';
+          _error = e;
           _loading = false;
         });
       }
@@ -91,6 +116,13 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
         _orders.addAll(page);
         _hasMore = page.length == _pageSize;
       });
+    } catch (e) {
+      // Stop asking for more. Without this the scroll listener re-fires at the
+      // same offset on the next frame and a failing query is retried a few
+      // times a second, quietly, for as long as the screen is open.
+      if (!mounted) return;
+      setState(() => _hasMore = false);
+      showFailure(context, e);
     } finally {
       if (mounted) setState(() => _loadingMore = false);
     }
@@ -99,23 +131,99 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('History Orders')),
+      appBar: AppBar(
+        title: const Text('History Orders'),
+        actions: [
+          if (_filtering)
+            TextButton(
+              onPressed: () => setState(() {
+                _channel = null;
+                _payment = null;
+                _onlyVoided = false;
+              }),
+              child: const Text('Clear'),
+            ),
+        ],
+      ),
       body: _buildBody(),
     );
   }
 
   Widget _buildBody() {
-    if (_error != null) return Center(child: Text('Error: $_error'));
+    if (_error != null) return ErrorView(_error!, onRetry: _initialLoad);
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_orders.isEmpty) {
       return const Center(child: Text('No orders available.'));
     }
 
+    final visible = _visible;
+
+    return Column(
+      children: [
+        _buildFilterBar(),
+        Expanded(
+          child: visible.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Text(
+                      'No order in the ${_orders.length} loaded so far '
+                      'matches these filters.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : _buildList(visible),
+        ),
+      ],
+    );
+  }
+
+  /// One scrolling row of filter chips.
+  Widget _buildFilterBar() {
+    return SizedBox(
+      height: 56,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        children: [
+          FilterChip(
+            label: const Text('Voided'),
+            avatar: _onlyVoided ? null : const Icon(Icons.block, size: 18),
+            selected: _onlyVoided,
+            onSelected: (on) => setState(() => _onlyVoided = on),
+          ),
+          const SizedBox(width: 8),
+          for (final channel in OrderChannel.values) ...[
+            FilterChip(
+              label: Text(channel.label),
+              avatar: _channel == channel ? null : Icon(channel.icon, size: 18),
+              selected: _channel == channel,
+              onSelected: (on) =>
+                  setState(() => _channel = on ? channel : null),
+            ),
+            const SizedBox(width: 8),
+          ],
+          for (final method in PaymentMethod.values) ...[
+            FilterChip(
+              label: Text(method.label),
+              avatar: _payment == method ? null : Icon(method.icon, size: 18),
+              selected: _payment == method,
+              onSelected: (on) => setState(() => _payment = on ? method : null),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildList(List<Order> visible) {
     return RefreshIndicator(
       onRefresh: _initialLoad,
       child: GroupedListView<Order, String>(
         controller: _scrollController,
-        elements: _orders,
+        elements: visible,
         groupBy: (order) => order.businessDate,
         groupComparator: (a, b) => b.compareTo(a),
         itemComparator: (a, b) => b.placedAt.compareTo(a.placedAt),
@@ -160,15 +268,15 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
   }
 
   Widget _buildOrderCard(Order order) {
+    final scheme = Theme.of(context).colorScheme;
     return Card(
-      elevation: 0,
       margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
       child: ListTile(
         contentPadding:
             const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
         leading: Icon(
           order.isVoided ? Symbols.cancel : Symbols.list_alt_check,
-          color: order.isVoided ? Colors.red : null,
+          color: order.isVoided ? scheme.error : null,
         ),
         title: Text(
           'Order #${order.orderNo}',
@@ -181,13 +289,12 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
           '${order.channel.label}  ·  ${order.paymentMethod.label}',
         ),
         trailing: Text(
-          textAlign: TextAlign.center,
-          '$currency\n${order.total}',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w400,
-            color: order.isVoided ? Colors.grey : null,
-          ),
+          _money.format(order.total),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: order.isVoided ? scheme.onSurfaceVariant : null,
+                decoration:
+                    order.isVoided ? TextDecoration.lineThrough : null,
+              ),
         ),
         onTap: () => _openDetail(order),
       ),

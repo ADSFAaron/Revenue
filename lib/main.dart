@@ -8,6 +8,8 @@ import 'firebase_options.dart';
 import 'home.dart';
 import 'login.dart';
 import 'register.dart';
+import 'settings/theme_controller.dart';
+import 'widgets/pre_auth_theme.dart';
 import 'theme.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -17,6 +19,16 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  // Offline cache, set explicitly rather than left to each platform's
+  // default. The mobile SDKs enable it; the web SDK does not, so the same shop
+  // on a tablet kept working through a dropped connection and on a laptop went
+  // blank. A kitchen's wifi is the case this app should assume, not the one it
+  // should be surprised by.
+  configureFirestore();
+
+  // Read before the first frame, so the app does not open light and then blink
+  // to dark a moment later.
+  await themeController.load();
   runApp(const MyApp());
 }
 
@@ -25,13 +37,16 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      themeMode: ThemeMode.light,
-      theme: const MaterialTheme(TextTheme()).light(),
-      darkTheme: const MaterialTheme(TextTheme()).dark(),
-      navigatorKey: navigatorKey,
-      debugShowCheckedModeBanner: false,
-      home: const HomePage(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeController,
+      builder: (context, themeMode, _) => MaterialApp(
+        themeMode: themeMode,
+        theme: const MaterialTheme(TextTheme()).light(),
+        darkTheme: const MaterialTheme(TextTheme()).dark(),
+        navigatorKey: navigatorKey,
+        debugShowCheckedModeBanner: false,
+        home: const HomePage(),
+      ),
     );
   }
 }
@@ -108,7 +123,11 @@ class _SessionGateState extends State<_SessionGate> {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return _buildError('${snapshot.error}');
+          // A SessionException already reads as a sentence; anything else
+          // reaching here is a Firestore failure whose `toString()` starts
+          // `[cloud_firestore/…]`, and this is the first screen after sign-in
+          // — the worst place in the app to show somebody an error code.
+          return _buildError(describeFailure(snapshot.error!).message);
         }
         return const LoginHomePage();
       },
@@ -154,7 +173,12 @@ class WelcomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
+    // Its own Scaffold, inside PreAuthTheme: the background this draws on has
+    // to come from the light palette too, and the Scaffold above this one
+    // belongs to the signed-in half of the app.
+    return PreAuthTheme(
+      child: Scaffold(
+      body: SafeArea(
       child: Container(
         width: double.infinity,
         height: MediaQuery.of(context).size.height,
@@ -166,6 +190,8 @@ class WelcomeScreen extends StatelessWidget {
             _buildAuthButtons(context),
           ],
         ),
+      ),
+      ),
       ),
     );
   }

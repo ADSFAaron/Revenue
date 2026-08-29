@@ -4,8 +4,10 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'animation/FadeAnimation.dart';
 import 'database/repositories.dart';
+import 'widgets/feedback.dart';
 import 'register.dart';
 import 'sign_in_options.dart';
+import 'widgets/pre_auth_theme.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -20,6 +22,16 @@ class _LoginPageState extends State<LoginPage> {
   String errorString = "";
   bool errorVisible = false;
 
+  /// Latches the sign-in button while a request is in flight.
+  ///
+  /// Replaces a `showDialog(barrierDismissible: false)` spinner that was only
+  /// dismissed on the success path and on `AuthException`. Anything else — a
+  /// plugin failure, a `TypeError` from a malformed response — left a
+  /// full-screen, untappable spinner with no way out but killing the app.
+  bool _signingIn = false;
+
+  bool _obscurePassword = true;
+
   @override
   void dispose() {
     emailController.dispose();
@@ -29,7 +41,8 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PreAuthTheme(
+      child: Scaffold(
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
         // Dark status-bar icons, because the bar behind them is light.
@@ -43,6 +56,7 @@ class _LoginPageState extends State<LoginPage> {
         scrolledUnderElevation: 0,
         elevation: 0,
         leading: IconButton(
+          tooltip: 'Back',
           icon: Icon(
             Icons.arrow_back,
             color: Colors.grey[700],
@@ -83,25 +97,44 @@ class _LoginPageState extends State<LoginPage> {
                         style: TextStyle(fontSize: 15, color: Colors.grey[700]),
                       )),
                   SizedBox(height: 10),
+                  // Was a bare red DecoratedBox with no padding or radius that
+                  // shoved the fields down as it appeared.
                   Visibility(
                     visible: errorVisible,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 40),
-                      child: SizedBox(
-                          width: double.infinity,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(color: Colors.red),
-                            child: Center(
-                                child: Text(
-                                  errorString,
-                                  style: TextStyle(fontSize: 18, color: Colors.white),
-                                )),
-                          )),
+                      padding: const EdgeInsets.fromLTRB(40, 0, 40, 8),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFEBEE),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE57373)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline,
+                                color: Color(0xFFB71C1C), size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                errorString,
+                                style: const TextStyle(
+                                    fontSize: 15, color: Color(0xFFB71C1C)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                   Padding(
                     padding: EdgeInsets.symmetric(vertical: 20, horizontal: 40),
-                    child: Column(
+                    // Without this the hints on the fields are advisory only —
+                    // the platform needs a group to know the two belong to one
+                    // credential and to offer to save it.
+                    child: AutofillGroup(
+                      child: Column(
                       children: <Widget>[
                         FadeAnimation(
                             250,
@@ -111,9 +144,20 @@ class _LoginPageState extends State<LoginPage> {
                             500,
                             makeInput(
                                 label: "Password",
-                                obscureText: true,
+                                isPassword: true,
                                 controller: passwordController)),
+                        FadeAnimation(
+                          600,
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _signingIn ? null : _resetPassword,
+                              child: const Text('Forgot password?'),
+                            ),
+                          ),
+                        ),
                       ],
+                      ),
                     ),
                   ),
                   FadeAnimation(
@@ -131,19 +175,29 @@ class _LoginPageState extends State<LoginPage> {
                           child: MaterialButton(
                             height: 60,
                             minWidth: MediaQuery.of(context).size.width,
-                            onPressed: () {
-                              signIn(emailController.text.trim(),
-                                  passwordController.text.trim());
-                            },
+                            onPressed: _signingIn
+                                ? null
+                                : () {
+                                    signIn(emailController.text.trim(),
+                                        passwordController.text.trim());
+                                  },
                             color: Colors.greenAccent,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(50)),
-                            child: Text(
-                              'Login',
-                              style: TextStyle(
-                                  fontSize: 20, fontWeight: FontWeight.w600),
-                            ),
+                            child: _signingIn
+                                ? const SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: Colors.black54),
+                                  )
+                                : Text(
+                                    'Login',
+                                    style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.w600),
+                                  ),
                           ),
                         ),
                       )),
@@ -195,34 +249,54 @@ class _LoginPageState extends State<LoginPage> {
           ),
         ),
       ),
+      ),
     );
   }
 
-  Future signIn(email, password) async {
+  Future<void> signIn(String email, String password) async {
+    if (_signingIn) return;
     if (email.isEmpty || password.isEmpty) {
-      showError('Please fill all fields');
+      _showError('Please fill all fields');
       return;
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return const Center(child: CircularProgressIndicator());
-      },
-    );
-
+    setState(() => _signingIn = true);
     try {
       await authRepository.signIn(email: email, password: password);
-
+      // Prompts the platform's "save this password?" sheet.
+      TextInput.finishAutofillContext();
       if (!mounted) return;
-      // Dismiss the spinner, then fall back to the root, which is watching auth
-      // state and shows the shell through the session gate.
+      // Back to the root, which is watching auth state and shows the shell
+      // through the session gate.
       Navigator.of(context).popUntil((route) => route.isFirst);
     } on AuthException catch (e) {
+      if (mounted) _showError(e.message);
+    } catch (e) {
+      // The catch-all the modal spinner never had.
+      if (mounted) _showError(describeFailure(e).message);
+    } finally {
+      if (mounted) setState(() => _signingIn = false);
+    }
+  }
+
+  /// Emails a reset link. There was no way back into an account from this
+  /// screen at all — the only password screen in the app assumed you were
+  /// already signed in.
+  Future<void> _resetPassword() async {
+    final email = emailController.text.trim();
+    if (email.isEmpty) {
+      _showError('Enter your email address first, then tap this again.');
+      return;
+    }
+    try {
+      await authRepository.sendPasswordReset(email);
       if (!mounted) return;
-      Navigator.pop(context); // the spinner
-      showError(e.message);
+      showInfo(
+        context,
+        'If $email has an account, a reset link is on its way.',
+      );
+    } on AuthException catch (e) {
+      if (mounted) _showError(e.message);
     }
   }
 
@@ -232,7 +306,7 @@ class _LoginPageState extends State<LoginPage> {
       await _land(result);
     } on AuthException catch (e) {
       // Dismissing the Google sheet is a decision, not a failure.
-      if (e.failure != AuthFailure.cancelled) showError(e.message);
+      if (e.failure != AuthFailure.cancelled) _showError(e.message);
     }
   }
 
@@ -240,7 +314,7 @@ class _LoginPageState extends State<LoginPage> {
     try {
       await _land(await passkeyRepository.signIn());
     } on PasskeyException catch (e) {
-      if (e.failure != PasskeyFailure.cancelled) showError(e.message);
+      if (e.failure != PasskeyFailure.cancelled) _showError(e.message);
     }
   }
 
@@ -269,23 +343,27 @@ class _LoginPageState extends State<LoginPage> {
       await authRepository.signOut();
     }
 
-    showError(
+    _showError(
       'There is no Revenue account for that sign-in yet. Tap Sign UP to open '
       'a store, or to join one with an invite code.',
     );
   }
 
-  void showError(String message) {
-    if (!mounted) return;
-    final snackBar = SnackBar(
-      content: Text(message),
-      backgroundColor: Colors.red,
-      duration: const Duration(seconds: 6),
-    );
-    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+  void _showError(String message) {
+    if (mounted) showError(context, message);
   }
 
-  Widget makeInput({label, obscureText = false, controller}) {
+  /// One labelled field.
+  ///
+  /// The register screen has had `autofillHints` and a typed keyboard since it
+  /// was rewritten; this one had neither, so a password manager could fill the
+  /// form you use once and not the one you use every day, and the email field
+  /// opened a keyboard with no `@` on it.
+  Widget makeInput({
+    required String label,
+    bool isPassword = false,
+    required TextEditingController controller,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -297,17 +375,38 @@ class _LoginPageState extends State<LoginPage> {
         SizedBox(height: 5),
         TextField(
           controller: controller,
-          obscureText: obscureText,
-          textInputAction: obscureText ? TextInputAction.done : TextInputAction.next,
+          obscureText: isPassword && _obscurePassword,
+          enabled: !_signingIn,
+          keyboardType:
+              isPassword ? TextInputType.text : TextInputType.emailAddress,
+          autocorrect: false,
+          enableSuggestions: !isPassword,
+          autofillHints: [
+            isPassword ? AutofillHints.password : AutofillHints.email,
+          ],
+          textInputAction:
+              isPassword ? TextInputAction.done : TextInputAction.next,
           onSubmitted: (value) {
-            if (obscureText) {
-              signIn(emailController.text.trim(), passwordController.text.trim());
+            if (isPassword) {
+              signIn(emailController.text.trim(),
+                  passwordController.text.trim());
             }
           },
           decoration: InputDecoration(
             contentPadding: EdgeInsets.symmetric(vertical: 0, horizontal: 10),
             border: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
             enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+            suffixIcon: isPassword
+                ? IconButton(
+                    tooltip:
+                        _obscurePassword ? 'Show password' : 'Hide password',
+                    icon: Icon(_obscurePassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined),
+                    onPressed: () => setState(
+                        () => _obscurePassword = !_obscurePassword),
+                  )
+                : null,
           ),
         ),
         SizedBox(height: 20),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../database/repositories.dart';
 import '../models/app_user.dart';
 import 'store_invites.dart';
+import '../widgets/feedback.dart';
 
 /// The store's staff, read by reverse lookup on `users.storeId`.
 ///
@@ -47,7 +48,7 @@ class StoreStaff extends StatelessWidget {
             stream: userRepository.watchStaff(storeId),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}'));
+                return ErrorView(snapshot.error!);
               }
               if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
@@ -95,9 +96,6 @@ class StoreStaff extends StatelessWidget {
 
   Future<void> _changeRole(BuildContext context, AppUser user) async {
     final name = user.displayName.isEmpty ? user.email : user.displayName;
-    // Grabbed before the dialog: this widget is stateless, so after the await
-    // there is no `mounted` to check the context against.
-    final messenger = ScaffoldMessenger.of(context);
     final chosen = await showDialog<UserRole>(
       context: context,
       builder: (context) => SimpleDialog(
@@ -147,14 +145,12 @@ class StoreStaff extends StatelessWidget {
 
     try {
       await userRepository.updateRole(user.uid, chosen);
-      messenger.showSnackBar(
-        SnackBar(content: Text('$name is now ${chosen.label.toLowerCase()}')),
-      );
+      // This widget is stateless, so the guard is on the context itself.
+      if (context.mounted) {
+        showInfo(context, '$name is now ${chosen.label.toLowerCase()}');
+      }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(
-        backgroundColor: Colors.red,
-        content: Text('Could not change the role: $e'),
-      ));
+      if (context.mounted) showFailure(context, e);
     }
   }
 }
@@ -184,7 +180,8 @@ class _StaffTile extends StatelessWidget {
         ),
         isThreeLine: true,
         leading: CircleAvatar(
-          backgroundColor: Theme.of(context).splashColor,
+          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
           child: Text(user.initials),
         ),
         trailing: onChangeRole == null

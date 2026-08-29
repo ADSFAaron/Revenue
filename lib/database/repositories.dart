@@ -1,10 +1,14 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../models/app_user.dart';
 import '../models/audit_log.dart';
 import '../models/store.dart';
 import 'audit_log_repository.dart';
 import 'auth_repository.dart';
+import 'data_exception.dart';
 import 'feedback_repository.dart';
 import 'invite_repository.dart';
+import 'menu_import_repository.dart';
 import 'menu_repository.dart';
 import 'order_repository.dart';
 import 'passkey_repository.dart';
@@ -14,8 +18,10 @@ import 'user_repository.dart';
 
 export 'audit_log_repository.dart';
 export 'auth_repository.dart';
+export 'data_exception.dart';
 export 'feedback_repository.dart';
 export 'invite_repository.dart';
+export 'menu_import_repository.dart';
 export 'menu_repository.dart';
 export 'order_repository.dart';
 export 'passkey_repository.dart';
@@ -28,10 +34,25 @@ export 'user_repository.dart';
 /// No widget may reach for `FirebaseFirestore.instance` or `FirebaseAuth`
 /// directly. Keeping every query and every sign-in call behind these objects is
 /// what makes the backend replaceable later without touching a single screen.
+/// Turns on the offline cache. Call once, before the first read.
+///
+/// Set explicitly rather than left to each platform's default: the mobile SDKs
+/// enable persistence, the web SDK does not. The same shop on a tablet kept
+/// working through a dropped connection and on a laptop went blank. A
+/// kitchen's wifi is the case this app should assume, not the one it should be
+/// surprised by.
+void configureFirestore() {
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
+}
+
 final authRepository = AuthRepository();
 final userRepository = UserRepository(auth: authRepository);
 final storeRepository = StoreRepository();
 final menuRepository = MenuRepository();
+final menuImportRepository = MenuImportRepository();
 final orderRepository = OrderRepository();
 final passkeyRepository = PasskeyRepository(auth: authRepository);
 final statsRepository = StatsRepository();
@@ -63,9 +84,10 @@ class Session {
 }
 
 /// Raised when the signed-in account has no usable profile or store.
-class SessionException implements Exception {
+class SessionException implements AppException {
   const SessionException(this.message);
 
+  @override
   final String message;
 
   @override

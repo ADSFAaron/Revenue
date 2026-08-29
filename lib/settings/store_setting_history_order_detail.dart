@@ -5,6 +5,8 @@ import '../database/repositories.dart';
 import '../models/order.dart';
 import '../models/store.dart';
 import '../page/addorder.dart';
+import '../widgets/feedback.dart';
+import '../widgets/money.dart';
 
 /// One order, with the option to edit it or void it.
 ///
@@ -22,7 +24,9 @@ class StoreHistoryOrderDetail extends StatefulWidget {
 }
 
 class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
-  static const String currency = 'NTD';
+  /// Formats in the store's currency once it has loaded. Before that there is
+  /// nothing on screen that shows money anyway.
+  NumberFormat get _money => moneyFormat(_store);
 
   late Order _order = widget.order;
   Store? _store;
@@ -49,9 +53,19 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
     super.dispose();
   }
 
+  /// The store is what `voidOrder` needs to work out which trading day to back
+  /// the order out of, so Void stays disabled until this lands.
+  ///
+  /// Unguarded, a failed read left `_store` null and Void did nothing at all —
+  /// no spinner, no error, no void. Reporting it here is what makes the
+  /// disabled button explicable.
   Future<void> _loadStore() async {
-    final store = await storeRepository.fetch(widget.storeID);
-    if (mounted) setState(() => _store = store);
+    try {
+      final store = await storeRepository.fetch(widget.storeID);
+      if (mounted) setState(() => _store = store);
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
   }
 
   @override
@@ -85,9 +99,10 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
                       icon: order.paymentMethod.icon),
                   if (order.commissionAmount > 0)
                     _buildFact('Platform commission',
-                        '$currency ${order.commissionAmount}'),
+                        _money.format(order.commissionAmount)),
                   if (order.totalCost > 0)
-                    _buildFact('Gross profit', '$currency ${order.grossProfit}'),
+                    _buildFact(
+                        'Gross profit', _money.format(order.grossProfit)),
                   ...order.items.map(_buildLine),
                   const SizedBox(height: 10),
                   _buildActionButtons(),
@@ -112,18 +127,23 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
       children: [
         Text(
           'Order #${order.orderNo.toString().padLeft(2, '0')}',
-          style: TextStyle(
-            fontSize: 48,
-            fontFamily: 'NotoSans',
-            color: order.isVoided ? Colors.grey : null,
-            decoration: order.isVoided ? TextDecoration.lineThrough : null,
-          ),
+          // The 'NotoSans' family this used to name was never declared in
+          // pubspec.yaml, so it has always silently fallen back anyway.
+          style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                color: order.isVoided
+                    ? Theme.of(context).colorScheme.onSurfaceVariant
+                    : null,
+                decoration:
+                    order.isVoided ? TextDecoration.lineThrough : null,
+              ),
         ),
         const SizedBox(width: 12),
         if (order.isVoided)
-          const Chip(
-            label: Text('VOIDED'),
-            backgroundColor: Color(0xFFFFCDD2),
+          Chip(
+            label: const Text('VOIDED'),
+            backgroundColor: Theme.of(context).colorScheme.errorContainer,
+            labelStyle: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer),
           ),
       ],
     );
@@ -135,30 +155,30 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
     if (order.taxAmount <= 0) {
       taxLine = 'No tax applied';
     } else if (store?.taxIncluded ?? true) {
-      taxLine = 'Included tax $currency ${order.taxAmount}';
+      taxLine = 'Included tax ${_money.format(order.taxAmount)}';
     } else {
-      taxLine = 'Plus tax $currency ${order.taxAmount}';
+      taxLine = 'Plus tax ${_money.format(order.taxAmount)}';
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
           children: [
-            Text('Total $currency ',
-                style: const TextStyle(
-                    fontSize: 24, fontWeight: FontWeight.w200)),
-            Text('${order.total}',
-                style: const TextStyle(
-                    fontSize: 32, fontWeight: FontWeight.w400)),
+            Text('Total ', style: Theme.of(context).textTheme.titleLarge),
+            Text(_money.format(order.total),
+                style: Theme.of(context).textTheme.headlineMedium),
           ],
         ),
         Padding(
           padding: const EdgeInsets.only(left: 2),
           child: Text(
             taxLine,
-            style: const TextStyle(
-                fontSize: 14, color: Colors.grey, fontWeight: FontWeight.w300),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
         ),
       ],
@@ -166,34 +186,39 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
   }
 
   Widget _buildFact(String label, String value, {IconData? icon}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 18, color: Colors.grey)),
-        Row(
-          spacing: 8,
-          children: [
-            if (icon != null) Icon(icon, color: Colors.grey),
-            Text(value,
-                style: const TextStyle(fontSize: 18, color: Colors.grey)),
-          ],
-        ),
-      ],
+    final muted = Theme.of(context).textTheme.titleMedium?.copyWith(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: muted),
+          Row(
+            spacing: 8,
+            children: [
+              if (icon != null)
+                Icon(icon,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
+              Text(value, style: muted),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildLine(OrderLine line) {
     return Card(
-      elevation: 0,
       child: ListTile(
         contentPadding:
             const EdgeInsets.symmetric(vertical: 3, horizontal: 24),
-        title: Text(line.name, style: const TextStyle(fontSize: 16)),
-        subtitle: Text('$currency ${line.unitPrice} × ${line.qty}'),
+        title: Text(line.name),
+        subtitle: Text('${_money.format(line.unitPrice)} × ${line.qty}'),
         trailing: Text(
-          textAlign: TextAlign.center,
-          '$currency \n${line.lineRevenue}',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w400),
+          _money.format(line.lineRevenue),
+          style: Theme.of(context).textTheme.titleMedium,
         ),
       ),
     );
@@ -210,7 +235,8 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text('Reason: ${_order.voidReason}',
-                  style: const TextStyle(color: Colors.grey)),
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ),
         ],
       );
@@ -242,12 +268,21 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
     );
     if (saved != true) return;
 
-    final refreshed = await orderRepository.fetch(widget.storeID, _order.id);
-    if (!mounted) return;
-    setState(() {
-      if (refreshed != null) _order = refreshed;
-      _changed = true;
-    });
+    // The edit itself already committed — this only re-reads it to show. A
+    // failure here leaves the screen on the old figures, so it says so rather
+    // than letting them be mistaken for the saved ones.
+    try {
+      final refreshed = await orderRepository.fetch(widget.storeID, _order.id);
+      if (!mounted) return;
+      setState(() {
+        if (refreshed != null) _order = refreshed;
+        _changed = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _changed = true);
+      showFailure(context, e);
+    }
   }
 
   Future<void> _confirmVoid() async {
@@ -277,9 +312,9 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
-          TextButton(
+          DestructiveButton(
+            label: 'Void',
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Void'),
           ),
         ],
       ),
@@ -289,7 +324,13 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
     if (confirmed != true) return;
 
     final store = _store;
-    if (store == null) return;
+    if (store == null) {
+      if (mounted) {
+        showError(context, 'The store settings have not loaded yet. Try again '
+            'in a moment.');
+      }
+      return;
+    }
 
     setState(() => _busy = true);
     try {
@@ -309,11 +350,7 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
         const SnackBar(content: Text('Order voided')),
       );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to void the order: $e')),
-        );
-      }
+      if (mounted) showFailure(context, e);
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -1,6 +1,6 @@
 {
   "name": "revenue-functions",
-  "description": "WebAuthn relying party for Revenue. Firebase Authentication has no passkey provider, so a verified assertion is turned into a session by minting a custom token here.",
+  "description": "WebAuthn relying party and photo menu import for Revenue. Both need a credential the app cannot hold: the service account key for minting custom tokens, and the model API key for reading a menu off a photo.",
   "private": true,
   "main": "lib/index.js",
   "engines": {
@@ -19,6 +19,7 @@
     "firebase-functions": "^6.5.0"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "@types/node": "^26.3.0"
   }
 }

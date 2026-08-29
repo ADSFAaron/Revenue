@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import '../analysis/basket_analysis.dart';
 import '../analysis/demand_profile.dart';
+import '../analysis/headline.dart';
 import '../analysis/menu_engineering.dart';
 import '../database/repositories.dart';
 import '../models/daily_stats.dart';
 import '../models/store.dart';
+import '../settings/store_settings_edit_menu.dart';
+import '../widgets/feedback.dart';
+import '../widgets/money.dart';
 
 /// How far back the reports look.
 ///
@@ -25,10 +28,13 @@ enum AnalysisWindow {
   final int days;
 }
 
+/// The reports that say what to change, rather than what was sold.
+///
+/// Reached from the shell's second tab. It used to be pushed from an
+/// unlabelled icon in the statistics app bar and took a [Session] from that
+/// page; as a destination of its own it resolves one like every other tab.
 class AnalysisPage extends StatefulWidget {
-  const AnalysisPage({required this.session, super.key});
-
-  final Session session;
+  const AnalysisPage({super.key});
 
   @override
   State<AnalysisPage> createState() => _AnalysisPageState();
@@ -36,13 +42,17 @@ class AnalysisPage extends StatefulWidget {
 
 class _AnalysisPageState extends State<AnalysisPage>
     with SingleTickerProviderStateMixin {
+  /// Summary, then the four reports it draws on.
   late final TabController _tabController =
-      TabController(length: 4, vsync: this);
+      TabController(length: 5, vsync: this);
+
+  Session? _session;
+  Object? _sessionError;
 
   AnalysisWindow _window = AnalysisWindow.days90;
-  late Future<List<DailyStats>> _days = _loadDays();
+  Future<List<DailyStats>>? _days;
 
-  Store get _store => widget.session.store;
+  Store get _store => _session!.store;
 
   /// Inclusive range of trading days the current window covers.
   (String from, String to) get _range {
@@ -55,10 +65,24 @@ class _AnalysisPageState extends State<AnalysisPage>
   Future<List<DailyStats>> _loadDays() {
     final (from, to) = _range;
     return statsRepository.fetchRange(
-      widget.session.storeId,
+      _session!.storeId,
       fromBusinessDate: from,
       toBusinessDate: to,
     );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    loadSession().then((session) {
+      if (!mounted) return;
+      setState(() {
+        _session = session;
+        _days = _loadDays();
+      });
+    }).catchError((Object error) {
+      if (mounted) setState(() => _sessionError = error);
+    });
   }
 
   @override
@@ -73,21 +97,47 @@ class _AnalysisPageState extends State<AnalysisPage>
       appBar: AppBar(
         title: const Text('Insights'),
         actions: [
+          // A custom `child` on a PopupMenuButton gets no ripple and no
+          // tooltip, so this read as a caption rather than a control. The
+          // check mark on the current window also says which one is active
+          // without having to compare it against the label.
           PopupMenuButton<AnalysisWindow>(
             initialValue: _window,
+            tooltip: 'How far back to look',
             onSelected: (window) => setState(() {
               _window = window;
               _days = _loadDays();
             }),
             itemBuilder: (context) => [
               for (final window in AnalysisWindow.values)
-                PopupMenuItem(value: window, child: Text(window.label)),
+                PopupMenuItem(
+                  value: window,
+                  child: Row(
+                    children: [
+                      Icon(
+                        window == _window
+                            ? Icons.check
+                            : Icons.check_box_outline_blank,
+                        size: 18,
+                        color: window == _window
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.transparent,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(window.label),
+                    ],
+                  ),
+                ),
             ],
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(_window.label),
+                  const Icon(Icons.date_range_outlined, size: 20),
+                  const SizedBox(width: 6),
+                  Text(_window.label,
+                      style: Theme.of(context).textTheme.labelLarge),
                   const Icon(Icons.arrow_drop_down),
                 ],
               ),
@@ -98,6 +148,7 @@ class _AnalysisPageState extends State<AnalysisPage>
           controller: _tabController,
           isScrollable: true,
           tabs: const [
+            Tab(text: 'Summary'),
             Tab(text: 'Menu'),
             Tab(text: 'Busy times'),
             Tab(text: 'Prep'),
@@ -105,37 +156,206 @@ class _AnalysisPageState extends State<AnalysisPage>
           ],
         ),
       ),
-      body: FutureBuilder<List<DailyStats>>(
-        future: _days,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: _buildBody(),
+    );
+  }
 
-          final days = snapshot.data!;
-          if (days.isEmpty) {
-            return Center(
-              child: Text('No trading days in the ${_window.label.toLowerCase()}.'),
-            );
-          }
+  Widget _buildBody() {
+    if (_sessionError != null) {
+      return ErrorView(_sessionError!);
+    }
+    if (_session == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-          final total = DailyStats.sum(days);
-          final matrix = MenuEngineering.from(total);
-          final demand = DemandProfile.from(days);
-
-          return TabBarView(
-            controller: _tabController,
-            children: [
-              _MenuMatrixTab(matrix: matrix, store: _store),
-              _BusyTimesTab(demand: demand, store: _store),
-              _PrepTab(demand: demand, store: _store),
-              _PairingsTab(session: widget.session, range: _range),
-            ],
+    return FutureBuilder<List<DailyStats>>(
+      future: _days,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return ErrorView(
+            snapshot.error!,
+            onRetry: () => setState(() => _days = _loadDays()),
           );
-        },
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final days = snapshot.data!;
+        if (days.isEmpty) {
+          return _EmptyNotice(
+            icon: Icons.event_busy_outlined,
+            title: 'Nothing traded in the ${_window.label.toLowerCase()}',
+            body: 'These reports describe patterns, and a pattern needs '
+                'trading days underneath it. Ring up some orders, or widen '
+                'the window from the menu above.',
+          );
+        }
+
+        final total = DailyStats.sum(days);
+        final matrix = MenuEngineering.from(total);
+        final demand = DemandProfile.from(days);
+
+        return TabBarView(
+          controller: _tabController,
+          children: [
+            _SummaryTab(
+              headlines: headlinesFrom(
+                matrix: matrix,
+                demand: demand,
+                windowDays: _window.days,
+              ),
+              storeId: _session!.storeId,
+              onOpen: _openTopic,
+            ),
+            _MenuMatrixTab(matrix: matrix, store: _store),
+            _BusyTimesTab(demand: demand, store: _store),
+            _PrepTab(demand: demand, store: _store),
+            _PairingsTab(session: _session!, range: _range),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Jumps from a summary card to the report it was drawn from.
+  void _openTopic(HeadlineTopic topic) {
+    _tabController.animateTo(switch (topic) {
+      HeadlineTopic.menu => 1,
+      HeadlineTopic.busyTimes => 2,
+      HeadlineTopic.prep => 3,
+    });
+  }
+}
+
+// -------------------------------------------------------------------- summary
+
+/// What the reports below add up to, in sentences.
+///
+/// The first thing the tab opens on, and the reason Insights is worth a
+/// destination of its own. Every other tab here is a table that the reader has
+/// to interpret; this one states the finding and leaves the table as evidence,
+/// one tap away.
+class _SummaryTab extends StatelessWidget {
+  const _SummaryTab({
+    required this.headlines,
+    required this.storeId,
+    required this.onOpen,
+  });
+
+  final List<Headline> headlines;
+  final String storeId;
+  final void Function(HeadlineTopic topic) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    if (headlines.isEmpty) {
+      return const _EmptyNotice(
+        icon: Icons.lightbulb_outline_rounded,
+        title: 'Nothing stands out yet',
+        body: 'Nothing in this window is far enough from the ordinary to be '
+            'worth telling you about. Widen the window, or come back after a '
+            'few more trading days.',
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      // One extra row: a pointer to Pairings, which is the fifth of five
+      // scrollable tabs and so sits off the edge of a phone screen.
+      itemCount: headlines.length + 1,
+      separatorBuilder: (context, index) => const SizedBox(height: 12),
+      itemBuilder: (context, index) => index < headlines.length
+          ? _HeadlineCard(headline: headlines[index], onOpen: onOpen)
+          : const _PairingsSignpost(),
+    );
+  }
+}
+
+/// Points at the Pairings report, which has to be run by hand.
+class _PairingsSignpost extends StatelessWidget {
+  const _PairingsSignpost();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: ListTile(
+        leading: Icon(Icons.hub_outlined, color: scheme.onSurfaceVariant),
+        title: const Text('Which dishes get ordered together'),
+        subtitle: const Text(
+            'Reads every order rather than the daily summaries, so it runs '
+            'only when you ask. Open the Pairings tab.'),
+        isThreeLine: true,
+      ),
+    );
+  }
+}
+
+class _HeadlineCard extends StatelessWidget {
+  const _HeadlineCard({required this.headline, required this.onOpen});
+
+  final Headline headline;
+  final void Function(HeadlineTopic topic) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    final (background, foreground, icon) = switch (headline.severity) {
+      HeadlineSeverity.warning => (
+          scheme.errorContainer,
+          scheme.onErrorContainer,
+          Icons.warning_amber_rounded,
+        ),
+      HeadlineSeverity.advice => (
+          scheme.surfaceContainer,
+          scheme.onSurface,
+          Icons.tips_and_updates_outlined,
+        ),
+      HeadlineSeverity.good => (
+          scheme.tertiaryContainer,
+          scheme.onTertiaryContainer,
+          Icons.check_circle_outline,
+        ),
+    };
+
+    return Card(
+      color: background,
+      child: InkWell(
+        onTap: () => onOpen(headline.topic),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: foreground),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      headline.title,
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(color: foreground),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      headline.detail,
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: foreground.withValues(alpha: 0.85)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right_rounded, color: foreground),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -152,14 +372,25 @@ class _MenuMatrixTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (matrix.items.isEmpty) {
+      final uncosted = matrix.unclassified.length;
       return _EmptyNotice(
         icon: Icons.receipt_long_outlined,
         title: 'Nothing to place on the matrix yet',
-        body: matrix.unclassified.isEmpty
+        body: uncosted == 0
             ? 'No dishes were sold in this window.'
-            : 'The ${matrix.unclassified.length} dishes sold have no cost '
-                'recorded. Fill in costs under Store Settings → Edit Menu and '
-                'this report can tell you which of them actually make money.',
+            : 'The $uncosted dishes sold have no cost recorded, so this report '
+                'cannot tell you which of them actually make money.',
+        action: uncosted == 0
+            ? null
+            : FilledButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => StoreEditMenu(store.id),
+                  ),
+                ),
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Fill in costs'),
+              ),
       );
     }
 
@@ -179,7 +410,7 @@ class _MenuMatrixTab extends StatelessWidget {
 
   Widget _classSection(BuildContext context, MenuClass menuClass) {
     final items = matrix.ofClass(menuClass);
-    final money = _money(store);
+    final money = moneyFormat(store);
 
     return Card(
       elevation: 0,
@@ -190,7 +421,8 @@ class _MenuMatrixTab extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(_iconFor(menuClass), color: _colorFor(menuClass)),
+                Icon(_iconFor(menuClass),
+                    color: _colorFor(menuClass, Theme.of(context).colorScheme)),
                 const SizedBox(width: 8),
                 Text(
                   '${menuClass.label}  (${items.length})',
@@ -259,11 +491,14 @@ class _MenuMatrixTab extends StatelessWidget {
         MenuClass.dog => Icons.pets_rounded,
       };
 
-  static Color _colorFor(MenuClass menuClass) => switch (menuClass) {
-        MenuClass.star => Colors.amber,
-        MenuClass.plowhorse => Colors.orange,
-        MenuClass.puzzle => Colors.blue,
-        MenuClass.dog => Colors.grey,
+  /// Amber and orange were near-indistinguishable at icon size, and Star
+  /// against Plowhorse is the one pair a reader most needs to tell apart.
+  static Color _colorFor(MenuClass menuClass, ColorScheme scheme) =>
+      switch (menuClass) {
+        MenuClass.star => scheme.tertiary,
+        MenuClass.plowhorse => scheme.primary,
+        MenuClass.puzzle => scheme.secondary,
+        MenuClass.dog => scheme.outline,
       };
 }
 
@@ -353,10 +588,10 @@ class _BusyTimesTab extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  const SizedBox(width: 44),
+                  SizedBox(width: 44 * _heatScale(context)),
                   for (final hour in hours)
                     SizedBox(
-                      width: 34,
+                      width: 34 * _heatScale(context),
                       child: Text(
                         hour.toString().padLeft(2, '0'),
                         style: Theme.of(context).textTheme.labelSmall,
@@ -369,7 +604,7 @@ class _BusyTimesTab extends StatelessWidget {
                 Row(
                   children: [
                     SizedBox(
-                      width: 44,
+                      width: 44 * _heatScale(context),
                       child: Text(DemandProfile.weekdayName(weekday),
                           style: Theme.of(context).textTheme.labelSmall),
                     ),
@@ -397,6 +632,14 @@ class _BusyTimesTab extends StatelessWidget {
   }
 }
 
+/// The heatmap's cell size, and the header widths that have to line up with
+/// it, scaled by the phone's text size.
+///
+/// Fixed 32pt cells clipped their own numbers as soon as somebody turned the
+/// system font up — which in a kitchen is the normal setting, not the odd one.
+double _heatScale(BuildContext context) =>
+    MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.6);
+
 class _HeatCell extends StatelessWidget {
   const _HeatCell({
     required this.cell,
@@ -420,8 +663,8 @@ class _HeatCell extends StatelessWidget {
       message: '${DemandProfile.weekdayName(weekday)} ${_hourLabel(hour)}\n'
           '${orders.toStringAsFixed(1)} orders on average',
       child: Container(
-        width: 32,
-        height: 32,
+        width: 32 * _heatScale(context),
+        height: 32 * _heatScale(context),
         margin: const EdgeInsets.all(1),
         decoration: BoxDecoration(
           // Lerping from the surface colour means an empty hour reads as
@@ -574,7 +817,9 @@ class _PairingsTabState extends State<_PairingsTab> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.hub_outlined, size: 48, color: Colors.grey),
+              Icon(Icons.hub_outlined,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
               const SizedBox(height: 16),
               Text(
                 'Which dishes get ordered together',
@@ -605,7 +850,7 @@ class _PairingsTabState extends State<_PairingsTab> {
       future: _analysis,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
+          return ErrorView(snapshot.error!, onRetry: _run);
         }
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
@@ -659,11 +904,16 @@ class _EmptyNotice extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.body,
+    this.action,
   });
 
   final IconData icon;
   final String title;
   final String body;
+
+  /// A way out. Telling someone their menu has no costs on it and leaving them
+  /// to find the screen themselves is where this page used to stop.
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) => Center(
@@ -672,7 +922,9 @@ class _EmptyNotice extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 48, color: Colors.grey),
+              Icon(icon,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
               const SizedBox(height: 16),
               Text(title,
                   style: Theme.of(context).textTheme.titleMedium,
@@ -681,6 +933,10 @@ class _EmptyNotice extends StatelessWidget {
               Text(body,
                   style: Theme.of(context).textTheme.bodySmall,
                   textAlign: TextAlign.center),
+              if (action != null) ...[
+                const SizedBox(height: 24),
+                action!,
+              ],
             ],
           ),
         ),
@@ -688,9 +944,3 @@ class _EmptyNotice extends StatelessWidget {
 }
 
 String _hourLabel(int hour) => '${hour.toString().padLeft(2, '0')}:00';
-
-NumberFormat _money(Store store) => NumberFormat.currency(
-      name: store.currency,
-      symbol: store.currency == 'TWD' ? 'NT\$' : null,
-      decimalDigits: 0,
-    );

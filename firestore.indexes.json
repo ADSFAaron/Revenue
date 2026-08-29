@@ -44,6 +44,21 @@
       ]
     },
     {
+      "//": "Backs BasketAnalysis' pairing lookups — orders that contain a given dish, within a trading-day range. Present in the project but missing from this file until now, which meant `firebase deploy --only firestore:indexes` would have offered to delete it.",
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "itemIds",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "businessDate",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "//": "Backs InviteRepository.watchForStore() — the manager's list of codes issued for their store, newest first. The equality filter plus a different ordering field is exactly the shape that needs a composite index.",
       "collectionGroup": "invites",
       "queryScope": "COLLECTION",

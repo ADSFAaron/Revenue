@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../database/repositories.dart';
+import '../widgets/feedback.dart';
 
 class ChangePassword extends StatefulWidget {
   /// Takes no email: re-authentication has to use the address the signed-in
@@ -98,6 +99,7 @@ class _ChangePasswordState extends State<ChangePassword> {
         border: const OutlineInputBorder(),
         labelText: labelText,
         suffixIcon: IconButton(
+          tooltip: obscureText ? 'Show password' : 'Hide password',
           icon: Icon(
             obscureText ? Icons.visibility_off : Icons.visibility,
           ),
@@ -166,19 +168,6 @@ class _ChangePasswordState extends State<ChangePassword> {
   }
 
   void _showSnackBar(String message, {bool isError = true}) {
-    final snackBar = SnackBar(
-      content: Row(
-        children: [
-          Icon(
-            isError ? Icons.warning : Icons.check_circle,
-            color: Colors.white,
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: Text(message)),
-        ],
-      ),
-      backgroundColor: isError ? Colors.red : Colors.green,
-    );
-    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+    showSnack(context, message, isError: isError);
   }
 }

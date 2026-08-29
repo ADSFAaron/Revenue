@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../database/repositories.dart';
+import '../widgets/feedback.dart';
+import 'theme_controller.dart';
 
 class AppSettings extends StatefulWidget {
   final String storeID;
@@ -43,8 +45,10 @@ class _AppSettingsState extends State<AppSettings> {
         title: const Text('App Settings'),
       ),
       body: SafeArea(
-        child: Column(
+        child: ListView(
           children: [
+            _buildAppearanceTile(),
+            const Divider(height: 8),
             ListTile(
               title: const Text('App Name'),
               subtitle: Text(packageInfo.appName),
@@ -58,20 +62,42 @@ class _AppSettingsState extends State<AppSettings> {
               subtitle: Text(packageInfo.buildNumber),
             ),
             ListTile(
-              title: const Text('Check for Update'),
-              onTap: () {
-                // 可以在這裡加上檢查更新的邏輯
-              },
-            ),
-            ListTile(
+              leading: const Icon(Icons.feedback_outlined),
               title: const Text('Feedback'),
-              onTap: () {
-                showFeedbackDialog(context);
-              },
+              subtitle: const Text('Improvement ideas, or a bug you hit'),
+              onTap: () => showFeedbackDialog(context),
             ),
-            if (isSubmitting) // 如果正在提交，顯示加載進度提示
-              const CircularProgressIndicator(),
+            if (isSubmitting) const LinearProgressIndicator(),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Light / dark / follow the system.
+  ///
+  /// The dark palette has existed in theme.dart since the theme was generated
+  /// and was unreachable until now.
+  Widget _buildAppearanceTile() {
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeController,
+      builder: (context, mode, _) => ListTile(
+        leading: Icon(mode.icon),
+        title: const Text('Appearance'),
+        subtitle: Text(mode.label),
+        trailing: SegmentedButton<ThemeMode>(
+          showSelectedIcon: false,
+          segments: [
+            for (final option in ThemeMode.values)
+              ButtonSegment(
+                value: option,
+                icon: Icon(option.icon),
+                tooltip: option.label,
+              ),
+          ],
+          selected: {mode},
+          onSelectionChanged: (selection) =>
+              themeController.set(selection.first),
         ),
       ),
     );
@@ -84,8 +110,9 @@ class _AppSettingsState extends State<AppSettings> {
         packageInfo = info;
       });
     } catch (e) {
-      // 錯誤處理，可以選擇提示用戶或者日誌紀錄
-      print('Failed to get app info: $e');
+      // Left alone on purpose: a missing version string is cosmetic, and there
+      // is nothing the person reading this screen could do about it.
+      debugPrint('Failed to get app info: $e');
     }
   }
 
@@ -117,9 +144,7 @@ class _AppSettingsState extends State<AppSettings> {
   Future<void> sendFeedbackToFirebase() async {
     if (feedbackController.text.isEmpty) {
       // 如果反饋內容為空，則提示用戶
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Feedback cannot be empty')),
-      );
+      showError(context, 'Feedback cannot be empty');
       return;
     }
 
@@ -137,16 +162,9 @@ class _AppSettingsState extends State<AppSettings> {
       );
       if (!mounted) return;
       feedbackController.clear();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Feedback submitted successfully')),
-      );
+      showInfo(context, 'Thanks — that went through.');
     } catch (e) {
-      // 捕捉異常並提示用戶
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send feedback: $e')),
-        );
-      }
+      if (mounted) showFailure(context, e);
     } finally {
       if (mounted) {
         setState(() {

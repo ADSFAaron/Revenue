@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../database/repositories.dart';
 import '../models/app_user.dart';
@@ -43,6 +44,45 @@ class SetupChecklist extends StatefulWidget {
 
 class _SetupChecklistState extends State<SetupChecklist> {
   late Future<(List<MenuItem>, List<AppUser>)> _future = _load();
+
+  /// Remembered between launches, like the theme choice is.
+  ///
+  /// Session-only state would be worse than none: this card sits above the
+  /// day's takings on the screen a shop opens every morning, and a shop that
+  /// has decided it does not want four rows of homework there has decided that
+  /// once, not once per launch.
+  static const String _collapsedKey = 'setup_checklist_collapsed';
+
+  /// Starts expanded and folds itself away if the stored answer says so — the
+  /// wrong way round would flash a collapsed card open on every launch.
+  bool _collapsed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _restore();
+  }
+
+  Future<void> _restore() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getBool(_collapsedKey) ?? false;
+      if (mounted && stored != _collapsed) setState(() => _collapsed = stored);
+    } catch (_) {
+      // A preference that cannot be read is not a reason to hide the card.
+    }
+  }
+
+  Future<void> _toggle() async {
+    final next = !_collapsed;
+    setState(() => _collapsed = next);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_collapsedKey, next);
+    } catch (_) {
+      // It stays folded for this session either way.
+    }
+  }
 
   Future<(List<MenuItem>, List<AppUser>)> _load() async {
     final menu = await menuRepository.fetchActive(widget.session.storeId);
@@ -134,58 +174,87 @@ class _SetupChecklistState extends State<SetupChecklist> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Finish setting up',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(color: scheme.onSecondaryContainer),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${steps.length - remaining} of ${steps.length} done',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: scheme.onSecondaryContainer),
+                  // The header is the control. Collapsed, it keeps the count
+                  // and the bar — which is the part worth glancing at — and
+                  // names the next thing to do, so folding it away costs the
+                  // progress, not the plan.
+                  InkWell(
+                    onTap: _toggle,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Finish setting up',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                    color: scheme.onSecondaryContainer),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _collapsed
+                                    ? '${steps.length - remaining} of '
+                                        '${steps.length} done · next: '
+                                        '${steps.firstWhere((s) => !s.done).title}'
+                                    : '${steps.length - remaining} of '
+                                        '${steps.length} done',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                    color: scheme.onSecondaryContainer),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          _collapsed ? Icons.expand_more : Icons.expand_less,
+                          color: scheme.onSecondaryContainer,
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
                       value: (steps.length - remaining) / steps.length,
-                      backgroundColor: scheme.onSecondaryContainer
-                          .withValues(alpha: 0.15),
+                      backgroundColor:
+                          scheme.onSecondaryContainer.withValues(alpha: 0.15),
                     ),
                   ),
                   const SizedBox(height: 4),
-                  for (final step in steps)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      leading: Icon(
-                        step.done
-                            ? Icons.check_circle
-                            : Icons.radio_button_unchecked,
-                        color: scheme.onSecondaryContainer,
-                      ),
-                      title: Text(
-                        step.title,
-                        style: TextStyle(
+                  if (!_collapsed)
+                    for (final step in steps)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        leading: Icon(
+                          step.done
+                              ? Icons.check_circle
+                              : Icons.radio_button_unchecked,
                           color: scheme.onSecondaryContainer,
-                          decoration:
-                              step.done ? TextDecoration.lineThrough : null,
                         ),
-                      ),
-                      subtitle: Text(
-                        step.detail,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: scheme.onSecondaryContainer
-                              .withValues(alpha: 0.8),
+                        title: Text(
+                          step.title,
+                          style: TextStyle(
+                            color: scheme.onSecondaryContainer,
+                            decoration:
+                                step.done ? TextDecoration.lineThrough : null,
+                          ),
                         ),
+                        subtitle: Text(
+                          step.detail,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSecondaryContainer
+                                .withValues(alpha: 0.8),
+                          ),
+                        ),
+                        trailing: step.done
+                            ? null
+                            : Icon(Icons.chevron_right_rounded,
+                                color: scheme.onSecondaryContainer),
+                        onTap: step.open,
                       ),
-                      trailing: step.done
-                          ? null
-                          : Icon(Icons.chevron_right_rounded,
-                              color: scheme.onSecondaryContainer),
-                      onTap: step.open,
-                    ),
                 ],
               ),
             ),

@@ -83,7 +83,13 @@ class DemandProfile {
   bool get isEmpty => cells.isEmpty;
 
   static const List<String> weekdayNames = [
-    'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat',
+    'Sun',
   ];
 
   static String weekdayName(int weekday) => weekdayNames[weekday - 1];

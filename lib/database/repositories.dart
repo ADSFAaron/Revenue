@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+export 'connection_status.dart' show ConnectionStatus, connectionStatus;
+
 import '../models/app_user.dart';
 import '../models/audit_log.dart';
 import '../models/store.dart';

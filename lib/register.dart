@@ -10,6 +10,7 @@ import 'models/store.dart';
 import 'settings/store_settings_edit_menu.dart';
 import 'settings/store_settings_import_menu.dart';
 import 'sign_in_options.dart';
+import 'widgets/page_body.dart';
 import 'widgets/pre_auth_theme.dart';
 
 /// The first thing registration asks: are you opening a store, or joining one?
@@ -25,55 +26,58 @@ class RegisterPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return PreAuthTheme(
       child: Scaffold(
-      appBar: buildRegistrationAppBar(context),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(28, 8, 28, 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _Title('Get started'),
-              const SizedBox(height: 8),
-              const _Subtitle('Which of these are you doing?'),
-              const SizedBox(height: 32),
-              _PathCard(
-                icon: Icons.storefront_outlined,
-                title: 'Open a new store',
-                description:
-                    'You run the place. This creates the store and makes you '
-                    'its owner.',
-                onTap: () => _push(context, const OpenStoreRegistration()),
-              ),
-              const SizedBox(height: 16),
-              _PathCard(
-                icon: Icons.group_add_outlined,
-                title: 'Join an existing store',
-                description:
-                    'Somebody at the store gave you a 6-character invite code.',
-                onTap: () => _push(context, const JoinStoreRegistration()),
-              ),
-              const SizedBox(height: 32),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+        appBar: buildRegistrationAppBar(context),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(28, 8, 28, 32),
+            child: PageBody(
+              maxWidth: 480,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('Already have an account? '),
-                  TextButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const LoginPage()),
-                    ),
-                    child: const Text(
-                      'Login',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 18),
-                    ),
+                  const _Title('Get started'),
+                  const SizedBox(height: 8),
+                  const _Subtitle('Which of these are you doing?'),
+                  const SizedBox(height: 32),
+                  _PathCard(
+                    icon: Icons.storefront_outlined,
+                    title: 'Open a new store',
+                    description:
+                        'You run the place. This creates the store and makes you '
+                        'its owner.',
+                    onTap: () => _push(context, const OpenStoreRegistration()),
+                  ),
+                  const SizedBox(height: 16),
+                  _PathCard(
+                    icon: Icons.group_add_outlined,
+                    title: 'Join an existing store',
+                    description:
+                        'Somebody at the store gave you a 6-character invite code.',
+                    onTap: () => _push(context, const JoinStoreRegistration()),
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('Already have an account? '),
+                      TextButton(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const LoginPage()),
+                        ),
+                        child: const Text(
+                          'Login',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 18),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -139,12 +143,10 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
   void _discardAbandonedGoogleAccount() {
     final google = _google;
     if (google == null || _createdStoreId != null) return;
-    if (google.isNewAccount) {
-      authRepository.deleteCurrentAccount();
-    } else {
-      // One they already had. Theirs to keep; just not signed in here.
-      authRepository.signOut();
-    }
+    // Fire-and-forget from `dispose`, so it must not be able to throw: there
+    // is no call site left to catch it and an unawaited future that fails goes
+    // to the zone. `discardSignIn` swallows its own failures for exactly this.
+    authRepository.discardSignIn(google);
   }
 
   /// Undoes the Google step so a different account can be used.
@@ -153,11 +155,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
     if (google == null || _submitting) return;
     setState(() => _submitting = true);
     try {
-      if (google.isNewAccount) {
-        await authRepository.deleteCurrentAccount();
-      } else {
-        await authRepository.signOut();
-      }
+      await authRepository.discardSignIn(google);
     } finally {
       if (mounted) {
         setState(() {
@@ -172,34 +170,34 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
   Widget build(BuildContext context) {
     return PreAuthTheme(
       child: PopScope(
-      canPop: _step == 0,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && !_submitting) _back();
-      },
-      child: Scaffold(
-        appBar: buildRegistrationAppBar(
-          context,
-          onBack: _step == 0 ? null : (_submitting ? () {} : _back),
-        ),
-        body: SafeArea(
-          child: Column(
-            children: [
-              _StepDots(count: 3, current: _step),
-              Expanded(
-                child: PageView(
-                  controller: _pageController,
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: [
-                    _accountStep(),
-                    _storeStep(),
-                    _menuStep(),
-                  ],
+        canPop: _step == 0,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && !_submitting) _back();
+        },
+        child: Scaffold(
+          appBar: buildRegistrationAppBar(
+            context,
+            onBack: _step == 0 ? null : (_submitting ? () {} : _back),
+          ),
+          body: SafeArea(
+            child: Column(
+              children: [
+                _StepDots(count: 3, current: _step),
+                Expanded(
+                  child: PageView(
+                    controller: _pageController,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [
+                      _accountStep(),
+                      _storeStep(),
+                      _menuStep(),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -378,8 +376,8 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
 
   Future<void> _createStore() async {
     final storeName = _storeNameController.text.trim();
-    setState(() => _storeNameError =
-        storeName.isEmpty ? 'Enter the store name' : '');
+    setState(() =>
+        _storeNameError = storeName.isEmpty ? 'Enter the store name' : '');
     if (storeName.isNotEmpty && _google == null && !_account.validate()) {
       // Something on the first step no longer passes — send them back to it
       // rather than failing against Firebase with a message they cannot act on.
@@ -451,7 +449,8 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
         await authRepository.deleteCurrentAccount();
         if (mounted) setState(() => _google = null);
       }
-      if (mounted) showRegistrationError(context, 'Could not create the store: $e');
+      if (mounted)
+        showRegistrationError(context, 'Could not create the store: $e');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -475,7 +474,8 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
       // importer lands on the menu it just filled. An import is where setting
       // a menu up starts, not where it finishes — icons still need picking and
       // costs still need filling in.
-      navigator.push(MaterialPageRoute(builder: (_) => StoreImportMenu(storeId)));
+      navigator
+          .push(MaterialPageRoute(builder: (_) => StoreImportMenu(storeId)));
     }
   }
 }
@@ -524,30 +524,30 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
   Widget build(BuildContext context) {
     return PreAuthTheme(
       child: PopScope(
-      canPop: _step == 0,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && !_submitting) _back();
-      },
-      child: Scaffold(
-        appBar: buildRegistrationAppBar(
-          context,
-          onBack: _step == 0 ? null : (_submitting ? () {} : _back),
-        ),
-        body: SafeArea(
-          child: Column(
-            children: [
-              _StepDots(count: 2, current: _step),
-              Expanded(
-                child: PageView(
-                  controller: _pageController,
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: [_codeStep(), _accountStep()],
+        canPop: _step == 0,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && !_submitting) _back();
+        },
+        child: Scaffold(
+          appBar: buildRegistrationAppBar(
+            context,
+            onBack: _step == 0 ? null : (_submitting ? () {} : _back),
+          ),
+          body: SafeArea(
+            child: Column(
+              children: [
+                _StepDots(count: 2, current: _step),
+                Expanded(
+                  child: PageView(
+                    controller: _pageController,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [_codeStep(), _accountStep()],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -628,7 +628,7 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
       account = await authRepository.signInWithGoogle();
 
       if (await userRepository.fetch(account.uid) != null) {
-        await authRepository.signOut();
+        await authRepository.discardSignIn(account);
         if (mounted) {
           showRegistrationError(
             context,
@@ -668,7 +668,11 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
     } catch (e) {
       await _undo(account);
       if (mounted) {
-        showRegistrationError(context, 'Could not join the store: $e');
+        // Translated rather than interpolated: `$e` on a Firestore failure
+        // opens with `[cloud_firestore/permission-denied]`, which is an error
+        // code shown to somebody halfway through joining a shop.
+        showRegistrationError(
+            context, 'Could not join the store. ${describeFailure(e).message}');
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -683,11 +687,7 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
   /// it is only signed out.
   Future<void> _undo(SignInResult? account) async {
     if (account == null) return;
-    if (account.isNewAccount) {
-      await authRepository.deleteCurrentAccount();
-    } else {
-      await authRepository.signOut();
-    }
+    await authRepository.discardSignIn(account);
   }
 
   void _back() {
@@ -770,7 +770,8 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
           duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
     } catch (e) {
       if (uid != null) await authRepository.deleteCurrentAccount();
-      if (mounted) showRegistrationError(context, 'Could not join the store: $e');
+      if (mounted)
+        showRegistrationError(context, 'Could not join the store: $e');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -931,17 +932,22 @@ class _StepBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Every step of both wizards renders through here, so one cap covers all
+    // of them.
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(28, 8, 28, 32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _Title(title),
-          const SizedBox(height: 8),
-          _Subtitle(subtitle),
-          const SizedBox(height: 28),
-          ...children,
-        ],
+      child: PageBody(
+        maxWidth: 480,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Title(title),
+            const SizedBox(height: 8),
+            _Subtitle(subtitle),
+            const SizedBox(height: 28),
+            ...children,
+          ],
+        ),
       ),
     );
   }
@@ -1105,9 +1111,7 @@ class _JoiningBanner extends StatelessWidget {
                   style: TextStyle(fontSize: 12, color: Colors.grey[800]),
                 ),
                 Text(
-                  invite.storeName.isEmpty
-                      ? 'this store'
-                      : invite.storeName,
+                  invite.storeName.isEmpty ? 'this store' : invite.storeName,
                   style: const TextStyle(
                       fontSize: 18, fontWeight: FontWeight.w700),
                 ),
@@ -1133,9 +1137,8 @@ class _SignedInBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = result.displayName.isNotEmpty
-        ? result.displayName
-        : result.email;
+    final name =
+        result.displayName.isNotEmpty ? result.displayName : result.email;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1270,8 +1273,7 @@ class _PrimaryButton extends StatelessWidget {
         onPressed: busy ? null : onPressed,
         color: Colors.greenAccent,
         elevation: 0,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
         child: busy
             ? const SizedBox(
                 height: 24,
@@ -1280,8 +1282,8 @@ class _PrimaryButton extends StatelessWidget {
               )
             : Text(
                 label,
-                style: const TextStyle(
-                    fontSize: 20, fontWeight: FontWeight.w600),
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
               ),
       ),
     );

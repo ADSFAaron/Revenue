@@ -1,3 +1,4 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
@@ -17,9 +18,11 @@ enum AuthFailure {
   emailInUse,
   weakPassword,
   userDisabled,
+
   /// Email/password sign-in is switched off in the Firebase console.
   signInMethodDisabled,
   networkUnavailable,
+
   /// The account must sign in again before this operation is allowed.
   reauthenticationRequired,
 
@@ -74,6 +77,10 @@ class AuthException implements AppException {
 /// `FirebaseAuthException` types never reach them. That is what keeps the
 /// sign-in provider replaceable, and it is why the error wording lives here
 /// rather than being re-invented by each screen that calls in.
+/// Where `deleteAccount` is deployed — must match `REGION` in
+/// functions/src/config.ts, like [passkeyFunctionsRegion] does.
+const String accountFunctionsRegion = 'asia-east1';
+
 class AuthRepository {
   AuthRepository({FirebaseAuth? auth}) : _auth = auth ?? FirebaseAuth.instance;
 
@@ -158,8 +165,7 @@ class AuthRepository {
   /// and needs no client id in `index.html`, so web uses that instead.
   Future<SignInResult> signInWithGoogle() async {
     try {
-      final credential =
-          kIsWeb ? await _googlePopup() : await _googleNative();
+      final credential = kIsWeb ? await _googlePopup() : await _googleNative();
       return _describe(credential);
     } on FirebaseAuthException catch (e) {
       throw _translate(e);
@@ -238,7 +244,87 @@ class AuthRepository {
     }
   }
 
+  /// Deletes the signed-in account, and the store with it when the caller is
+  /// the owner.
+  ///
+  /// Runs on the server. Not for convenience: the rules refuse every client
+  /// delete on `users`, `stores` and `orders`, on purpose, because those are
+  /// the documents the rest of the rules trust. Going through the Admin SDK
+  /// also avoids the `requires-recent-login` re-authentication a client-side
+  /// `user.delete()` would demand.
+  ///
+  /// [storeName] is only read when the caller owns the store: the server
+  /// checks it against the real name so a mis-tap cannot take a shop with it.
+  ///
+  /// Returns whether the whole store went.
+  Future<bool> deleteAccount({String? storeName}) async {
+    try {
+      final result = await FirebaseFunctions.instanceFor(
+        region: accountFunctionsRegion,
+      ).httpsCallable('deleteAccount').call<Map<String, dynamic>>({
+        if (storeName != null) 'storeName': storeName,
+      });
+      return result.data['deletedStore'] == true;
+    } on FirebaseFunctionsException catch (e) {
+      throw AuthException(AuthFailure.unknown, _describeDeletion(e));
+    }
+  }
+
+  /// Words for a `deleteAccount` callable that came back a failure.
+  ///
+  /// The old version passed `e.message` straight through for anything that was
+  /// not `failed-precondition`, and the code that matters most there is
+  /// `internal` — which is what the Functions SDK reports for *any* error the
+  /// handler did not translate itself, and whose `message` is the literal
+  /// string `INTERNAL`. So a Firestore timeout part-way through deleting a
+  /// large store told the person the word "INTERNAL" and nothing else, on the
+  /// one screen in the app where they need to know whether their shop is still
+  /// there.
+  static String _describeDeletion(FirebaseFunctionsException e) =>
+      switch (e.code) {
+        'failed-precondition' =>
+          'The store name did not match. Nothing was deleted.',
+        'unauthenticated' => 'Your session expired. Sign in again and retry.',
+        'deadline-exceeded' ||
+        'unavailable' =>
+          'The deletion could not be finished — the connection dropped part '
+              'of the way through. Nothing else was removed; sign in again to '
+              'check and retry.',
+        'internal' =>
+          'The deletion failed part of the way through. Your account is still '
+              'here — sign in again and retry.',
+        _ => e.message ?? 'The account could not be deleted.',
+      };
+
   Future<void> signOut() => _auth.signOut();
+
+  /// Undoes a sign-in that led nowhere.
+  ///
+  /// Registration and the invite flow both sign an account in before they know
+  /// whether it can be used, and both then have to put it back. An account
+  /// this app created and left with no store is worse than no account: it can
+  /// sign in, find nothing, and it blocks the person's next attempt with
+  /// "email already in use". One they already had is theirs to keep, so that
+  /// one is only signed out.
+  ///
+  /// Best-effort throughout, which matters more than it looks. Every caller is
+  /// already on a failure path — inside a `catch`, or in `dispose` — and the
+  /// bare `signOut()` these call sites used to make could throw there: in a
+  /// `catch` it replaced the failure the person actually needed to read, and
+  /// in `dispose` it escaped as an unhandled async error with no call site
+  /// left to catch it.
+  Future<void> discardSignIn(SignInResult account) async {
+    if (account.isNewAccount) {
+      await deleteCurrentAccount();
+      return;
+    }
+    try {
+      await _auth.signOut();
+    } catch (_) {
+      // Nothing useful left to do: the caller is already reporting something
+      // else, and this is the part that does not matter.
+    }
+  }
 
   /// Removes the signed-in account. Used to undo a registration whose
   /// Firestore side failed, which would otherwise leave an account that can
@@ -286,8 +372,7 @@ class AuthRepository {
   ///
   /// Cancelling is not an error worth a red snackbar — the caller is expected
   /// to branch on [AuthFailure.cancelled] and stay quiet.
-  AuthException _translateGoogle(GoogleSignInException e) =>
-      switch (e.code) {
+  AuthException _translateGoogle(GoogleSignInException e) => switch (e.code) {
         GoogleSignInExceptionCode.canceled ||
         GoogleSignInExceptionCode.interrupted =>
           const AuthException(
@@ -298,7 +383,7 @@ class AuthRepository {
           const AuthException(
             AuthFailure.signInMethodDisabled,
             'Google sign-in is not configured for this app. Check the OAuth '
-                'client and the signing SHA-1 in the Firebase console.',
+            'client and the signing SHA-1 in the Firebase console.',
           ),
         _ => AuthException(
             AuthFailure.unknown,
@@ -312,7 +397,9 @@ class AuthRepository {
   /// `wrong-password` / `user-not-found`; both spellings are handled because
   /// which one arrives depends on the project's email-enumeration setting.
   AuthException _translate(FirebaseAuthException e) => switch (e.code) {
-        'invalid-credential' || 'wrong-password' || 'user-not-found' =>
+        'invalid-credential' ||
+        'wrong-password' ||
+        'user-not-found' =>
           const AuthException(
             AuthFailure.wrongPassword,
             'Wrong email or password.',
@@ -336,7 +423,7 @@ class AuthRepository {
         'operation-not-allowed' => const AuthException(
             AuthFailure.signInMethodDisabled,
             'Email/password sign-in is not enabled for this Firebase project. '
-                'Enable it under Authentication → Sign-in method.',
+            'Enable it under Authentication → Sign-in method.',
           ),
         'network-request-failed' => const AuthException(
             AuthFailure.networkUnavailable,
@@ -349,14 +436,16 @@ class AuthRepository {
         'account-exists-with-different-credential' => const AuthException(
             AuthFailure.credentialConflict,
             'That email already has an account created a different way. Sign '
-                'in with the original method first.',
+            'in with the original method first.',
           ),
-        'popup-closed-by-user' || 'cancelled-popup-request' =>
+        'popup-closed-by-user' ||
+        'cancelled-popup-request' =>
           const AuthException(
             AuthFailure.cancelled,
             'Google sign-in was cancelled.',
           ),
-        'invalid-custom-token' || 'custom-token-mismatch' =>
+        'invalid-custom-token' ||
+        'custom-token-mismatch' =>
           const AuthException(
             AuthFailure.unknown,
             'The passkey sign-in token was rejected. Please try again.',

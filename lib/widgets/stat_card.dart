@@ -24,64 +24,98 @@ class StatCard extends StatelessWidget {
   /// Sits to the right of the figure — the change pill, where there is one.
   final Widget? trailing;
 
-  /// Two to a row inside the pages' `Wrap(spacing: 10)` at 16pt page padding.
-  static double widthIn(BuildContext context) =>
-      MediaQuery.of(context).size.width / 2 - 30;
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    // No width of its own: [StatCardGrid] sizes it. It used to compute
+    // `MediaQuery.size.width / 2 - 30`, which is the *window*, not the space
+    // this card was handed — so in a 1400pt browser window each "half-width"
+    // tile came out 670pt across with one number floating in it, and the same
+    // card inside a dialog or a narrower column ignored its parent entirely.
     return Card(
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: SizedBox(
-          width: widthIn(context),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    StatIcon(icon: icon),
-                    const SizedBox(width: 10),
-                    Flexible(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  StatIcon(icon: icon),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      title,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Flexible(
+                    child: FittedBox(
+                      alignment: Alignment.centerRight,
                       child: Text(
-                        title,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
+                        value,
+                        style: theme.textTheme.headlineSmall,
                       ),
                     ),
+                  ),
+                  if (trailing != null) ...[
+                    const SizedBox(width: 8),
+                    trailing!,
                   ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Flexible(
-                      child: FittedBox(
-                        alignment: Alignment.centerRight,
-                        child: Text(
-                          value,
-                          style: theme.textTheme.headlineSmall,
-                        ),
-                      ),
-                    ),
-                    if (trailing != null) ...[
-                      const SizedBox(width: 8),
-                      trailing!,
-                    ],
-                  ],
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Lays [StatCard]s out against the width actually available.
+///
+/// Uses the incoming constraints rather than the window, and a maximum tile
+/// width rather than a fixed column count — the shape Flutter's large-screen
+/// guidance asks for. A phone gets two per row; a wide browser window gets
+/// four or six sensible tiles instead of two enormous ones.
+class StatCardGrid extends StatelessWidget {
+  const StatCardGrid({required this.children, super.key});
+
+  final List<Widget> children;
+
+  /// Past this a tile is mostly empty card.
+  static const double _maxTileWidth = 240;
+  static const double _spacing = 10;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final available = constraints.maxWidth;
+        final columns = (available / _maxTileWidth)
+            .ceil()
+            .clamp(2, children.length.clamp(2, 6));
+        final tile = (available - _spacing * (columns - 1)) / columns;
+        return Wrap(
+          spacing: _spacing,
+          runSpacing: _spacing,
+          children: [
+            for (final child in children) SizedBox(width: tile, child: child),
+          ],
+        );
+      },
     );
   }
 }
@@ -108,8 +142,7 @@ class StatIcon extends StatelessWidget {
         color: scheme.secondaryContainer,
         shape: BoxShape.circle,
       ),
-      child: Icon(icon,
-          color: scheme.onSecondaryContainer, size: size * 0.5),
+      child: Icon(icon, color: scheme.onSecondaryContainer, size: size * 0.5),
     );
   }
 }

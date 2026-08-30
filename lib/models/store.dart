@@ -72,7 +72,8 @@ class DeliveryPlatform {
   /// Fraction of the order total kept by the platform, e.g. 0.3 for 30%.
   final double commissionRate;
 
-  factory DeliveryPlatform.fromMap(Map<String, dynamic> map) => DeliveryPlatform(
+  factory DeliveryPlatform.fromMap(Map<String, dynamic> map) =>
+      DeliveryPlatform(
         id: map['id'] as String? ?? '',
         name: map['name'] as String? ?? '',
         commissionRate: (map['commissionRate'] as num?)?.toDouble() ?? 0,

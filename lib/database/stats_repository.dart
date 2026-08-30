@@ -82,8 +82,8 @@ class StatsRepository {
     required String fromBusinessDate,
     required String toBusinessDate,
   }) async {
-    final snap = await _rangeQuery(storeId, fromBusinessDate, toBusinessDate)
-        .get();
+    final snap =
+        await _rangeQuery(storeId, fromBusinessDate, toBusinessDate).get();
     return snap.docs.map(DailyStats.fromDoc).toList();
   }
 
@@ -165,6 +165,6 @@ class StatsRepository {
   /// The trading days either side of [businessDate], for the statistics page's
   /// back / forward arrows.
   static String shiftBusinessDate(String businessDate, int days) =>
-      formatBusinessDate(parseBusinessDate(businessDate)
-          .add(Duration(days: days)));
+      formatBusinessDate(
+          parseBusinessDate(businessDate).add(Duration(days: days)));
 }

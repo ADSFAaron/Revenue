@@ -28,8 +28,7 @@ class StatisticsWorkbook {
   final List<DailyStats> days;
 
   /// A filename that sorts and reads sensibly in a folder of other exports.
-  String get fileName =>
-      '${_slug(store.name.isEmpty ? store.id : store.name)}_'
+  String get fileName => '${_slug(store.name.isEmpty ? store.id : store.name)}_'
       '${period.fromBusinessDate}_to_${period.toBusinessDate}.xlsx';
 
   Excel build() {
@@ -169,8 +168,8 @@ class StatisticsWorkbook {
 
     for (final category in total.byCategory.values) {
       sheet.appendRow([
-        TextCellValue(store.categoryName(category.categoryId) ??
-            category.categoryId),
+        TextCellValue(
+            store.categoryName(category.categoryId) ?? category.categoryId),
         IntCellValue(category.qty),
         IntCellValue(category.revenue),
         IntCellValue(category.cost),
@@ -216,7 +215,13 @@ class StatisticsWorkbook {
       ];
 
   static const List<String> _weekdayNames = [
-    'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun',
+    'Mon',
+    'Tue',
+    'Wed',
+    'Thu',
+    'Fri',
+    'Sat',
+    'Sun',
   ];
 
   /// Strips what a file system will not take, so the export cannot fail on a

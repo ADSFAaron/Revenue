@@ -11,7 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// indistinguishable from the write having worked.
 void main() {
   FirebaseException firestore(String code, {String? message}) =>
-      FirebaseException(plugin: 'cloud_firestore', code: code, message: message);
+      FirebaseException(
+          plugin: 'cloud_firestore', code: code, message: message);
 
   group('translating Firestore failures', () {
     test('a refused write is named as permission, not as an outage', () {

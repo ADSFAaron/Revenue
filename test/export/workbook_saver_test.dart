@@ -30,7 +30,8 @@ void main() {
     final excel = Excel.createExcel();
     excel['Sheet1'].appendRow([TextCellValue('hello')]);
 
-    final outcome = await saveWorkbook(excel: excel, fileName: 'saver_test.xlsx');
+    final outcome =
+        await saveWorkbook(excel: excel, fileName: 'saver_test.xlsx');
 
     expect(outcome.downloaded, isFalse);
     expect(outcome.path, endsWith('saver_test.xlsx'));

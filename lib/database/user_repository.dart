@@ -18,7 +18,8 @@ class UserRepository {
   /// `users/{uid}`, which is this class's business; the uid itself is not.
   final AuthRepository _auth;
 
-  CollectionReference<Map<String, dynamic>> get _users => _db.collection('users');
+  CollectionReference<Map<String, dynamic>> get _users =>
+      _db.collection('users');
 
   Future<AppUser?> fetch(String uid) async {
     final doc = await _users.doc(uid).get();

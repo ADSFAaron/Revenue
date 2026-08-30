@@ -13,7 +13,7 @@
 		<key>CFBundleInfoDictionaryVersion</key>
 		<string>6.0</string>
 		<key>CFBundleName</key>
-	<string>Revenue</string>
+		<string>Revenue</string>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
@@ -50,8 +50,8 @@
 		<key>NSCameraUsageDescription</key>
 		<string>Revenue uses the camera to photograph your menu so its dishes and prices can be read in.</string>
 		<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
-</dict>
+		<true/>
+		<key>UIApplicationSupportsIndirectInputEvents</key>
+		<true/>
+	</dict>
 </plist>

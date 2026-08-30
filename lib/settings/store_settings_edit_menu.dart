@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_iconpicker/Models/configuration.dart';
-import 'package:flutter_iconpicker/flutter_iconpicker.dart';
 
 import '../database/repositories.dart';
 import '../models/menu_item.dart';
 import '../models/store.dart';
+import '../widgets/dish_icons.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
 import 'store_categories.dart';
 import 'store_settings_import_menu.dart';
+import '../widgets/page_body.dart';
+
+/// The two occasional actions that moved out of the app bar and into a menu.
+enum _MenuAction { categories, toggleRetired }
 
 class StoreEditMenu extends StatefulWidget {
   final String storeID;
@@ -113,23 +116,50 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Edit Menu'),
+        // One icon out front and the rest behind a menu with words on it.
+        //
+        // Three bare glyphs in an app bar is three things to guess at, and a
+        // tooltip only helps somebody who already thought to long-press. The
+        // one that earns its place is photographing a menu — it is the reason
+        // most people open this screen at all, and a camera is the one glyph
+        // here nobody has to be taught. Arranging categories and un-hiding a
+        // retired dish are occasional, and occasional actions are better
+        // spelled out than abbreviated.
         actions: [
           IconButton(
             tooltip: 'Import from a photo',
             icon: const Icon(Icons.document_scanner_outlined),
             onPressed: _importFromPhoto,
           ),
-          IconButton(
-            tooltip: 'Menu categories',
-            icon: const Icon(Icons.category_outlined),
-            onPressed: _openCategories,
-          ),
-          IconButton(
-            tooltip: _showRetired ? 'Hide retired dishes' : 'Show retired dishes',
-            icon: Icon(_showRetired
-                ? Icons.visibility_off_outlined
-                : Icons.visibility_outlined),
-            onPressed: () => setState(() => _showRetired = !_showRetired),
+          PopupMenuButton<_MenuAction>(
+            tooltip: 'More',
+            onSelected: (action) => switch (action) {
+              _MenuAction.categories => _openCategories(),
+              _MenuAction.toggleRetired =>
+                setState(() => _showRetired = !_showRetired),
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: _MenuAction.categories,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.category_outlined),
+                  title: Text('Menu categories'),
+                ),
+              ),
+              PopupMenuItem(
+                value: _MenuAction.toggleRetired,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(_showRetired
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined),
+                  title: Text(_showRetired
+                      ? 'Hide retired dishes'
+                      : 'Show retired dishes'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -156,8 +186,7 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
 
           // Counted over the active menu whatever the filters are showing:
           // this is a statement about the shop, not about the current view.
-          final uncosted =
-              all.where((i) => i.isActive && i.cost <= 0).toList();
+          final uncosted = all.where((i) => i.isActive && i.cost <= 0).toList();
           if (_onlyUncosted) {
             visible = visible.where((i) => i.cost <= 0).toList();
           }
@@ -197,26 +226,28 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
           // from a subset back over the whole menu, so while a filter is on
           // the list is a plain one.
           final filtered = _query.isNotEmpty || _onlyUncosted;
-          final list = filtered
-              ? ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 0, 88),
-                  itemBuilder: (context, index) =>
-                      _buildMenuTile(visible[index]),
-                  itemCount: visible.length,
-                )
-              : ReorderableListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 0, 88),
-                  itemBuilder: (context, index) =>
-                      _buildMenuTile(visible[index]),
-                  itemCount: visible.length,
-                  // onReorderItem hands back an index already adjusted for the
-                  // removal, unlike the deprecated onReorder.
-                  onReorderItem: (oldIndex, newIndex) {
-                    final reordered = [...visible];
-                    reordered.insert(newIndex, reordered.removeAt(oldIndex));
-                    menuRepository.reorder(widget.storeID, reordered);
-                  },
-                );
+          final list = ReadingWidth(
+            builder: (context, insets) => filtered
+                ? ListView.builder(
+                    padding: insets + const EdgeInsets.fromLTRB(16, 8, 0, 88),
+                    itemBuilder: (context, index) =>
+                        _buildMenuTile(visible[index]),
+                    itemCount: visible.length,
+                  )
+                : ReorderableListView.builder(
+                    padding: insets + const EdgeInsets.fromLTRB(16, 8, 0, 88),
+                    itemBuilder: (context, index) =>
+                        _buildMenuTile(visible[index]),
+                    itemCount: visible.length,
+                    // onReorderItem hands back an index already adjusted for the
+                    // removal, unlike the deprecated onReorder.
+                    onReorderItem: (oldIndex, newIndex) {
+                      final reordered = [...visible];
+                      reordered.insert(newIndex, reordered.removeAt(oldIndex));
+                      menuRepository.reorder(widget.storeID, reordered);
+                    },
+                  ),
+          );
 
           return Column(
             children: [
@@ -272,7 +303,9 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
   Widget _buildUncostedBanner(int count) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: _onlyUncosted ? scheme.secondaryContainer : scheme.surfaceContainerHighest,
+      color: _onlyUncosted
+          ? scheme.secondaryContainer
+          : scheme.surfaceContainerHighest,
       child: InkWell(
         onTap: () => setState(() => _onlyUncosted = !_onlyUncosted),
         child: Padding(
@@ -332,7 +365,7 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
         spacing: 12,
         children: [
           Icon(Icons.drag_indicator,
-              color: Theme.of(context).colorScheme.outlineVariant),
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
           Icon(item.iconData),
         ],
       ),
@@ -428,19 +461,9 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
         (_categories.isNotEmpty ? _categories.first.id : null);
 
     Future<void> pickIcon(StateSetter setStateDialog) async {
-      final icon = await showIconPicker(
-        context,
-        configuration: SinglePickerConfiguration(
-          iconPackModes: const [IconPack.material],
-          searchComparator: (String search, IconPickerIcon icon) =>
-              search
-                  .toLowerCase()
-                  .contains(icon.name.replaceAll('_', ' ').toLowerCase()) ||
-              icon.name.toLowerCase().contains(search.toLowerCase()),
-        ),
-      );
-      if (icon != null) {
-        setStateDialog(() => iconCodePoint = icon.data.codePoint.toString());
+      final choice = await pickDishIcon(context, selected: iconCodePoint);
+      if (choice != null) {
+        setStateDialog(() => iconCodePoint = choice.codePoint);
       }
     }
 
@@ -454,23 +477,42 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
               spacing: 8,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text('Dish Icon'),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: Icon(
-                        IconData(int.tryParse(iconCodePoint) ?? 0xe56c,
-                            fontFamily: 'MaterialIcons'),
-                        key: ValueKey(iconCodePoint),
-                      ),
+                // The whole row opens the picker, not just the button on the
+                // end of it. It reads as one block and it was drawn as one
+                // block, but only the button answered a tap — so the obvious
+                // place to press, the icon itself, did nothing.
+                InkWell(
+                  onTap: () => pickIcon(setStateDialog),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                    child: Row(
+                      children: [
+                        const Text('Dish Icon'),
+                        const Spacer(),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: Icon(
+                            resolveDishIcon(iconCodePoint).icon,
+                            key: ValueKey(iconCodePoint),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          resolveDishIcon(iconCodePoint).name,
+                          style:
+                              Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.chevron_right, size: 20),
+                      ],
                     ),
-                    ElevatedButton(
-                      onPressed: () => pickIcon(setStateDialog),
-                      child: const Icon(Icons.edit),
-                    ),
-                  ],
+                  ),
                 ),
                 TextField(
                   autofocus: true,
@@ -479,8 +521,9 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
                   textInputAction: TextInputAction.next,
                 ),
                 TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Price (NTD)',
+                  decoration: InputDecoration(
+                    labelText:
+                        'Price (${_store?.currency ?? kDefaultCurrency})',
                   ),
                   controller: priceController,
                   keyboardType: TextInputType.number,
@@ -490,8 +533,9 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
                   textInputAction: TextInputAction.next,
                 ),
                 TextField(
-                  decoration: const InputDecoration(
-                    labelText: 'Ingredient cost (NTD)',
+                  decoration: InputDecoration(
+                    labelText: 'Ingredient cost '
+                        '(${_store?.currency ?? kDefaultCurrency})',
                     helperText: 'Optional — unlocks margin and menu analysis',
                     helperMaxLines: 2,
                   ),

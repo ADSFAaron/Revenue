@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +13,7 @@ import '../models/menu_item.dart';
 import '../models/store.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
+import '../widgets/page_body.dart';
 
 /// Photograph a menu, correct what came back, then write it.
 ///
@@ -59,6 +62,21 @@ class _StoreImportMenuState extends State<StoreImportMenu> {
 
   String? _error;
 
+  /// The technical half of [_error], shown only if somebody opens "Details".
+  String? _errorDetails;
+
+  /// The live recognition, kept so it can be let go of.
+  ///
+  /// Cancelling this does not stop the function — a callable has no way to be
+  /// recalled, and the work is already paid for. What it stops is this screen
+  /// waiting on it, which is the part that was trapping people.
+  StreamSubscription<MenuImportEvent>? _reading;
+
+  /// The checklist, oldest first. One entry per thing that was attempted.
+  final List<_Step> _steps = [];
+
+  DateTime? _readingSince;
+
   @override
   void initState() {
     super.initState();
@@ -93,6 +111,12 @@ class _StoreImportMenuState extends State<StoreImportMenu> {
   }
 
   @override
+  void dispose() {
+    _reading?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -100,12 +124,28 @@ class _StoreImportMenuState extends State<StoreImportMenu> {
       ),
       body: switch (_phase) {
         _Phase.capture => _captureBody(),
-        _Phase.reading => const _Busy('Reading the menu…\nThis takes a moment.'),
+        _Phase.reading => _Reading(
+            steps: _steps,
+            startedAt: _readingSince ?? DateTime.now(),
+          ),
         _Phase.review => _reviewBody(),
         _Phase.saving => const _Busy('Adding dishes…'),
       },
       bottomNavigationBar: switch (_phase) {
         _Phase.capture => _captureActions(),
+        // A way off the waiting screen that is not the back button. Backing out
+        // of the route was the only exit before, and it took the photographs
+        // with it — so the person who had already waited two minutes started
+        // again from an empty screen.
+        _Phase.reading => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: OutlinedButton(
+                onPressed: _cancelReading,
+                child: const Text('Stop waiting'),
+              ),
+            ),
+          ),
         _Phase.review => _reviewActions(),
         _ => null,
       },
@@ -117,56 +157,58 @@ class _StoreImportMenuState extends State<StoreImportMenu> {
   // -------------------------------------------------------------------------
 
   Widget _captureBody() {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      children: [
-        const Text(
-          'Photograph the menu. Fill the frame with it, keep it flat, and take '
-          'a second photo if it does not all fit — a folded card has two '
-          'sides.',
-        ),
-        const SizedBox(height: 16),
-        if (_error != null) _ErrorNote(_error!),
-        if (_shots.isEmpty)
-          const _EmptyShots()
-        else
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
+    return ReadingWidth(
+      builder: (context, insets) => ListView(
+        padding: insets + const EdgeInsets.fromLTRB(16, 16, 16, 8),
+        children: [
+          const Text(
+            'Photograph the menu. Fill the frame with it, keep it flat, and take '
+            'a second photo if it does not all fit — a folded card has two '
+            'sides.',
+          ),
+          const SizedBox(height: 16),
+          if (_error != null) _ErrorNote(_error!, _errorDetails),
+          if (_shots.isEmpty)
+            const _EmptyShots()
+          else
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                for (var i = 0; i < _shots.length; i++) _thumbnail(i),
+              ],
+            ),
+          const SizedBox(height: 16),
+          Row(
             children: [
-              for (var i = 0; i < _shots.length; i++) _thumbnail(i),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _shots.length >= MenuImportRepository.maxPhotos
+                      ? null
+                      : _takePhoto,
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  label: const Text('Take photo'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _shots.length >= MenuImportRepository.maxPhotos
+                      ? null
+                      : () => _addShot(ImageSource.gallery),
+                  icon: const Icon(Icons.image_outlined),
+                  label: const Text('Choose image'),
+                ),
+              ),
             ],
           ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _shots.length >= MenuImportRepository.maxPhotos
-                    ? null
-                    : _takePhoto,
-                icon: const Icon(Icons.photo_camera_outlined),
-                label: const Text('Take photo'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _shots.length >= MenuImportRepository.maxPhotos
-                    ? null
-                    : () => _addShot(ImageSource.gallery),
-                icon: const Icon(Icons.image_outlined),
-                label: const Text('Choose image'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Up to ${MenuImportRepository.maxPhotos} photos per menu.',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
+          const SizedBox(height: 8),
+          Text(
+            'Up to ${MenuImportRepository.maxPhotos} photos per menu.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
     );
   }
 
@@ -294,46 +336,137 @@ class _StoreImportMenuState extends State<StoreImportMenu> {
     return 'image/jpeg';
   }
 
-  Future<void> _recognise() async {
+  /// Starts the recognition and follows it, step by step.
+  ///
+  /// Listened to rather than awaited: the function reports what it is doing
+  /// while it does it, and those frames are the whole reason this screen no
+  /// longer looks hung. The draft arrives as the last event.
+  void _recognise() {
     setState(() {
       _phase = _Phase.reading;
       _error = null;
+      _errorDetails = null;
+      _steps.clear();
+      _readingSince = DateTime.now();
     });
 
-    try {
-      final draft = await menuImportRepository.recognise([
-        for (final shot in _shots)
-          MenuImportPhoto(bytes: shot.bytes, mimeType: shot.mimeType),
-      ]);
-      if (!mounted) return;
-
-      if (draft.isEmpty) {
-        setState(() {
-          _phase = _Phase.capture;
-          _error = 'No dishes were found in that photo. Try again with the '
-              'menu filling more of the frame.';
-        });
-        return;
-      }
-
-      setState(() {
-        _items = draft.items;
-        _draftCategories = draft.categories;
-        _phase = _Phase.review;
-      });
-    } catch (e) {
+    _reading?.cancel();
+    _reading = menuImportRepository.recognise([
+      for (final shot in _shots)
+        MenuImportPhoto(bytes: shot.bytes, mimeType: shot.mimeType),
+    ]).listen(
+      (event) {
+        if (!mounted) return;
+        switch (event) {
+          case MenuImportProgress():
+            setState(() => _record(event));
+          case MenuImportDrafted(:final draft):
+            setState(() => _settle(_StepState.done));
+            _accept(draft);
+        }
+      },
       // Catch-all rather than `on MenuImportException`. Anything the repository
       // did not translate — a malformed payload, a plugin that threw, an
       // `Error` rather than an `Exception` — used to leave this screen on the
       // reading spinner with no way off it but the back button, and the photos
       // already taken lost with it.
-      if (mounted) {
+      onError: (Object e) {
+        if (mounted) setState(() => _fail(e));
+      },
+      // A stream that ends without a draft should not be possible. If it
+      // happens, ending on the capture screen with a sentence beats ending on
+      // a spinner that will never stop.
+      // A stream that ends without a draft is a connection that went away
+      // rather than a reader that gave up: the server keeps working and its
+      // answer has nowhere to land. It happens when the phone loses the
+      // network, and when the app is sent to the background long enough for
+      // Android to close its sockets — both of which happened during testing,
+      // and both of which read as "it just stopped" unless said out loud.
+      onDone: () {
+        if (!mounted || _phase != _Phase.reading) return;
         setState(() {
+          _settle(_StepState.failed, detail: 'connection lost');
           _phase = _Phase.capture;
-          _error = describeFailure(e).message;
+          _error = 'Lost the connection to the menu reader before it answered '
+              '— the phone dropped the network, or the app was in the '
+              'background too long. The photos are still here.';
+          _errorDetails = null;
         });
-      }
+      },
+      cancelOnError: true,
+    );
+  }
+
+  /// Folds one progress frame into the checklist.
+  ///
+  /// The mapping is the whole point of carrying [MenuImportStage] as data. A
+  /// frame either opens a new step, ticks the open one off, or marks it failed
+  /// — and "failed, and here is the next one starting" is the state that makes
+  /// a two-minute wait legible instead of looking like a hang.
+  void _record(MenuImportProgress progress) {
+    switch (progress.stage) {
+      case MenuImportStage.sending:
+      case MenuImportStage.reading:
+      case MenuImportStage.checking:
+        _settle(_StepState.done);
+        _steps.add(_Step(
+          label: progress.message,
+          detail: progress.detail,
+          startedAt: DateTime.now(),
+        ));
+      case MenuImportStage.received:
+        _settle(_StepState.done, detail: progress.detail);
+      case MenuImportStage.busy:
+        _settle(_StepState.failed, detail: progress.detail);
     }
+  }
+
+  /// Closes whichever step is still running, if any.
+  void _settle(_StepState state, {String? detail}) {
+    if (_steps.isEmpty) return;
+    final last = _steps.last;
+    if (last.state != _StepState.running) return;
+    _steps[_steps.length - 1] = last.settled(state, detail: detail);
+  }
+
+  void _accept(MenuImportDraft draft) {
+    if (draft.isEmpty) {
+      setState(() {
+        _phase = _Phase.capture;
+        _error = 'No dishes were found in that photo. Try again with the '
+            'menu filling more of the frame.';
+        _errorDetails = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _items = draft.items;
+      _draftCategories = draft.categories;
+      _phase = _Phase.review;
+    });
+  }
+
+  void _cancelReading() {
+    _reading?.cancel();
+    _reading = null;
+    setState(() {
+      _settle(_StepState.failed, detail: 'stopped');
+      _phase = _Phase.capture;
+      _error = 'Stopped waiting. The photos are still here — try again when '
+          'you are ready.';
+      _errorDetails = null;
+    });
+  }
+
+  /// Records a failure in both halves: the sentence and the technical detail.
+  ///
+  /// Call inside a `setState`. Only [MenuImportException] carries detail; a
+  /// `TypeError` has nothing worth putting behind a disclosure triangle.
+  void _fail(Object e, {_Phase phase = _Phase.capture}) {
+    _phase = phase;
+    _error = describeFailure(e).message;
+    _errorDetails = e is MenuImportException ? e.details : null;
   }
 
   // -------------------------------------------------------------------------
@@ -344,38 +477,41 @@ class _StoreImportMenuState extends State<StoreImportMenu> {
     final flagged = _items.where((i) => i.needsReview).toList();
     final clean = _items.where((i) => !i.needsReview).toList();
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 16),
-      children: [
-        // A failed save leaves the screen here, so the reason has to be
-        // readable here too — the snack bar that carried it has faded by the
-        // time somebody has worked out what to do about it.
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: _ErrorNote(_error!),
-          ),
-        if (flagged.isNotEmpty) ...[
-          _SectionHeader(
-            flagged.length == 1
-                ? '1 dish needs checking'
-                : '${flagged.length} dishes need checking',
-            subtitle: 'Either the photo was unclear or the price looks wrong. '
-                'Tap a row to correct it.',
-            colour: Theme.of(context).colorScheme.error,
-          ),
-          for (final item in flagged) _row(item),
+    return ReadingWidth(
+      builder: (context, insets) => ListView(
+        padding: insets + const EdgeInsets.only(bottom: 16),
+        children: [
+          // A failed save leaves the screen here, so the reason has to be
+          // readable here too — the snack bar that carried it has faded by the
+          // time somebody has worked out what to do about it.
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: _ErrorNote(_error!, _errorDetails),
+            ),
+          if (flagged.isNotEmpty) ...[
+            _SectionHeader(
+              flagged.length == 1
+                  ? '1 dish needs checking'
+                  : '${flagged.length} dishes need checking',
+              subtitle:
+                  'Either the photo was unclear or the price looks wrong. '
+                  'Tap a row to correct it.',
+              colour: Theme.of(context).colorScheme.error,
+            ),
+            for (final item in flagged) _row(item),
+          ],
+          if (clean.isNotEmpty)
+            ExpansionTile(
+              initiallyExpanded: flagged.isEmpty,
+              title: Text(clean.length == 1
+                  ? '1 dish read cleanly'
+                  : '${clean.length} dishes read cleanly'),
+              subtitle: const Text('Worth a glance before adding them.'),
+              children: [for (final item in clean) _row(item)],
+            ),
         ],
-        if (clean.isNotEmpty)
-          ExpansionTile(
-            initiallyExpanded: flagged.isEmpty,
-            title: Text(clean.length == 1
-                ? '1 dish read cleanly'
-                : '${clean.length} dishes read cleanly'),
-            subtitle: const Text('Worth a glance before adding them.'),
-            children: [for (final item in clean) _row(item)],
-          ),
-      ],
+      ),
     );
   }
 
@@ -387,7 +523,8 @@ class _StoreImportMenuState extends State<StoreImportMenu> {
 
     return ListTile(
       leading: item.needsReview
-          ? Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error)
+          ? Icon(Icons.error_outline,
+              color: Theme.of(context).colorScheme.error)
           : const Icon(Icons.restaurant),
       title: Text(item.displayName),
       subtitle: Column(
@@ -515,7 +652,9 @@ class _StoreImportMenuState extends State<StoreImportMenu> {
                   textInputAction: TextInputAction.next,
                 ),
                 TextField(
-                  decoration: const InputDecoration(labelText: 'Price (NTD)'),
+                  decoration: InputDecoration(
+                      labelText:
+                          'Price (${_store?.currency ?? kDefaultCurrency})'),
                   controller: priceController,
                   keyboardType: TextInputType.number,
                   inputFormatters: <TextInputFormatter>[
@@ -608,10 +747,7 @@ class _StoreImportMenuState extends State<StoreImportMenu> {
       // far is still in `_items`, and losing that to a dropped connection would
       // mean checking eighty rows twice.
       if (!mounted) return;
-      setState(() {
-        _phase = _Phase.review;
-        _error = describeFailure(e).message;
-      });
+      setState(() => _fail(e, phase: _Phase.review));
       showFailure(context, e);
     }
   }
@@ -645,27 +781,254 @@ class _EmptyShots extends StatelessWidget {
         height: 160,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          border: Border.all(
-              color: Theme.of(context).colorScheme.outlineVariant),
+          border: Border.all(color: Theme.of(context).colorScheme.outline),
           borderRadius: BorderRadius.circular(8),
         ),
         child: const Text('No photos yet'),
       );
 }
 
+/// A failure, with the technical account folded away underneath it.
+///
+/// Two audiences, one note. The sentence is for whoever is standing at the
+/// till and needs to know whether to try again; the disclosure holds the model
+/// name, the status and how long it took, which is what makes a bug report
+/// something other than "it didn't work". Folded rather than absent because a
+/// shop owner reading `HTTP 503 UNAVAILABLE` learns nothing and worries more.
 class _ErrorNote extends StatelessWidget {
-  const _ErrorNote(this.message);
+  const _ErrorNote(this.message, [this.details]);
 
   final String message;
+  final String? details;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Text(
-          message,
-          style: TextStyle(color: Theme.of(context).colorScheme.error),
-        ),
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final detail = details;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(message, style: TextStyle(color: scheme.error)),
+          if (detail != null)
+            Theme(
+              // The divider a Material 3 ExpansionTile draws above and below
+              // itself is meant for a list. Inside a paragraph it reads as a
+              // section break that is not there.
+              data:
+                  Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                dense: true,
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(bottom: 8),
+                expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                title: Text(
+                  'Details',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+                children: [
+                  SelectableText(
+                    detail,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontFamily: 'monospace',
+                        ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Where one step of the import got to.
+enum _StepState { running, done, failed }
+
+/// One line of the checklist.
+class _Step {
+  const _Step({
+    required this.label,
+    required this.startedAt,
+    this.detail,
+    this.state = _StepState.running,
+    this.finishedAt,
+  });
+
+  final String label;
+  final String? detail;
+  final _StepState state;
+  final DateTime startedAt;
+  final DateTime? finishedAt;
+
+  Duration get took => (finishedAt ?? DateTime.now()).difference(startedAt);
+
+  _Step settled(_StepState state, {String? detail}) => _Step(
+        label: label,
+        detail: detail ?? this.detail,
+        state: state,
+        startedAt: startedAt,
+        finishedAt: DateTime.now(),
       );
+}
+
+/// The waiting screen, as a checklist that is visibly moving.
+///
+/// The first version of this printed the messages as they arrived, and the
+/// complaint it earned was exactly right: a list of sentences is not evidence
+/// that anything is running. It cannot say which step is current, it cannot
+/// say whether a step *worked*, and text that only ever grows looks the same
+/// whether it is being generated or was written out in advance.
+///
+/// So each step now carries its own state and its own clock. The open one has
+/// a spinner and a second count that ticks; the closed ones carry a tick or a
+/// cross and the time they took. "gemini-3.7-flash ✗ 61.0s · HTTP 503" above
+/// "gemini-3.6-flash ⟳ 0:12" is a machine visibly working through its options,
+/// which is the true thing the old screen was failing to say.
+class _Reading extends StatefulWidget {
+  const _Reading({required this.steps, required this.startedAt});
+
+  final List<_Step> steps;
+  final DateTime startedAt;
+
+  @override
+  State<_Reading> createState() => _ReadingState();
+}
+
+class _ReadingState extends State<_Reading> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    // One second, because the only thing this drives is a seconds counter.
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  static String _clock(Duration elapsed) {
+    final seconds = elapsed.inSeconds;
+    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final open = widget.steps.where((s) => s.state == _StepState.running);
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: PageBody(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Column(
+                  children: [
+                    Text(
+                      open.isEmpty ? 'Reading the menu' : open.last.label,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _clock(DateTime.now().difference(widget.startedAt)),
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              for (final step in widget.steps) _line(step),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _line(_Step step) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    final (Widget mark, Color colour) = switch (step.state) {
+      _StepState.running => (
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: scheme.primary,
+            ),
+          ),
+          scheme.onSurface,
+        ),
+      _StepState.done => (
+          Icon(Icons.check, size: 18, color: scheme.primary),
+          scheme.onSurfaceVariant,
+        ),
+      _StepState.failed => (
+          Icon(Icons.close, size: 18, color: scheme.error),
+          scheme.error,
+        ),
+    };
+
+    // A running step counts up; a finished one states what it cost. Both are
+    // the same number, which is what makes the transition read as one thing
+    // happening rather than two.
+    final took = step.state == _StepState.running
+        ? _clock(step.took)
+        : '${(step.took.inMilliseconds / 1000).toStringAsFixed(1)}s';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 20, height: 20, child: Center(child: mark)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(step.label,
+                    style: theme.textTheme.bodyMedium?.copyWith(color: colour)),
+                if (step.detail != null)
+                  Text(
+                    step.detail!,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            took,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _SectionHeader extends StatelessWidget {

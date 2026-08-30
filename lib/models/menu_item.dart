@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../widgets/dish_icons.dart';
+
 /// `stores/{storeId}/menuItems/{itemId}`.
 ///
 /// The id is a stable Firestore id, not the dish name — renaming a dish must
@@ -19,14 +21,28 @@ class MenuItem {
     this.updatedAt,
   });
 
-  /// Icons.restaurant — what a dish gets before anyone picks one.
-  static const String defaultIconCodePoint = '0xe56c';
+  /// `Icons.restaurant`, as decimal — what a dish gets before anyone picks one.
+  ///
+  /// It has to be a literal, because it is a default parameter value and those
+  /// must be constant, and a literal is exactly what went wrong before: this
+  /// used to read `'0xe56c'`, which *was* `Icons.restaurant` when it was typed
+  /// and is `Icons.security_update_warning` today. Material's code points moved
+  /// underneath it and every dish on every menu quietly turned into a phone
+  /// with a warning triangle on it.
+  ///
+  /// So the literal stays and a test holds it to account —
+  /// `test/models/dish_icon_test.dart` fails the moment this stops being
+  /// `Icons.restaurant.codePoint`. The next drift is a red test rather than a
+  /// menu full of the wrong picture.
+  static const String defaultIconCodePoint = '58674';
 
   final String id;
   final String name;
   final String? categoryId;
 
-  /// MaterialIcons code point as a string, e.g. '0xe56c'.
+  /// A Material code point as a decimal string. Only the ones in
+  /// [kDishIcons] resolve to a glyph; anything else falls back — see
+  /// [iconData].
   final String icon;
   final int sortOrder;
   final int price;
@@ -68,9 +84,16 @@ class MenuItem {
         'isActive': isActive,
       };
 
-  IconData get iconData =>
-      IconData(int.tryParse(icon) ?? int.parse(defaultIconCodePoint),
-          fontFamily: 'MaterialIcons');
+  /// The glyph this dish wears.
+  ///
+  /// Resolved through [resolveDishIcon] rather than built from the stored
+  /// number. Constructing `IconData(n)` from a database value looks equivalent
+  /// and is not: `flutter build --release` tree-shakes the icon font down to
+  /// the code points it can see in `const IconData` expressions, so a number
+  /// that arrives at runtime has no guarantee of a glyph behind it. Going
+  /// through the curated list means every icon a dish can have is one the
+  /// build already knows to keep.
+  IconData get iconData => resolveDishIcon(icon).icon;
 
   /// Gross margin as a fraction of price, or null when the cost is unknown.
   double? get marginRate {

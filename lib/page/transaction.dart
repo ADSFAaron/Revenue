@@ -10,6 +10,7 @@ import '../settings/store_setting_history_order_detail.dart';
 import '../settings/store_settings_history_order.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
+import '../widgets/page_body.dart';
 import '../widgets/setup_checklist.dart';
 import '../widgets/stat_card.dart';
 import 'addorder.dart';
@@ -84,52 +85,75 @@ class _TransactionPageState extends State<TransactionPage> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              _buildGreeting(session),
-              const SizedBox(height: 20),
-              // Disappears on its own once the store is set up.
-              SetupChecklist(session: session),
-              // Reads the day's rollup document, not the orders themselves.
-              StreamBuilder<DailyStats>(
-                stream:
-                    statsRepository.watchDay(session.storeId, businessDate),
-                builder: (context, snapshot) {
-                  final stats =
-                      snapshot.data ?? DailyStats(businessDate: businessDate);
-                  return Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: <Widget>[
-                      StatCard(
-                        title: 'Revenue',
-                        icon: Icons.savings_rounded,
-                        value: money.format(stats.revenue),
-                      ),
-                      StatCard(
-                        title: 'Orders',
-                        icon: Icons.grading_rounded,
-                        value: counts.format(stats.orderCount),
-                      ),
-                      StatCard(
-                        title: 'Guests',
-                        icon: Icons.groups_rounded,
-                        value: counts.format(stats.guestCount),
-                      ),
-                      StatCard(
-                        title: 'Per order',
-                        icon: Icons.receipt_long_rounded,
-                        value:
-                            money.format(stats.averageOrderValue.round()),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-              _buildLastTransactions(session),
-            ],
+          child: PageBody(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _buildGreeting(session),
+                const SizedBox(height: 20),
+                // Disappears on its own once the store is set up.
+                SetupChecklist(session: session),
+                // Reads the day's rollup document, not the orders themselves.
+                StreamBuilder<DailyStats>(
+                  stream:
+                      statsRepository.watchDay(session.storeId, businessDate),
+                  builder: (context, snapshot) {
+                    // A shop that has sold nothing today is a real zero, and
+                    // the repository already sends it as one: `watchDay` maps
+                    // a missing rollup document to an empty [DailyStats].
+                    //
+                    // A day that could not be *read* is not a zero, and
+                    // `?? DailyStats(...)` said it was — a refused query, an
+                    // expired session or a cold start with no cache all put
+                    // "Revenue $0" on the first screen of the app, indis-
+                    // tinguishable from a genuinely quiet morning. That is the
+                    // one failure here that is worse than an error message,
+                    // because nothing about it looks like a failure.
+                    //
+                    // An em dash is what [ChangeBadge] already uses for a
+                    // figure it does not have, and the note underneath says
+                    // why there isn't one.
+                    final stats = snapshot.data;
+                    String figure(String Function(DailyStats) of) =>
+                        stats == null ? '—' : of(stats);
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        StatCardGrid(
+                          children: <Widget>[
+                            StatCard(
+                              title: 'Revenue',
+                              icon: Icons.savings_rounded,
+                              value: figure((s) => money.format(s.revenue)),
+                            ),
+                            StatCard(
+                              title: 'Orders',
+                              icon: Icons.grading_rounded,
+                              value: figure((s) => counts.format(s.orderCount)),
+                            ),
+                            StatCard(
+                              title: 'Guests',
+                              icon: Icons.groups_rounded,
+                              value: figure((s) => counts.format(s.guestCount)),
+                            ),
+                            StatCard(
+                              title: 'Per order',
+                              icon: Icons.receipt_long_rounded,
+                              value: figure((s) =>
+                                  money.format(s.averageOrderValue.round())),
+                            ),
+                          ],
+                        ),
+                        if (snapshot.hasError) InlineError(snapshot.error!),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+                _buildLastTransactions(session),
+              ],
+            ),
           ),
         ),
       ),
@@ -182,8 +206,7 @@ class _TransactionPageState extends State<TransactionPage> {
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          StoreHistoryOrder(session.storeId),
+                      builder: (context) => StoreHistoryOrder(session.storeId),
                     ),
                   ),
                   child: const Text('View All'),
@@ -227,8 +250,8 @@ class _TransactionPageState extends State<TransactionPage> {
                       // View All, and were not.
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => StoreHistoryOrderDetail(
-                              session.storeId, order),
+                          builder: (_) =>
+                              StoreHistoryOrderDetail(session.storeId, order),
                         ),
                       ),
                       leading: StatIcon(
@@ -237,8 +260,8 @@ class _TransactionPageState extends State<TransactionPage> {
                             : order.channel.icon,
                         size: 40,
                       ),
-                      title: Text('Order #${order.orderNo}',
-                          style: strikethrough),
+                      title:
+                          Text('Order #${order.orderNo}', style: strikethrough),
                       subtitle: Text(
                         '${DateFormat.MMMd().add_Hm().format(order.placedAt)}'
                         '  ·  ${order.channel.label}',

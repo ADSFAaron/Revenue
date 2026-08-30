@@ -102,8 +102,7 @@ class Invite {
       storeName: data['storeName'] as String? ?? '',
       role: UserRole.fromId(data['role'] as String?),
       createdBy: data['createdBy'] as String? ?? '',
-      expiresAt:
-          (data['expiresAt'] as Timestamp?)?.toDate() ?? DateTime(1970),
+      expiresAt: (data['expiresAt'] as Timestamp?)?.toDate() ?? DateTime(1970),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       usedBy: data['usedBy'] as String?,
       usedAt: (data['usedAt'] as Timestamp?)?.toDate(),

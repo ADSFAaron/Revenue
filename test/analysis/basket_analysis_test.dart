@@ -2,7 +2,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:Revenue/analysis/basket_analysis.dart';
 import 'package:Revenue/models/order.dart';
 
-Order orderWith(List<String> itemIds, {OrderStatus status = OrderStatus.completed}) => Order(
+Order orderWith(List<String> itemIds,
+        {OrderStatus status = OrderStatus.completed}) =>
+    Order(
       id: itemIds.join('-'),
       orderNo: 1,
       businessDate: '2026-08-21',
@@ -53,7 +55,8 @@ void main() {
   test('voided orders and single-item orders are handled', () {
     final orders = [
       for (var i = 0; i < 6; i++) orderWith(['a', 'b']),
-      for (var i = 0; i < 6; i++) orderWith(['a', 'b'], status: OrderStatus.voided),
+      for (var i = 0; i < 6; i++)
+        orderWith(['a', 'b'], status: OrderStatus.voided),
       orderWith(['c']),
     ];
 

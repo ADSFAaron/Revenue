@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 
 import '../database/repositories.dart';
 import '../widgets/feedback.dart';
+import '../widgets/page_body.dart';
+import '../widgets/empty_state.dart';
 
 /// The signed-in person's passkeys — one per device they want to sign in from.
 ///
@@ -74,13 +76,12 @@ class _UserPasskeysState extends State<UserPasskeys> {
 
   Widget _body() {
     if (_supported == false) {
-      return const _Message(
+      return const EmptyState(
         icon: Icons.no_encryption_gmailerrorred_outlined,
         title: 'This device cannot use passkeys',
-        detail:
-            'Passkeys need Android 13 or later, or a current browser. You can '
-            'still add one from a device that supports them — a passkey signs '
-            'in the account, not the device it was made on.',
+        body: 'Passkeys need Android 13 or later, or a current browser. You '
+            'can still add one from a device that supports them — a passkey '
+            'signs in the account, not the device it was made on.',
       );
     }
 
@@ -91,31 +92,28 @@ class _UserPasskeysState extends State<UserPasskeys> {
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) {
-          return _Message(
-            icon: Icons.cloud_off_rounded,
-            title: 'Could not load your passkeys',
-            detail: '${snapshot.error}',
-            onRetry: _reload,
-          );
+          // Was interpolating the raw error into the body.
+          return ErrorView(snapshot.error!, onRetry: _reload);
         }
 
         final passkeys = snapshot.data ?? const <PasskeyInfo>[];
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-          children: [
-            const _Explainer(),
-            const SizedBox(height: 8),
-            if (passkeys.isEmpty)
-              const _Message(
-                icon: Icons.fingerprint,
-                title: 'No passkeys yet',
-                detail:
-                    'Add one and this device can sign you in with a fingerprint, '
-                    'face or screen lock instead of a password.',
-              )
-            else
-              ...passkeys.map(_tile),
-          ],
+        return ReadingWidth(
+          builder: (context, insets) => ListView(
+            padding: insets + const EdgeInsets.fromLTRB(16, 8, 16, 96),
+            children: [
+              const _Explainer(),
+              const SizedBox(height: 8),
+              if (passkeys.isEmpty)
+                const EmptyState(
+                  icon: Icons.fingerprint,
+                  title: 'No passkeys yet',
+                  body: 'Add one and this device can sign you in with a '
+                      'fingerprint, face or screen lock instead of a password.',
+                )
+              else
+                ...passkeys.map(_tile),
+            ],
+          ),
         );
       },
     );
@@ -277,44 +275,4 @@ class _Explainer extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Message extends StatelessWidget {
-  const _Message({
-    required this.icon,
-    required this.title,
-    required this.detail,
-    this.onRetry,
-  });
-
-  final IconData icon;
-  final String title;
-  final String detail;
-  final VoidCallback? onRetry;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 40, color: Theme.of(context).disabledColor),
-            const SizedBox(height: 12),
-            Text(title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
-            Text(detail,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall),
-            if (onRetry != null) ...[
-              const SizedBox(height: 16),
-              FilledButton.tonal(
-                onPressed: onRetry,
-                child: const Text('Retry'),
-              ),
-            ],
-          ],
-        ),
-      );
 }

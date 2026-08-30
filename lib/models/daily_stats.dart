@@ -137,8 +137,8 @@ class DailyStats {
   factory DailyStats.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data() ?? const <String, dynamic>{};
     Map<String, StatBucket> buckets(String key) =>
-        ((data[key] as Map?) ?? const {}).map((k, v) => MapEntry(
-            k as String, StatBucket.fromMap((v as Map).cast<String, dynamic>())));
+        ((data[key] as Map?) ?? const {}).map((k, v) => MapEntry(k as String,
+            StatBucket.fromMap((v as Map).cast<String, dynamic>())));
 
     return DailyStats(
       businessDate: data['businessDate'] as String? ?? doc.id,
@@ -165,8 +165,7 @@ class DailyStats {
 
   /// Dishes ranked by units sold, best first.
   List<ItemStat> get itemsByQty {
-    final list = byItem.values.toList()
-      ..sort((a, b) => b.qty.compareTo(a.qty));
+    final list = byItem.values.toList()..sort((a, b) => b.qty.compareTo(a.qty));
     return list;
   }
 

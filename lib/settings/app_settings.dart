@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../database/repositories.dart';
 import '../widgets/feedback.dart';
 import 'theme_controller.dart';
+import '../widgets/page_body.dart';
 
 class AppSettings extends StatefulWidget {
   final String storeID;
@@ -45,30 +46,33 @@ class _AppSettingsState extends State<AppSettings> {
         title: const Text('App Settings'),
       ),
       body: SafeArea(
-        child: ListView(
-          children: [
-            _buildAppearanceTile(),
-            const Divider(height: 8),
-            ListTile(
-              title: const Text('App Name'),
-              subtitle: Text(packageInfo.appName),
-            ),
-            ListTile(
-              title: const Text('App Version'),
-              subtitle: Text(packageInfo.version),
-            ),
-            ListTile(
-              title: const Text('App Build Number'),
-              subtitle: Text(packageInfo.buildNumber),
-            ),
-            ListTile(
-              leading: const Icon(Icons.feedback_outlined),
-              title: const Text('Feedback'),
-              subtitle: const Text('Improvement ideas, or a bug you hit'),
-              onTap: () => showFeedbackDialog(context),
-            ),
-            if (isSubmitting) const LinearProgressIndicator(),
-          ],
+        child: ReadingWidth(
+          builder: (context, insets) => ListView(
+            padding: insets,
+            children: [
+              _buildAppearanceTile(),
+              const Divider(height: 8),
+              ListTile(
+                title: const Text('App Name'),
+                subtitle: Text(packageInfo.appName),
+              ),
+              ListTile(
+                title: const Text('App Version'),
+                subtitle: Text(packageInfo.version),
+              ),
+              ListTile(
+                title: const Text('App Build Number'),
+                subtitle: Text(packageInfo.buildNumber),
+              ),
+              ListTile(
+                leading: const Icon(Icons.feedback_outlined),
+                title: const Text('Feedback'),
+                subtitle: const Text('Improvement ideas, or a bug you hit'),
+                onTap: () => showFeedbackDialog(context),
+              ),
+              if (isSubmitting) const LinearProgressIndicator(),
+            ],
+          ),
         ),
       ),
     );
@@ -106,6 +110,10 @@ class _AppSettingsState extends State<AppSettings> {
   Future<void> getAppInfo() async {
     try {
       final info = await PackageInfo.fromPlatform();
+      // The platform channel can answer after this page is gone, and a
+      // `setState` on a disposed State throws — into the `catch` below, which
+      // would file a lifecycle mistake away as "could not read the version".
+      if (!mounted) return;
       setState(() {
         packageInfo = info;
       });

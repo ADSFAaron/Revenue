@@ -25,6 +25,7 @@ import { HttpsError, onCall, CallableRequest } from "firebase-functions/v2/https
 import { defineSecret } from "firebase-functions/params";
 
 import { MAX_INSTANCES, REGION } from "./config.js";
+import { Attempt, LadderFailure, runLadder } from "./model_ladder.js";
 
 /**
  * Set with `firebase functions:secrets:set GEMINI_API_KEY`. Bound to this one
@@ -53,16 +54,21 @@ const ENDPOINT_FOR = (model: string) =>
  * project's key and then called with this exact request: all four returned the
  * same seventeen dishes off the same photograph.
  *
- * The list is not belt-and-braces. `gemini-3.7-flash` answered 503 UNAVAILABLE
- * four times in a row during testing — often enough that retrying one model is
- * not a plan, because the thing that is failing is that model. Falling to the
- * previous generation costs a little quality on a job that is checked by a
- * person anyway, and costs nothing at all when the first choice is healthy.
+ * **`gemini-3.6-flash` leads, not `gemini-3.7-flash`.** The newer model is the
+ * better one and it is still on the list, but across every run logged so far it
+ * has answered 503 UNAVAILABLE or not answered at all — and it does not refuse
+ * quickly, it holds the connection for the full minute first. Leading with it
+ * meant every single import paid sixty seconds for a model that was down before
+ * the fallback was even reached. Order is a claim about availability, not about
+ * quality, and this is a job a person checks line by line afterwards.
+ *
+ * Worth revisiting when the congestion clears: put 3.7 back in front and the
+ * ladder costs nothing when it is healthy.
  *
  * `gemini-2.5-flash` is deliberately absent: it returns 404 with "no longer
  * available to new users".
  */
-const MODELS = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
+const MODELS = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.5-flash"];
 
 /**
  * Enough room for a long menu plus the model's own reasoning, which is billed
@@ -74,11 +80,49 @@ const MODELS = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
 const MAX_OUTPUT_TOKENS = 32768;
 
 /**
- * Backoff between attempts on one model before moving to the next. A recognised
- * menu took roughly 22 seconds, so two attempts each across three models still
- * lands inside the function's 300-second budget with room to spare.
+ * Backoff between the two attempts on one model before moving to the next.
+ *
+ * There used to be two delays here — three attempts per model — sized on the
+ * assumption that an attempt costs about what a successful one costs, roughly
+ * twenty-two seconds. A production trace says otherwise. When
+ * `gemini-3.7-flash` is overloaded it does not refuse quickly; it holds the
+ * connection and *then* returns 503:
+ *
+ *   05:53:26 call arrives
+ *   05:55:42 gemini-3.7-flash 503   (136s)
+ *   05:55:56 gemini-3.7-flash 503   ( 12s)
+ *   05:57:47 gemini-3.7-flash 503   (105s)
+ *            budget gone; the fallback models were never tried
+ *
+ * Nine attempts is a plan for fast failures. Against slow ones it is a way to
+ * spend the entire budget on the one model that is down — the exact case the
+ * fallback list exists for. Two attempts per model, and [ATTEMPT_TIMEOUT_MS]
+ * to stop a hung one eating the rest.
  */
-const RETRY_DELAYS_MS = [2_000, 6_000];
+const RETRY_DELAYS_MS = [2_000];
+
+/**
+ * How long one call to the model may take before it is abandoned.
+ *
+ * A successful recognition is twenty to forty seconds, so sixty leaves room
+ * for a slow four-photo menu and still cuts off the two-minute non-answer
+ * above. Enforced with an `AbortController`: without one `fetch` has no
+ * timeout at all and the only limit is the function's, which is the whole
+ * problem.
+ */
+const ATTEMPT_TIMEOUT_MS = 60_000;
+
+/**
+ * The wall clock this function gives itself, against [TIMEOUT_SECONDS] of 300.
+ *
+ * Set below the platform's limit on purpose. Run out of this and the caller
+ * gets a written error naming the model and the status that caused it; run out
+ * of the platform's and the request is simply severed, which reaches the phone
+ * as the same "took too long" whatever actually happened. The sixty seconds of
+ * headroom is one attempt's worth, so the check before each attempt can be
+ * honest about whether there is time for it.
+ */
+const OVERALL_BUDGET_MS = 240_000;
 
 /**
  * A menu is one to four photographs — a folded card has two sides, a wall
@@ -202,6 +246,21 @@ interface DraftItem {
   reviewNote: string | null;
 }
 
+/**
+ * One line of "what is happening right now", on its way to the phone.
+ *
+ * This exists because the honest answer to "why is nothing happening" used to
+ * be unavailable to the only person who needed it. Recognition is one call
+ * that can take two minutes, and a spinner with no words under it is
+ * indistinguishable from a hang — so people back out, which costs the call and
+ * loses the photographs, and then try again into the same overloaded model.
+ *
+ * Sent with `response.sendChunk`, which is a no-op when the caller did not ask
+ * for a stream. Nothing here is required for the result to arrive, so an older
+ * client that calls rather than streams still works unchanged.
+ */
+type Report = (update: Record<string, unknown>) => Promise<void>;
+
 export const importMenuFromPhotos = onCall(
   {
     region: REGION,
@@ -213,12 +272,22 @@ export const importMenuFromPhotos = onCall(
     memory: "512MiB",
     secrets: [GEMINI_API_KEY],
   },
-  async (request) => {
+  async (request, response) => {
+    const started = Date.now();
+    const report: Report = async (update) => {
+      await response?.sendChunk({ ...update, elapsedMs: Date.now() - started });
+    };
+
     const uid = requireUid(request);
     await requireMenuEditor(uid);
 
     const photos = readPhotos(request.data?.photos);
-    const draft = await recognise(photos);
+    // "received", not "sending" — the app has already said it is sending, and
+    // this frame is what lets it tick that step off. The gap between the two is
+    // the upload, which on a shop's connection is the part worth showing.
+    await report({ stage: "received", photos: photos.length });
+
+    const draft = await recognise(photos, report);
 
     return {
       categories: draft.categories,
@@ -232,7 +301,8 @@ export const importMenuFromPhotos = onCall(
 // ---------------------------------------------------------------------------
 
 async function recognise(
-  photos: { mimeType: string; data: string }[]
+  photos: { mimeType: string; data: string }[],
+  report: Report
 ): Promise<{ categories: string[]; items: DraftItem[] }> {
   const body = {
     // One user turn holding the instructions and every photograph. Shape taken
@@ -261,7 +331,9 @@ async function recognise(
     store: false,
   };
 
-  const text = await callModel(JSON.stringify(body));
+  const text = await callModel(JSON.stringify(body), report);
+
+  await report({ stage: "parsing" });
 
   let parsed: unknown;
   try {
@@ -277,93 +349,158 @@ async function recognise(
 }
 
 /**
- * Posts the request and returns the model's text, retrying the failures that
- * are worth retrying.
+ * Posts the request and returns the model's text.
  *
- * 503 is not an edge case here. `gemini-3.7-flash` returns it under load often
- * enough to hit twice in a handful of manual calls, and a shop photographing a
- * menu once should not be told to come back later because the model was busy
- * for two seconds.
+ * The deciding — which model next, how many tries, when to stop — lives in
+ * `model_ladder.ts` and is unit-tested there. This is the half that cannot be:
+ * a socket, a secret and a clock.
  */
-async function callModel(payload: string): Promise<string> {
-  let lastStatus = 0;
-
-  for (const model of MODELS) {
-    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
-      if (attempt > 0) {
-        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
-      }
-
-      const outcome = await attemptOnce(ENDPOINT_FOR(model), payload, model);
-      if (typeof outcome === "string") return outcome;
-
-      lastStatus = outcome;
-      // 503 is the model being busy and 429 is the quota being hot; both are
-      // worth another go, and then worth another model. A 400 or a 403 is this
-      // code or this key being wrong, and no amount of waiting or switching
-      // fixes either — retrying those just spends the timeout.
-      if (outcome !== 503 && outcome !== 429) {
-        throw failure(outcome);
-      }
-    }
+async function callModel(payload: string, report: Report): Promise<string> {
+  try {
+    return await runLadder({
+      models: MODELS,
+      attemptTimeoutMs: ATTEMPT_TIMEOUT_MS,
+      budgetMs: OVERALL_BUDGET_MS,
+      retryDelaysMs: RETRY_DELAYS_MS,
+      report,
+      attempt: (model, timeoutMs) =>
+        attemptOnce(ENDPOINT_FOR(model), payload, model, timeoutMs),
+    });
+  } catch (error) {
+    if (error instanceof LadderFailure) throw translate(error);
+    throw error;
   }
-
-  throw failure(lastStatus);
 }
 
-function failure(status: number): HttpsError {
-  const busy = status === 429 || status === 503;
+/**
+ * The failure the caller is shown, with the technical half in `details`.
+ *
+ * `details` reaches the client — it is the payload the app puts behind
+ * "Details" on the error, so that a test run says `gemini-3.6-flash · 503 ·
+ * This model is currently experiencing high demand` instead of a sentence that
+ * could mean anything. What it never carries is the response body itself: the
+ * request that produced it is the one place in this file the API key appears,
+ * and only Google's own `error.message`, already parsed out and truncated,
+ * makes the trip.
+ */
+function translate(failure: LadderFailure): HttpsError {
+  const attempt = failure.attempt;
+
+  // Out of budget rather than out of models. Said differently on purpose:
+  // "every model refused" and "there was no time left to ask" lead to
+  // different next steps.
+  if (failure.reason === "outOfTime") {
+    return new HttpsError(
+      "deadline-exceeded",
+      "Reading the menu ran out of time before a model answered. Try again, " +
+        "or with fewer photos.",
+      attempt ? describeAttempt(attempt) : { models: MODELS }
+    );
+  }
+
+  if (!attempt) {
+    return new HttpsError("internal", "The menu reader failed. Please try again.");
+  }
+
+  const busy = attempt.status === 429 || attempt.status === 503;
+  const stalled = attempt.status === 0;
+
   return new HttpsError(
-    busy ? "resource-exhausted" : "internal",
+    busy ? "resource-exhausted" : stalled ? "deadline-exceeded" : "internal",
     busy
-      ? "The menu reader is busy right now. Try again in a moment."
-      : "The menu reader failed. Please try again."
+      ? "Every menu reader is busy right now. Try again in a moment."
+      : stalled
+        ? "The menu reader did not answer in time. Try again, or with fewer photos."
+        : "The menu reader failed. Please try again.",
+    describeAttempt(attempt)
   );
 }
 
-/** The model's text on success, or the HTTP status that says why not. */
+function describeAttempt(attempt: Attempt): Record<string, unknown> {
+  return {
+    model: attempt.model,
+    status: attempt.status,
+    upstream: attempt.detail,
+    attemptMs: attempt.ms,
+    models: MODELS,
+  };
+}
+
+/** The model's text on success, or an [Attempt] saying why not. */
 async function attemptOnce(
   url: string,
   payload: string,
-  model: string
-): Promise<string | number> {
-  {
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "x-goog-api-key": GEMINI_API_KEY.value(),
-          "Content-Type": "application/json",
-        },
-        body: payload,
-      });
-    } catch (error) {
-      // Nothing about a transport failure goes back to the caller. It carries
-      // the request that produced it, and the request is the one place in this
-      // file the API key appears.
-      console.error("menu import transport failure", describe(error));
-      throw new HttpsError(
-        "unavailable",
-        "Could not reach the menu reader. Check the connection and try again."
-      );
-    }
+  model: string,
+  timeoutMs: number
+): Promise<string | Attempt> {
+  const started = Date.now();
+  // `fetch` has no timeout of its own. Without this an overloaded model can
+  // hold the connection for minutes and the only thing that ends it is the
+  // function being killed, which is the least informative failure available.
+  const controller = new AbortController();
+  const alarm = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (response.ok) return readText(await response.json());
-
-    // Logged, never returned, and truncated. Google's error bodies do not echo
-    // the key back, but they are not this codebase's to guarantee, and Cloud
-    // Logging is inside the project while an HttpsError detail is not. The
-    // body is the useful half: a 404 here says which model went away and what
-    // replaced it.
-    console.error(
-      "menu import upstream failure",
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": GEMINI_API_KEY.value(),
+        "Content-Type": "application/json",
+      },
+      body: payload,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    // Nothing about a transport failure goes back verbatim. It carries the
+    // request that produced it, and the request is the one place in this file
+    // the API key appears.
+    const aborted = controller.signal.aborted;
+    console.error("menu import transport failure", model, describe(error));
+    return {
       model,
-      response.status,
-      (await response.text()).slice(0, 2000)
-    );
-    return response.status;
+      status: 0,
+      detail: aborted
+        ? `no answer within ${Math.round(timeoutMs / 1000)}s`
+        : "could not reach the model",
+      ms: Date.now() - started,
+    };
+  } finally {
+    clearTimeout(alarm);
   }
+
+  if (response.ok) return readText(await response.json());
+
+  // Logged in full, returned in part. Cloud Logging is inside the project and
+  // an HttpsError is not, so the whole body stays here — a 404 says which
+  // model went away and what replaced it — while only the parsed
+  // `error.message` travels.
+  const body = await response.text();
+  console.error("menu import upstream failure", model, response.status, body.slice(0, 2000));
+
+  return {
+    model,
+    status: response.status,
+    detail: upstreamMessage(body, response.status),
+    ms: Date.now() - started,
+  };
+}
+
+/**
+ * Google's own sentence about the failure, or a stand-in.
+ *
+ * Parsed rather than sliced: an error body is JSON with the useful part at
+ * `error.message`, and forwarding raw bytes on the off chance would be
+ * forwarding whatever happens to be in them.
+ */
+function upstreamMessage(body: string, status: number): string {
+  try {
+    const message = (JSON.parse(body) as { error?: { message?: string } })?.error?.message;
+    if (typeof message === "string" && message.trim()) return message.trim().slice(0, 300);
+  } catch {
+    // Not JSON. Nothing worth forwarding.
+  }
+  return `HTTP ${status}`;
 }
 
 /**

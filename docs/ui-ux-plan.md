@@ -602,3 +602,176 @@ D2 把 `themeMode` 打開跟隨系統，但登入前的四個畫面被刻意排�
 
 `flutter analyze` 只剩既有的兩個 `codePoint` 警告；`flutter test` 70 項全過；
 `flutter build web --no-tree-shake-icons` 通過。
+
+---
+
+## 10. 第四輪：量測而非目測（2026-08-27 深夜）
+
+前三輪都是用眼睛審的。這一輪改成**量**，於是翻出三個前幾輪自己弄進去的問題。
+
+### 10.1 用 Flutter 自己的無障礙準則去測
+
+新增 [test/widgets/accessibility_test.dart](../test/widgets/accessibility_test.dart)，
+跑 `flutter_test` 內建的 `meetsGuideline()`：`textContrastGuideline`、
+`androidTapTargetGuideline`、`labeledTapTargetGuideline`，淺色深色各一輪，
+外加 1.0×／1.5×／2.0× 字級的溢位檢查。共用元件（`StatCard`、`ChangeBadge`、
+`ErrorView`、`DestructiveButton`）全數通過。
+
+**這些準則不需要人來判斷好不好看，只判斷能不能操作、能不能讀。**
+之後改配色或改版面，跑一次就知道有沒有退步。
+
+### 10.2 把主題的對比值算出來
+
+把 [theme.dart](../lib/theme.dart) 的 ARGB 整數換算成 WCAG 對比值，全部 20 組
+前景／背景配對：**Material Theme Builder 產出的配色本身沒有問題**（`onX on X`
+一律 6.4:1 以上，深色更高）。只有 `outlineVariant` 在淺色 1.62:1、深色 1.98:1
+——那是分隔線用的裝飾 token，本來就不該承載意義。
+
+問題是**我第二輪把 `Colors.black26` 的拖曳把手換成了 `outlineVariant`**。
+拖曳把手是在說「這一列可以拖」，屬於 WCAG 1.4.11 的 UI 元件，要 3:1。
+改成 `onSurfaceVariant`（8.9:1）。同樣理由：POS 磚未選取時的邊框、
+匯入菜單的照片區外框改用 `outline`（4.25:1）。
+
+- [x] `store_settings_edit_menu.dart`、`store_categories.dart` 拖曳把手
+- [x] `addorder.dart` 磚邊框、`store_settings_import_menu.dart` 照片區外框
+- [x] 圖表的軸線與格線維持 `outlineVariant`——那是真的裝飾
+
+### 10.3 我上一輪做出了一個 40×40 的按鈕
+
+POS 磚角落的減號用了 `visualDensity: VisualDensity.compact`，那會在兩個軸
+各減 8pt，把點擊區從 48×48 變成 40×40，低於 Flutter 明文的下限。
+**在趕時間的收銀台上，「取消剛剛按錯的那一下」正是最需要一次按中的按鈕。**
+拿掉。
+
+### 10.4 最大的一個：整個 app 沒有大螢幕版面
+
+`StatCard` 用 `MediaQuery.size.width / 2 - 30` 決定自己的寬度——那是**視窗**
+寬度，不是父層給它的空間。在 1400pt 的瀏覽器視窗裡，一張「半寬」磚就是
+670pt，中間浮著一個數字。而你一直是在 web 上測的。
+
+Flutter 的大螢幕指引講得很直白：用約束不要用 `MediaQuery.size`、
+不要把手機版面拉開、內容要有最大寬度、超過 600dp 用 NavigationRail。
+
+- [x] `StatCard` 不再自己決定寬度；新增 **`StatCardGrid`**，用 `LayoutBuilder`
+      的約束和「單格最大寬度」（240pt）算欄數。手機兩欄，寬視窗四到六格
+      正常大小的磚，而不是兩塊巨大的卡
+- [x] 新增 **[PageBody](../lib/widgets/page_body.dart)**，內容置中、最大 720pt。
+      720 是為了閱讀挑的，不是為了斷點——讓正文維持在 70–80 字元的行長。
+      套用在 Today / Insights 之外的所有主頁與**全部 12 個設定頁**
+- [x] 登入前的三個畫面用 480pt（表單沒有理由 1400pt 寬），
+      並把 login 那顆 `minWidth: MediaQuery.size.width` 的按鈕改成
+      `double.infinity`
+- [x] **[home.dart](../lib/home.dart) 超過 600dp 改用 `NavigationRail`**，
+      量的是 `LayoutBuilder` 的約束不是裝置，所以縮放視窗和分割畫面都對。
+      相機取景頁刻意不套 `PageBody`——取景畫面就該填滿
+
+### 驗證
+
+`flutter analyze` 只剩既有的兩個 `codePoint` 警告；`flutter test` **80 項**全過
+（原 70 + 新的 10 項無障礙／字級測試）；`flutter build web --no-tree-shake-icons`
+通過。
+
+---
+
+## 11. 第五輪規格：先釐清，一次做完
+
+前四輪有幾處改了兩次（幣別掃過還漏四個、`Colors.black26` 換成 `outlineVariant`
+之後才發現對比不夠）。這一輪先把每一項的事實查證完、決策定下來，再動手。
+
+### 11.1 已用證據確認的事實
+
+**`PageBody` 包錯層是真的。** 寫了探針測試：800×600 視窗、內容限寬 300pt，
+滑鼠滾輪放在側邊空白處——
+
+| 作法 | 中央滾動 | 側邊滾動 |
+|---|---|---|
+| `Align + ConstrainedBox` 包在捲動容器**外**（目前 12 個設定頁） | 300 | **0** |
+| padding 給在捲動容器**內** | 300 | 300 |
+
+Flutter 的 `Scrollable` 只處理落在自己 RenderBox 內的 pointer signal。
+**修法：捲動容器維持滿版，用 `LayoutBuilder` 算出左右內距交給它自己的
+`padding`。**
+
+**帳號刪除只能走 Cloud Function。** [firestore.rules](../firestore.rules) 裡
+`users/{uid}`、`stores/{storeId}`、`orders/{orderId}` 全是
+`allow delete: if false`——客戶端一個都刪不掉。用 Admin SDK 的
+`getAuth().deleteUser()` 還順帶免掉 `requires-recent-login` 的重新驗證流程
+（那是客戶端 `user.delete()` 才有的限制）。
+
+**離線旗標不能掛在現有 stream 上。** `SnapshotMetadata.isFromCache` 存在且
+語意正確，但 `.snapshots()` 的 `includeMetadataChanges` 預設 `false`——
+重新連線後若資料沒變就不會再吐一次快照，橫幅會卡在「離線」不消失。
+**需要一個專屬的 listener 開 `includeMetadataChanges: true`。**
+
+**擁有權只存在 `users/{uid}.role`**，`stores/{id}` 上沒有 owner 欄位，
+而 rules 的 `claimsUnusedStore()` 要求 store 不存在才能宣告 owner——
+所以店長的 user 文件一旦消失，那間店永遠不可能再有店長。
+
+### 11.2 已定的決策
+
+| 題目 | 決定 |
+|---|---|
+| 店長刪帳號 | **連整間店一起刪。** 員工／manager 可自由刪自己；店長刪除時遞迴刪掉 store 底下全部資料、所有成員的 users 文件與 auth 帳號。刪除前要求輸入店名確認 |
+| 內容最大寬度 | **維持 720pt**（登入表單 480pt） |
+| 骨架屏 | **不做。** 現有的轉圈不是問題所在，換成 shimmer 是把一個小噪音換成另一個，而且要碰每一個載入分支 |
+
+### 11.3 這一輪要做的（一次做完）
+
+| # | 項目 | 檔案 |
+|---|---|---|
+| 1 | `ReadingWidth`：捲動容器滿版、內距置中，取代 12 個設定頁包錯層的 `PageBody` | 新 widget + 12 檔 |
+| 2 | 帳號刪除：callable function `deleteAccount` + User Settings 入口 + 店名確認 | `functions/src/account.ts`、`user_settings.dart`、`auth_repository.dart` |
+| 3 | 離線橫幅：專屬 listener（監看 `users/{uid}`，`includeMetadataChanges: true`）+ shell 橫幅 | 新 `connection_status.dart`、`home.dart` |
+| 4 | `user_settings` 兩處裸 `Text` 換 `ErrorView` | `user_settings.dart` |
+| 5 | 兩處單行空狀態統一成「圖示＋說明（＋動作）」 | `store_settings_history_order.dart`、`store_staff.dart` |
+| 6 | 最後四處寫死的 `NTD` | `edit_menu`、`import_menu`、`store_settings` |
+| 7 | 四個設定對話框的靜默失敗：欄位空白／無效時要說話 | `store_settings.dart` |
+| 8 | `user_settings` 五列的 chevron 一致性 | `user_settings.dart` |
+
+### 11.4 實作結果
+
+八項全數完成。`flutter analyze` 只剩既有的兩個 `codePoint` 警告；
+`flutter test` **83 項**全過；`flutter build web --no-tree-shake-icons` 通過；
+`functions/` 的 `tsc --noEmit` 通過。
+
+**1 — `ReadingWidth`。** 12 個設定頁的約束從捲動容器外面移到它自己的
+`padding`。新增
+[test/widgets/reading_width_test.dart](../test/widgets/reading_width_test.dart)，
+把這件事釘成回歸測試——包含一個**反例**測試，證明舊寫法的側邊真的是死的，
+免得日後有人覺得「包一層 ConstrainedBox 比較乾淨」又改回去。
+相機取景頁維持滿版。
+
+**2 — 帳號刪除。** 新增 [functions/src/account.ts](../functions/src/account.ts)
+的 `deleteAccount` callable：
+
+- 員工／manager：刪掉 `users/{uid}` 與 auth 帳號。**他們鳴過的訂單留著**——
+  那是店的帳本，不是個人資料，`createdBy` 變成指向不存在的人
+- 店長：先比對前端傳來的店名與真實店名（不符就 `failed-precondition`），
+  然後刪 invites → 所有成員的 users → `recursiveDelete(stores/{id})`
+  → 同事的 auth 帳號 → **最後**才刪自己的。順序是刻意的：中間任何一步失敗，
+  呼叫者仍然登得進來重試，而不是被鎖在一個刪一半的店外面
+- 客戶端在 User Settings 底部，紅色、兩段確認，店長那段要求把店名打對
+
+**3 — 離線橫幅。** 新增
+[connection_status.dart](../lib/database/connection_status.dart)，一個專屬
+listener 監看 `users/{uid}` 並開 `includeMetadataChanges: true`，
+`ValueNotifier<bool>` 餵給 shell 頂端的橫幅。**用 `users/{uid}` 而不是 store
+文件**：它一定存在、只有一份、rules 本來就讀得到，而且在知道 storeId 之前就能用。
+
+**4–8。** `user_settings` 兩處裸 `Text`、四處 `NTD`、四個對話框的靜默失敗
+（現在會說「A store needs a name.」「Enter a tax rate between 0 and 100.」等）、
+chevron 一致性。
+
+**順手收斂的：** 空狀態原本有五份——`_EmptyNotice`（Insights）、
+`_CenteredMessage`（invites）、`_Message`（passkeys）、`_EmptyState`（categories），
+外加兩個只印一行字的畫面。全部收進
+[lib/widgets/empty_state.dart](../lib/widgets/empty_state.dart) 的 `EmptyState`。
+會這樣做正是因為「不要修同一個地方兩次」——留著五份，下次改空狀態就要改五個地方。
+
+### 11.5 要你執行
+
+```
+firebase deploy --only functions:deleteAccount
+```
+
+在部署之前，User Settings 裡那顆刪除鍵按下去會失敗（找不到那個 function）。

@@ -97,8 +97,7 @@ class StatsPeriod {
           ? this
           : StatsPeriod.containing(start, granularity);
 
-  bool contains(DateTime day) =>
-      !day.isBefore(start) && !day.isAfter(end);
+  bool contains(DateTime day) => !day.isBefore(start) && !day.isAfter(end);
 
   /// Whether this period has run its full length as of [today].
   bool isComplete(DateTime today) => today.isAfter(end);

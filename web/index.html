@@ -19,7 +19,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="description" content="Sales bookkeeping and analysis for a small restaurant.">
-  <meta name="theme-color" content="#395917">
+  <!--
+    The browser chrome follows `colorScheme.surface`, the same rule the native
+    splash uses — see docs/design-tokens.md. Two tags rather than one because a
+    manifest theme_color cannot vary by scheme.
+  -->
+  <meta name="theme-color" content="#F9FAEF" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#12140E" media="(prefers-color-scheme: dark)">
 
   <!-- iOS meta tags & icons -->
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -38,7 +44,11 @@
       margin: 0;
       padding: 0;
       height: 100%;
-      background-color: #eae9e4;
+      /* `colorScheme.surface`. The native splash, this overlay and the first
+         frame Flutter paints are all this colour, so nothing flashes at the
+         handover. Was #eae9e4, which belonged to no palette. */
+      background-color: #F9FAEF;
+      color-scheme: light dark;
     }
 
     /* Shown until the Flutter engine has a frame to paint. Without it the page
@@ -53,14 +63,14 @@
       justify-content: center;
       gap: 20px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      color: #395917;
+      color: #4A672D;
     }
 
     #loading .spinner {
       width: 36px;
       height: 36px;
-      border: 3px solid rgba(57, 89, 23, 0.2);
-      border-top-color: #395917;
+      border: 3px solid rgba(74, 103, 45, 0.2);
+      border-top-color: #4A672D;
       border-radius: 50%;
       animation: spin 0.9s linear infinite;
     }
@@ -71,6 +81,20 @@
 
     @media (prefers-reduced-motion: reduce) {
       #loading .spinner { animation-duration: 3s; }
+    }
+
+    /* The overlay is painted before any Dart runs, so it can only read the OS
+       setting. The app's own light/dark/system choice takes over from the first
+       frame — a phone set to dark with the app pinned to light sees one frame
+       of dark here, which is still better than the cream-on-dark it would get
+       without this block. */
+    @media (prefers-color-scheme: dark) {
+      html, body { background-color: #12140E; }
+      #loading { color: #B0D18B; }
+      #loading .spinner {
+        border-color: rgba(176, 209, 139, 0.2);
+        border-top-color: #B0D18B;
+      }
     }
   </style>
 </head>

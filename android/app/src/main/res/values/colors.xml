@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        `colorScheme.surface` from lib/theme.dart — see docs/design-tokens.md.
+
+        This is the window behind the Flutter UI, shown in the gap between the
+        splash going away and the first frame being painted. It used to be
+        `?android:colorBackground`, the platform default (near-white in light,
+        black in dark), so the launch ended on a flash of a colour that is in
+        no palette. Keep it equal to the splash background.
+    -->
+    <color name="window_background">#F9FAEF</color>
+	<color name="ic_launcher_background">#F9FAEF</color>
+</resources>

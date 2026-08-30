@@ -35,13 +35,13 @@ void main() {
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull,
-          reason: 'cancel #${i + 1} threw');
+      expect(tester.takeException(), isNull, reason: 'cancel #${i + 1} threw');
       expect(find.byType(AlertDialog), findsNothing);
     }
   });
 
-  testWidgets('cancelling and leaving the screen mid-transition', (tester) async {
+  testWidgets('cancelling and leaving the screen mid-transition',
+      (tester) async {
     await tester.pumpWidget(const MaterialApp(home: _SettingsLikeScreen()));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();

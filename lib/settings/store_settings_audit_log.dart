@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../database/repositories.dart';
 import '../models/audit_log.dart';
+import '../widgets/page_body.dart';
 
 /// The trail of changes that moved money without a sale happening: voids,
 /// edits, discounts and repricings.
@@ -44,10 +45,13 @@ class StoreAuditLog extends StatelessWidget {
             );
           }
 
-          return ListView.separated(
-            itemCount: logs.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, index) => _AuditTile(log: logs[index]),
+          return ReadingWidth(
+            builder: (context, insets) => ListView.separated(
+              padding: insets,
+              itemCount: logs.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) => _AuditTile(log: logs[index]),
+            ),
           );
         },
       ),
@@ -95,8 +99,7 @@ class _AuditTile extends StatelessWidget {
         children: [
           Text(_detail()),
           if (log.note?.isNotEmpty == true)
-            Text('“${log.note}”',
-                style: Theme.of(context).textTheme.bodySmall),
+            Text('“${log.note}”', style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
       trailing: Text(

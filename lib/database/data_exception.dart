@@ -91,7 +91,7 @@ DataException _fromFirebase(FirebaseException e) => switch (e.code) {
       'permission-denied' || 'unauthenticated' => const DataException(
           DataFailure.denied,
           'You do not have permission to do that. Ask the store owner if you '
-              'should.',
+          'should.',
         ),
       'unavailable' => const DataException(
           DataFailure.offline,
@@ -100,7 +100,7 @@ DataException _fromFirebase(FirebaseException e) => switch (e.code) {
       'not-found' => const DataException(
           DataFailure.notFound,
           'That record no longer exists. It may have been removed on another '
-              'device.',
+          'device.',
         ),
       'aborted' => const DataException(
           DataFailure.contention,
@@ -109,7 +109,7 @@ DataException _fromFirebase(FirebaseException e) => switch (e.code) {
       'resource-exhausted' => const DataException(
           DataFailure.quota,
           'The database is over its limit for now. Try again in a few '
-              'minutes.',
+          'minutes.',
         ),
       'deadline-exceeded' => const DataException(
           DataFailure.timeout,

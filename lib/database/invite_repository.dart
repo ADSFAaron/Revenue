@@ -275,8 +275,8 @@ class InviteRepository {
         'permission-denied' => const InviteException(
             InviteFailure.denied,
             'You do not have permission to do that. Only a manager or the '
-                'owner can issue invite codes — and the store\'s security '
-                'rules have to be deployed for this screen to read them.',
+            'owner can issue invite codes — and the store\'s security '
+            'rules have to be deployed for this screen to read them.',
           ),
         // Almost always the invites composite index (storeId + createdAt) not
         // being deployed. The server's message carries the console link that
@@ -284,7 +284,7 @@ class InviteRepository {
         'failed-precondition' => InviteException(
             InviteFailure.unknown,
             'The database needs an index for this list. '
-                '${e.message ?? ''}',
+            '${e.message ?? ''}',
           ),
         'unavailable' => const InviteException(
             InviteFailure.unknown,

@@ -19,6 +19,10 @@ const String menuImportFunctionsRegion = 'asia-east1';
 /// four-photo menu usually does not. Left at the default, a two-page menu
 /// fails on the client while the server is still working — the least useful
 /// failure available, because it looks like a bug and costs the call anyway.
+///
+/// The function gives itself `OVERALL_BUDGET_MS` of 240 seconds inside its own
+/// 300, so in practice it answers — with words — well before this fires. This
+/// is the backstop for the case where it cannot answer at all.
 const Duration menuImportTimeout = Duration(minutes: 5);
 
 /// A photograph on its way to the recogniser.
@@ -32,13 +36,78 @@ class MenuImportPhoto {
 }
 
 class MenuImportException implements AppException {
-  const MenuImportException(this.message);
+  const MenuImportException(this.message, {this.details});
 
   @override
   final String message;
 
+  /// The technical half, for the screen to put behind "Details".
+  ///
+  /// Separate from [message] rather than appended to it because they are read
+  /// by different people at different moments. A shop owner needs one sentence
+  /// saying whether to try again; whoever is testing the build needs to know
+  /// it was `gemini-3.7-flash`, that it answered 503, and that it took 136
+  /// seconds to do it. Concatenating the two gives the first person a wall of
+  /// jargon and the second person nothing they can quote.
+  final String? details;
+
   @override
-  String toString() => message;
+  String toString() => details == null ? message : '$message ($details)';
+}
+
+/// Something the recogniser said while it was working, or the draft it ended
+/// with.
+///
+/// Recognition is one call that routinely runs past a minute, and a spinner
+/// with nothing under it is indistinguishable from a hang — which is how a
+/// call that was going to succeed ends up abandoned, taking the photographs
+/// with it. So the function reports each step and this is what carries them.
+sealed class MenuImportEvent {
+  const MenuImportEvent();
+}
+
+/// Which part of the job a [MenuImportProgress] is about.
+///
+/// The stage is carried as data rather than baked into the sentence because
+/// the screen does not just print these — it keeps a checklist, and it has to
+/// know whether a frame *starts* a step, *finishes* one, or *fails* one. A
+/// string cannot say which.
+enum MenuImportStage {
+  /// Uploading. Begins on the phone, before anything has been sent.
+  sending,
+
+  /// The photos arrived. Ends [sending].
+  received,
+
+  /// A model is being asked. Begins a step; there is one per attempt.
+  reading,
+
+  /// That model was busy or did not answer. Fails the [reading] step it
+  /// follows — the app is about to start another with the next model.
+  busy,
+
+  /// The answer is being turned into dishes.
+  checking,
+}
+
+/// One line of "what is happening right now".
+class MenuImportProgress extends MenuImportEvent {
+  const MenuImportProgress(this.stage, this.message, {this.detail});
+
+  final MenuImportStage stage;
+
+  /// Plain words, for the person waiting.
+  final String message;
+
+  /// The model, the status, the attempt — for whoever is testing.
+  final String? detail;
+}
+
+/// The menu, read. Always the last event, and there is exactly one.
+class MenuImportDrafted extends MenuImportEvent {
+  const MenuImportDrafted(this.draft);
+
+  final MenuImportDraft draft;
 }
 
 /// Turning a photograph of a menu into dishes.
@@ -69,32 +138,117 @@ class MenuImportRepository {
   // Recognising
   // -------------------------------------------------------------------------
 
-  /// Reads a menu off [photos]. Writes nothing.
-  Future<MenuImportDraft> recognise(List<MenuImportPhoto> photos) async {
+  /// Reads a menu off [photos], saying what it is doing as it goes. Writes
+  /// nothing.
+  ///
+  /// A stream rather than a `Future` because the wait is the problem. One
+  /// photograph is twenty to forty seconds on a healthy day and can be two
+  /// minutes when the model is overloaded, and the screen had nothing to show
+  /// for any of it — so the reasonable thing to do, from where the person is
+  /// standing, is to back out. That costs the call, loses the photographs, and
+  /// usually leads to trying again into the same congested model.
+  ///
+  /// This is a *streaming callable*: the same function, called so that it can
+  /// push intermediate frames. Nothing about the result depends on them —
+  /// [MenuImportDrafted] is the last event either way — so a failure to
+  /// deliver progress is not a failure to import a menu.
+  Stream<MenuImportEvent> recognise(List<MenuImportPhoto> photos) async* {
     if (photos.isEmpty) {
       throw const MenuImportException('Take a photo of the menu first.');
     }
 
-    final Map<String, dynamic> data;
+    final callable = _functions.httpsCallable(
+      'importMenuFromPhotos',
+      options: HttpsCallableOptions(timeout: menuImportTimeout),
+    );
+
+    // Said here rather than by the function, because the upload is the part
+    // the function cannot see: by the time it can report anything, the bytes
+    // have already arrived.
+    yield MenuImportProgress(
+      MenuImportStage.sending,
+      photos.length == 1
+          ? 'Sending the photo'
+          : 'Sending ${photos.length} photos',
+    );
+
     try {
-      final result = await _functions
-          .httpsCallable(
-            'importMenuFromPhotos',
-            options: HttpsCallableOptions(timeout: menuImportTimeout),
-          )
-          .call({
+      final responses = callable.stream({
         'photos': [
           for (final photo in photos)
             {'mimeType': photo.mimeType, 'data': base64Encode(photo.bytes)},
         ],
       });
-      data = _asMap(result.data);
+
+      await for (final response in responses) {
+        switch (response) {
+          case Chunk(:final partialData):
+            final progress = _progress(_asMap(partialData));
+            if (progress != null) yield progress;
+          case Result(:final result):
+            yield MenuImportDrafted(_draft(_asMap(result.data)));
+        }
+      }
     } on FirebaseFunctionsException catch (e) {
       throw _translate(e);
     }
+  }
 
-    final categories =
-        ((data['categories'] as List?) ?? const []).whereType<String>().toList();
+  /// Turns one progress frame into a line somebody can read.
+  ///
+  /// The wording lives here rather than in the function because it is the app's
+  /// vocabulary, not the server's — and because the server should be free to
+  /// add a stage without shipping an app update to describe it. An unknown
+  /// stage is dropped rather than shown raw.
+  static MenuImportProgress? _progress(Map<String, dynamic> frame) {
+    final stage = frame['stage'];
+    final model = frame['model'] as String?;
+    final attempt = (frame['attempt'] as num?)?.toInt();
+    final attempts = (frame['attempts'] as num?)?.toInt();
+    final status = (frame['status'] as num?)?.toInt();
+    final upstream = frame['detail'] as String?;
+
+    final tried = attempt != null && attempts != null && attempts > 1
+        ? '$model · try $attempt of $attempts'
+        : model;
+
+    return switch (stage) {
+      'received' => MenuImportProgress(
+          MenuImportStage.received,
+          'Sent',
+          detail: (frame['photos'] as num?) == null
+              ? null
+              : '${(frame['photos'] as num).toInt()} received',
+        ),
+      'reading' => MenuImportProgress(
+          MenuImportStage.reading,
+          'Reading the menu',
+          detail: tried,
+        ),
+      // The one frame that exists to stop somebody leaving. A step that has
+      // visibly *failed*, with the next one already starting, is a wait with a
+      // reason; the same seconds with nothing on screen are a hang.
+      'busy' => MenuImportProgress(
+          MenuImportStage.busy,
+          'That reader was busy',
+          detail: [
+            if (model != null) model,
+            if (status != null) 'HTTP $status',
+            if (upstream != null) upstream,
+          ].join(' · '),
+        ),
+      'parsing' => const MenuImportProgress(
+          MenuImportStage.checking,
+          'Checking what came back',
+        ),
+      _ => null,
+    };
+  }
+
+  static MenuImportDraft _draft(Map<String, dynamic> data) {
+    final categories = ((data['categories'] as List?) ?? const [])
+        .whereType<String>()
+        .toList();
     final items = ((data['items'] as List?) ?? const [])
         .map((row) => MenuImportItem.fromMap(_asMap(row)))
         .where((item) => item.name.isNotEmpty)
@@ -331,24 +485,70 @@ class MenuImportRepository {
     return value.map((key, item) => MapEntry('$key', item));
   }
 
-  MenuImportException _translate(FirebaseFunctionsException e) =>
-      switch (e.code) {
-        'unauthenticated' =>
-          const MenuImportException('Sign in before importing a menu.'),
-        'permission-denied' => MenuImportException(
-            e.message ?? 'Only an owner or a manager can import a menu.'),
-        'invalid-argument' =>
-          MenuImportException(e.message ?? 'Those photos could not be sent.'),
-        'resource-exhausted' => MenuImportException(
-            e.message ?? 'The menu reader is busy. Try again in a moment.'),
-        'deadline-exceeded' => const MenuImportException(
-            'Reading the menu took too long. Try fewer photos at a time.'),
-        'not-found' => const MenuImportException(
-            'The menu reader is not deployed. Run '
-            '`firebase deploy --only functions`.'),
-        'unavailable' => const MenuImportException(
-            'Could not reach the menu reader. Check your network.'),
-        _ => MenuImportException(
-            e.message ?? 'The menu reader failed (${e.code}).'),
-      };
+  MenuImportException _translate(FirebaseFunctionsException e) {
+    final details = _details(e);
+    return switch (e.code) {
+      'unauthenticated' => MenuImportException(
+          'Sign in before importing a menu.',
+          details: details,
+        ),
+      'permission-denied' => MenuImportException(
+          e.message ?? 'Only an owner or a manager can import a menu.',
+          details: details,
+        ),
+      'invalid-argument' => MenuImportException(
+          e.message ?? 'Those photos could not be sent.',
+          details: details,
+        ),
+      'resource-exhausted' => MenuImportException(
+          e.message ?? 'The menu reader is busy. Try again in a moment.',
+          details: details,
+        ),
+      // The function's own wording is preferred here now that it has one. It
+      // knows whether it ran out of budget or the model never answered, and
+      // "try fewer photos" is only sound advice for one of those.
+      'deadline-exceeded' => MenuImportException(
+          e.message ??
+              'Reading the menu took too long. Try fewer photos at a time.',
+          details: details,
+        ),
+      'not-found' => MenuImportException(
+          'The menu reader is not deployed. Run '
+          '`firebase deploy --only functions`.',
+          details: details,
+        ),
+      'unavailable' => MenuImportException(
+          'Could not reach the menu reader. Check your network.',
+          details: details,
+        ),
+      _ => MenuImportException(
+          e.message ?? 'The menu reader failed (${e.code}).',
+          details: details,
+        ),
+    };
+  }
+
+  /// The technical half of a failure, assembled from what the function sent in
+  /// `details` plus the code it failed with.
+  ///
+  /// Everything here is server-supplied and already sanitised: the function
+  /// forwards Google's parsed `error.message` and never the response body,
+  /// because the request that produced it is where the API key lives.
+  static String? _details(FirebaseFunctionsException e) {
+    final data =
+        e.details is Map ? _asMap(e.details) : const <String, dynamic>{};
+    final elapsed = (data['attemptMs'] as num?)?.toInt();
+
+    final parts = <String>[
+      e.code,
+      if (data['model'] is String) data['model'] as String,
+      if (data['status'] is num && (data['status'] as num) != 0)
+        'HTTP ${(data['status'] as num).toInt()}',
+      if (data['upstream'] is String) data['upstream'] as String,
+      if (elapsed != null) '${(elapsed / 1000).toStringAsFixed(1)}s',
+      if (data['models'] is List)
+        'tried: ${(data['models'] as List).join(', ')}',
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
 }

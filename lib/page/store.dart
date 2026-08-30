@@ -8,6 +8,7 @@ import '../settings/store_settings.dart';
 import '../settings/user_settings.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
+import '../widgets/page_body.dart';
 import '../widgets/stat_card.dart';
 
 class StorePage extends StatefulWidget {
@@ -63,53 +64,53 @@ class _StorePageState extends State<StorePage> {
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: <Widget>[
-                _buildStoreCard(session),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: <Widget>[
-                    StatCard(
-                      title: 'Revenue',
-                      icon: Icons.savings_rounded,
-                      value: money.format(overview.totals.revenue),
-                    ),
-                    StatCard(
-                      title: 'Orders',
-                      icon: Icons.grading_rounded,
-                      value: counts.format(overview.totals.orderCount),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                _buildListTile(
-                  title: 'Store Settings',
-                  subtitle: 'Menu editing, History orders',
-                  icon: Icons.storefront_outlined,
-                  onTap: () => _navigateTo(StoreSettings(session.storeId)),
-                ),
-                _buildListTile(
-                  title: 'User Settings',
-                  subtitle: 'User name, Change password',
-                  icon: Icons.manage_accounts_outlined,
-                  onTap: () => _navigateTo(const UserSettings()),
-                ),
-                _buildListTile(
-                  title: 'App Settings',
-                  subtitle: 'App version, Privacy policy, Feedback',
-                  icon: Icons.info_outline,
-                  onTap: () => _navigateTo(AppSettings(session.storeId)),
-                ),
-                _buildListTile(
-                  title: 'Logout',
-                  icon: Icons.logout_outlined,
-                  // Was a bare call, sitting in a row of navigation tiles: one
-                  // mis-tap and you are out and typing a password again.
-                  onTap: _confirmLogout,
-                ),
-              ],
+            child: PageBody(
+              child: Column(
+                children: <Widget>[
+                  _buildStoreCard(session),
+                  const SizedBox(height: 10),
+                  StatCardGrid(
+                    children: <Widget>[
+                      StatCard(
+                        title: 'Revenue',
+                        icon: Icons.savings_rounded,
+                        value: money.format(overview.totals.revenue),
+                      ),
+                      StatCard(
+                        title: 'Orders',
+                        icon: Icons.grading_rounded,
+                        value: counts.format(overview.totals.orderCount),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _buildListTile(
+                    title: 'Store Settings',
+                    subtitle: 'Menu editing, History orders',
+                    icon: Icons.storefront_outlined,
+                    onTap: () => _navigateTo(StoreSettings(session.storeId)),
+                  ),
+                  _buildListTile(
+                    title: 'User Settings',
+                    subtitle: 'User name, Change password',
+                    icon: Icons.manage_accounts_outlined,
+                    onTap: () => _navigateTo(const UserSettings()),
+                  ),
+                  _buildListTile(
+                    title: 'App Settings',
+                    subtitle: 'App version, Privacy policy, Feedback',
+                    icon: Icons.info_outline,
+                    onTap: () => _navigateTo(AppSettings(session.storeId)),
+                  ),
+                  _buildListTile(
+                    title: 'Logout',
+                    icon: Icons.logout_outlined,
+                    // Was a bare call, sitting in a row of navigation tiles: one
+                    // mis-tap and you are out and typing a password again.
+                    onTap: _confirmLogout,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -136,8 +137,7 @@ class _StorePageState extends State<StorePage> {
                   ),
                 ),
                 TextButton(
-                  onPressed: () =>
-                      _navigateTo(StoreSettings(session.storeId)),
+                  onPressed: () => _navigateTo(StoreSettings(session.storeId)),
                   child: const Text('Edit'),
                 ),
               ],
@@ -152,8 +152,8 @@ class _StorePageState extends State<StorePage> {
                 if (snapshot.hasError) {
                   return Text(
                     describeFailure(snapshot.error!).message,
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.error),
+                    style:
+                        TextStyle(color: Theme.of(context).colorScheme.error),
                   );
                 }
                 final staff = snapshot.data ?? const <AppUser>[];

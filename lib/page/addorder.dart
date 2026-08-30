@@ -210,7 +210,10 @@ class _AddOrderState extends State<AddOrder> {
       context: context,
       initialTime: TimeOfDay.fromDateTime(_placedAt),
     );
-    if (time == null) return;
+    // The same guard the date picker above already has. Both pickers can be
+    // torn down with the page under them — an Android back gesture, or the
+    // process being trimmed — and only one of the two was checking.
+    if (time == null || !mounted) return;
 
     setState(() {
       _placedAt =
@@ -472,9 +475,7 @@ class _AddOrderState extends State<AddOrder> {
   List<Widget> _buildMenuSections(Store store, List<_MenuRow> rows) {
     if (_query.isNotEmpty) {
       final needle = _query.toLowerCase();
-      rows = rows
-          .where((r) => r.name.toLowerCase().contains(needle))
-          .toList();
+      rows = rows.where((r) => r.name.toLowerCase().contains(needle)).toList();
       if (rows.isEmpty) {
         return [
           Padding(
@@ -515,7 +516,8 @@ class _AddOrderState extends State<AddOrder> {
 
     final categorised = store.categories.map((c) => c.id).toSet();
     final loose = live
-        .where((r) => r.categoryId == null || !categorised.contains(r.categoryId))
+        .where(
+            (r) => r.categoryId == null || !categorised.contains(r.categoryId))
         .toList();
     // No heading when there is nothing to distinguish it from: a store with no
     // categories at all should just see its menu.
@@ -626,8 +628,8 @@ class _AddOrderState extends State<AddOrder> {
         value: _guestCount,
         min: 1,
         label: 'Guests',
-        onChanged: (delta) => setState(
-            () => _guestCount = (_guestCount + delta).clamp(1, 99)),
+        onChanged: (delta) =>
+            setState(() => _guestCount = (_guestCount + delta).clamp(1, 99)),
       ),
     );
   }
@@ -700,7 +702,7 @@ class _AddOrderState extends State<AddOrder> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: selected ? scheme.primary : scheme.outlineVariant,
+          color: selected ? scheme.primary : scheme.outline,
           width: selected ? 2 : 1,
         ),
       ),
@@ -769,9 +771,13 @@ class _AddOrderState extends State<AddOrder> {
             Positioned(
               bottom: 0,
               right: 0,
+              // No `visualDensity: compact` here, tempting as it is for the
+              // corner of a tile: compact takes 8pt off each axis and puts the
+              // target at 40x40, under the 48x48 floor. On a till operated at
+              // speed the undo button is the one that most needs to be hit
+              // first time.
               child: IconButton(
                 tooltip: 'One fewer ${row.name}',
-                visualDensity: VisualDensity.compact,
                 icon: Icon(Icons.remove_circle_outline,
                     color: scheme.onPrimaryContainer),
                 onPressed: () => _removeOne(row),
@@ -888,7 +894,7 @@ class _AddOrderState extends State<AddOrder> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final money = moneyFormat(store);
-    final rate = (store.taxRate * 100).toStringAsFixed(0);
+    final rate = formatTaxPercent(store.taxRate);
 
     final taxLabel = store.taxRate <= 0
         ? 'No tax configured'
@@ -896,8 +902,8 @@ class _AddOrderState extends State<AddOrder> {
             ? 'Includes tax ${money.format(totals.taxAmount)} ($rate%)'
             : 'Plus tax ${money.format(totals.taxAmount)} ($rate%)';
 
-    final fine = theme.textTheme.bodySmall
-        ?.copyWith(color: scheme.onSurfaceVariant);
+    final fine =
+        theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant);
 
     return Material(
       elevation: 3,
@@ -933,14 +939,30 @@ class _AddOrderState extends State<AddOrder> {
                   else
                     Text('Total', style: theme.textTheme.titleMedium),
                   const SizedBox(width: 8),
-                  Flexible(
-                    child: FittedBox(
+                  // One flexible child, not two.
+                  //
+                  // This was `Flexible(FittedBox(…))` followed by `Spacer()`,
+                  // and both of those are flex-1: the leftover width was split
+                  // down the middle between the price and a gap, so the price
+                  // and the button moved as the total got longer or shorter
+                  // rather than staying put. At NT$0 — the shortest string
+                  // there is — everything sat at its most lopsided.
+                  //
+                  // `scaleDown` rather than the default `contain`, so a long
+                  // total is allowed to shrink but a short one is never blown
+                  // up to fill the space it happens to have been given.
+                  Expanded(
+                    child: Align(
                       alignment: Alignment.centerLeft,
-                      child: Text(money.format(totals.total),
-                          style: theme.textTheme.headlineSmall),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(money.format(totals.total),
+                            style: theme.textTheme.headlineSmall),
+                      ),
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 12),
                   FilledButton.icon(
                     onPressed: _submitting ? null : _submit,
                     icon: _submitting

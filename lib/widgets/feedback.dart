@@ -21,8 +21,8 @@ void showError(BuildContext context, String message, {Duration? duration}) {
           Icon(Icons.error_outline, color: scheme.onErrorContainer),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(message,
-                style: TextStyle(color: scheme.onErrorContainer)),
+            child:
+                Text(message, style: TextStyle(color: scheme.onErrorContainer)),
           ),
         ],
       ),
@@ -96,6 +96,47 @@ class ErrorView extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A one-line failure note that sits under whatever it belongs to.
+///
+/// For the places where a failure has to be *said* but must not take the
+/// page: a figure tile with no figure in it, a count that never arrived, a
+/// control that is missing because the thing it depends on could not be read.
+/// An [ErrorView] is wrong there because the rest of the screen is working; a
+/// snack bar is wrong because it fades and leaves the gap behind with nothing
+/// to explain it.
+class InlineError extends StatelessWidget {
+  const InlineError(this.error, {this.onRetry, super.key});
+
+  /// Whatever was caught, or a `snapshot.error`.
+  final Object error;
+
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 16, color: theme.colorScheme.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              describeFailure(error).message,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.error),
+            ),
+          ),
+          if (onRetry != null)
+            TextButton(onPressed: onRetry, child: const Text('Retry')),
+        ],
       ),
     );
   }

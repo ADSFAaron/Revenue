@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../database/repositories.dart';
 import '../widgets/feedback.dart';
+import '../widgets/page_body.dart';
 
 class ChangePassword extends StatefulWidget {
   /// Takes no email: re-authentication has to use the address the signed-in
@@ -37,52 +38,54 @@ class _ChangePasswordState extends State<ChangePassword> {
         title: const Text('Change Password'),
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator()) // 加載狀態
-          : Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            _buildPasswordField(
-              controller: oldPasswordController,
-              labelText: 'Old Password',
-              obscureText: !showOldPassword,
-              toggleVisibility: () {
-                setState(() {
-                  showOldPassword = !showOldPassword;
-                });
-              },
+          ? const Center(child: CircularProgressIndicator())
+          : PageBody(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    _buildPasswordField(
+                      controller: oldPasswordController,
+                      labelText: 'Old Password',
+                      obscureText: !showOldPassword,
+                      toggleVisibility: () {
+                        setState(() {
+                          showOldPassword = !showOldPassword;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _buildPasswordField(
+                      controller: newPasswordController,
+                      labelText: 'New Password',
+                      obscureText: !showNewPassword,
+                      toggleVisibility: () {
+                        setState(() {
+                          showNewPassword = !showNewPassword;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _buildPasswordField(
+                      controller: reNewPasswordController,
+                      labelText: 'Retype New Password',
+                      obscureText: !showReNewPassword,
+                      toggleVisibility: () {
+                        setState(() {
+                          showReNewPassword = !showReNewPassword;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: _handleChangePassword,
+                      icon: const Icon(Icons.check),
+                      label: const Text('Change Password'),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 16),
-            _buildPasswordField(
-              controller: newPasswordController,
-              labelText: 'New Password',
-              obscureText: !showNewPassword,
-              toggleVisibility: () {
-                setState(() {
-                  showNewPassword = !showNewPassword;
-                });
-              },
-            ),
-            const SizedBox(height: 16),
-            _buildPasswordField(
-              controller: reNewPasswordController,
-              labelText: 'Retype New Password',
-              obscureText: !showReNewPassword,
-              toggleVisibility: () {
-                setState(() {
-                  showReNewPassword = !showReNewPassword;
-                });
-              },
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: _handleChangePassword,
-              icon: const Icon(Icons.check),
-              label: const Text('Change Password'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 

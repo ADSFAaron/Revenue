@@ -7,6 +7,8 @@ import '../database/repositories.dart';
 import '../models/app_user.dart';
 import '../models/invite.dart';
 import '../widgets/feedback.dart';
+import '../widgets/page_body.dart';
+import '../widgets/empty_state.dart';
 
 /// Where a manager issues invite codes.
 ///
@@ -106,48 +108,49 @@ class _StoreInvitesState extends State<StoreInvites> {
             final live = invites.where((i) => !i.isUsed && !i.isExpiredAt(now));
             final spent = invites.where((i) => i.isUsed || i.isExpiredAt(now));
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-              children: [
-                if (_justIssued != null) ...[
-                  _IssuedCard(
-                    invite: _justIssued!,
-                    onCopy: () => _copy(_justIssued!),
-                    onDismiss: () => setState(() => _justIssued = null),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                if (invites.isEmpty)
-                  const _CenteredMessage(
-                    icon: Icons.group_add_outlined,
-                    title: 'No codes yet',
-                    detail:
-                        'Issue one and read it out. Your colleague picks '
-                        '"Join an existing store" when they register.',
-                  )
-                else ...[
-                  _SectionHeader('Active (${live.length})'),
-                  if (live.isEmpty)
-                    const _EmptySection('No code is currently valid.')
-                  else
-                    ...live.map((i) => _InviteTile(
-                          invite: i,
-                          now: now,
-                          onCopy: () => _copy(i),
-                          onRevoke: () => _revoke(i),
-                        )),
-                  const SizedBox(height: 16),
-                  if (spent.isNotEmpty) ...[
-                    _SectionHeader('Used and expired'),
-                    ...spent.map((i) => _InviteTile(
-                          invite: i,
-                          now: now,
-                          onCopy: null,
-                          onRevoke: () => _revoke(i),
-                        )),
+            return ReadingWidth(
+              builder: (context, insets) => ListView(
+                padding: insets + const EdgeInsets.fromLTRB(16, 8, 16, 96),
+                children: [
+                  if (_justIssued != null) ...[
+                    _IssuedCard(
+                      invite: _justIssued!,
+                      onCopy: () => _copy(_justIssued!),
+                      onDismiss: () => setState(() => _justIssued = null),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (invites.isEmpty)
+                    const EmptyState(
+                      icon: Icons.group_add_outlined,
+                      title: 'No codes yet',
+                      body: 'Issue one and read it out. Your colleague picks '
+                          '"Join an existing store" when they register.',
+                    )
+                  else ...[
+                    _SectionHeader('Active (${live.length})'),
+                    if (live.isEmpty)
+                      const _EmptySection('No code is currently valid.')
+                    else
+                      ...live.map((i) => _InviteTile(
+                            invite: i,
+                            now: now,
+                            onCopy: () => _copy(i),
+                            onRevoke: () => _revoke(i),
+                          )),
+                    const SizedBox(height: 16),
+                    if (spent.isNotEmpty) ...[
+                      _SectionHeader('Used and expired'),
+                      ...spent.map((i) => _InviteTile(
+                            invite: i,
+                            now: now,
+                            onCopy: null,
+                            onRevoke: () => _revoke(i),
+                          )),
+                    ],
                   ],
                 ],
-              ],
+              ),
             );
           },
         ),
@@ -436,36 +439,5 @@ class _EmptySection extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Text(text, style: Theme.of(context).textTheme.bodySmall),
-      );
-}
-
-class _CenteredMessage extends StatelessWidget {
-  const _CenteredMessage({
-    required this.icon,
-    required this.title,
-    required this.detail,
-  });
-
-  final IconData icon;
-  final String title;
-  final String detail;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 40, color: Theme.of(context).disabledColor),
-            const SizedBox(height: 12),
-            Text(title,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 6),
-            Text(detail,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
       );
 }

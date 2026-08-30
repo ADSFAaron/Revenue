@@ -9,6 +9,8 @@ import '../models/store.dart';
 import 'store_setting_history_order_detail.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
+import '../widgets/page_body.dart';
+import '../widgets/empty_state.dart';
 
 /// Order history, newest first, grouped by trading day.
 ///
@@ -34,6 +36,7 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
   bool _loading = true;
   bool _loadingMore = false;
   bool _hasMore = true;
+
   /// The error itself, not its message: ErrorView needs the object to tell a
   /// refused permission (no retry) from a dropped connection (retry).
   Object? _error;
@@ -49,8 +52,7 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
   PaymentMethod? _payment;
   bool _onlyVoided = false;
 
-  bool get _filtering =>
-      _channel != null || _payment != null || _onlyVoided;
+  bool get _filtering => _channel != null || _payment != null || _onlyVoided;
 
   List<Order> get _visible => _orders.where((order) {
         if (_onlyVoided && !order.isVoided) return false;
@@ -153,7 +155,11 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
     if (_error != null) return ErrorView(_error!, onRetry: _initialLoad);
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_orders.isEmpty) {
-      return const Center(child: Text('No orders available.'));
+      return const EmptyState(
+        icon: Icons.receipt_long_outlined,
+        title: 'No orders yet',
+        body: 'Every order rung up on this store appears here, newest first.',
+      );
     }
 
     final visible = _visible;
@@ -221,22 +227,25 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
   Widget _buildList(List<Order> visible) {
     return RefreshIndicator(
       onRefresh: _initialLoad,
-      child: GroupedListView<Order, String>(
-        controller: _scrollController,
-        elements: visible,
-        groupBy: (order) => order.businessDate,
-        groupComparator: (a, b) => b.compareTo(a),
-        itemComparator: (a, b) => b.placedAt.compareTo(a.placedAt),
-        groupSeparatorBuilder: _buildGroupSeparator,
-        itemBuilder: (context, order) => _buildOrderCard(order),
-        useStickyGroupSeparators: true,
-        floatingHeader: true,
-        footer: _loadingMore
-            ? const Padding(
-                padding: EdgeInsets.all(16),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            : const SizedBox(height: 24),
+      child: ReadingWidth(
+        builder: (context, insets) => GroupedListView<Order, String>(
+          padding: insets,
+          controller: _scrollController,
+          elements: visible,
+          groupBy: (order) => order.businessDate,
+          groupComparator: (a, b) => b.compareTo(a),
+          itemComparator: (a, b) => b.placedAt.compareTo(a.placedAt),
+          groupSeparatorBuilder: _buildGroupSeparator,
+          itemBuilder: (context, order) => _buildOrderCard(order),
+          useStickyGroupSeparators: true,
+          floatingHeader: true,
+          footer: _loadingMore
+              ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : const SizedBox(height: 24),
+        ),
       ),
     );
   }
@@ -244,9 +253,8 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
   Widget _buildGroupSeparator(String businessDate) {
     final store = _store;
     final today = store?.currentBusinessDate;
-    final yesterday = today == null
-        ? null
-        : StatsRepository.shiftBusinessDate(today, -1);
+    final yesterday =
+        today == null ? null : StatsRepository.shiftBusinessDate(today, -1);
 
     final String label;
     if (businessDate == today) {
@@ -261,8 +269,7 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
       child: Chip(
         labelPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        label: Text(label,
-            style: const TextStyle(fontWeight: FontWeight.bold)),
+        label: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
   }
@@ -292,8 +299,7 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
           _money.format(order.total),
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 color: order.isVoided ? scheme.onSurfaceVariant : null,
-                decoration:
-                    order.isVoided ? TextDecoration.lineThrough : null,
+                decoration: order.isVoided ? TextDecoration.lineThrough : null,
               ),
         ),
         onTap: () => _openDetail(order),

@@ -11,8 +11,8 @@ enum UserRole {
 
   final String id;
 
-  static UserRole fromId(String? id) =>
-      UserRole.values.firstWhere((r) => r.id == id, orElse: () => UserRole.staff);
+  static UserRole fromId(String? id) => UserRole.values
+      .firstWhere((r) => r.id == id, orElse: () => UserRole.staff);
 
   bool get canManage => this == UserRole.owner || this == UserRole.manager;
 
@@ -71,9 +71,11 @@ class AppUser {
   /// Initials for the avatar circles. Falls back to the email so a user who
   /// never set a name still gets something readable.
   String get initials {
-    final source = displayName.trim().isNotEmpty ? displayName.trim() : email.trim();
+    final source =
+        displayName.trim().isNotEmpty ? displayName.trim() : email.trim();
     if (source.isEmpty) return '??';
-    final parts = source.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    final parts =
+        source.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
     if (parts.length >= 2) {
       return (parts[0][0] + parts[1][0]).toUpperCase();
     }

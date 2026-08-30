@@ -10,6 +10,7 @@ import '../models/store.dart';
 import '../settings/store_settings_edit_menu.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
+import '../widgets/empty_state.dart';
 
 /// How far back the reports look.
 ///
@@ -183,7 +184,7 @@ class _AnalysisPageState extends State<AnalysisPage>
 
         final days = snapshot.data!;
         if (days.isEmpty) {
-          return _EmptyNotice(
+          return EmptyState(
             icon: Icons.event_busy_outlined,
             title: 'Nothing traded in the ${_window.label.toLowerCase()}',
             body: 'These reports describe patterns, and a pattern needs '
@@ -250,7 +251,7 @@ class _SummaryTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (headlines.isEmpty) {
-      return const _EmptyNotice(
+      return const EmptyState(
         icon: Icons.lightbulb_outline_rounded,
         title: 'Nothing stands out yet',
         body: 'Nothing in this window is far enough from the ordinary to be '
@@ -272,24 +273,110 @@ class _SummaryTab extends StatelessWidget {
   }
 }
 
+/// One card on Insights: a glyph, a headline, a sentence under it.
+///
+/// Every card on this page used to build its own. Two hand-rolled a `Row`, one
+/// used a `ListTile`, and a `ListTile` does not measure the way a `Row` does —
+/// its leading slot has its own insets and its own gap to the title, so the
+/// odd card out sat several points off the others down the left edge, which is
+/// exactly the sort of thing that reads as "unfinished" without anybody being
+/// able to say why.
+///
+/// The icon is centred in a box the height of one line of [titleMedium] rather
+/// than aligned to the top of it. Top-aligning a 24pt glyph against a 24pt line
+/// box is only correct if the glyph fills its box, and none of these do — the
+/// warning triangle in particular has a point at the top and reads high.
+class _InsightCard extends StatelessWidget {
+  const _InsightCard({
+    required this.icon,
+    required this.title,
+    required this.detail,
+    this.background,
+    this.foreground,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String detail;
+  final Color? background;
+  final Color? foreground;
+  final VoidCallback? onTap;
+
+  /// One line of `titleMedium`: 16pt at the 1.5 line height Material gives it.
+  static const double _titleLine = 24;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final ink = foreground ?? scheme.onSurface;
+
+    final body = Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: _titleLine,
+            child: Center(child: Icon(icon, color: ink, size: 24)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(color: ink),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  detail,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: ink.withValues(alpha: 0.85)),
+                ),
+              ],
+            ),
+          ),
+          if (onTap != null) ...[
+            const SizedBox(width: 8),
+            SizedBox(
+              height: _titleLine,
+              child: Center(
+                child: Icon(Icons.chevron_right_rounded, color: ink),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    return Card(
+      color: background,
+      elevation: background == null ? null : 0,
+      child: onTap == null
+          ? body
+          : InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(12),
+              child: body,
+            ),
+    );
+  }
+}
+
 /// Points at the Pairings report, which has to be run by hand.
 class _PairingsSignpost extends StatelessWidget {
   const _PairingsSignpost();
 
   @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Card(
-      child: ListTile(
-        leading: Icon(Icons.hub_outlined, color: scheme.onSurfaceVariant),
-        title: const Text('Which dishes get ordered together'),
-        subtitle: const Text(
-            'Reads every order rather than the daily summaries, so it runs '
-            'only when you ask. Open the Pairings tab.'),
-        isThreeLine: true,
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const _InsightCard(
+        icon: Icons.hub_outlined,
+        title: 'Which dishes get ordered together',
+        detail: 'Reads every order rather than the daily summaries, so it runs '
+            'only when you ask. Open the Pairings tab.',
+      );
 }
 
 class _HeadlineCard extends StatelessWidget {
@@ -300,8 +387,7 @@ class _HeadlineCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final scheme = Theme.of(context).colorScheme;
 
     final (background, foreground, icon) = switch (headline.severity) {
       HeadlineSeverity.warning => (
@@ -321,42 +407,13 @@ class _HeadlineCard extends StatelessWidget {
         ),
     };
 
-    return Card(
-      color: background,
-      child: InkWell(
-        onTap: () => onOpen(headline.topic),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, color: foreground),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      headline.title,
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(color: foreground),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      headline.detail,
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: foreground.withValues(alpha: 0.85)),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(Icons.chevron_right_rounded, color: foreground),
-            ],
-          ),
-        ),
-      ),
+    return _InsightCard(
+      icon: icon,
+      title: headline.title,
+      detail: headline.detail,
+      background: background,
+      foreground: foreground,
+      onTap: () => onOpen(headline.topic),
     );
   }
 }
@@ -373,7 +430,7 @@ class _MenuMatrixTab extends StatelessWidget {
   Widget build(BuildContext context) {
     if (matrix.items.isEmpty) {
       final uncosted = matrix.unclassified.length;
-      return _EmptyNotice(
+      return EmptyState(
         icon: Icons.receipt_long_outlined,
         title: 'Nothing to place on the matrix yet',
         body: uncosted == 0
@@ -513,21 +570,18 @@ class _FoodCostBanner extends StatelessWidget {
     if (rate == null) return const SizedBox.shrink();
 
     final high = matrix.foodCostIsHigh;
-    return Card(
-      elevation: 0,
-      color: high
-          ? Theme.of(context).colorScheme.errorContainer
-          : Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: ListTile(
-        leading: Icon(high ? Icons.warning_amber_rounded : Icons.check_circle_outline),
-        title: Text('Food cost ${(rate * 100).toStringAsFixed(1)}%'),
-        subtitle: Text(high
-            ? 'Above the ${(MenuEngineering.foodCostWarningRate * 100).round()}% '
-                'watch line — usually pricing, portioning or waste. Covers only '
-                'the dishes that have costs on file.'
-            : 'Within the usual range. Covers only the dishes that have costs '
-                'on file.'),
-      ),
+    final scheme = Theme.of(context).colorScheme;
+    return _InsightCard(
+      icon: high ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+      background: high ? scheme.errorContainer : scheme.surfaceContainerHighest,
+      foreground: high ? scheme.onErrorContainer : scheme.onSurface,
+      title: 'Food cost ${(rate * 100).toStringAsFixed(1)}%',
+      detail: high
+          ? 'Above the ${(MenuEngineering.foodCostWarningRate * 100).round()}% '
+              'watch line — usually pricing, portioning or waste. Covers only '
+              'the dishes that have costs on file.'
+          : 'Within the usual range. Covers only the dishes that have costs '
+              'on file.',
     );
   }
 }
@@ -543,7 +597,7 @@ class _BusyTimesTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (demand.isEmpty) {
-      return const _EmptyNotice(
+      return const EmptyState(
         icon: Icons.schedule,
         title: 'No trading hours recorded',
         body: 'Orders need to be rung up before a pattern can appear.',
@@ -669,8 +723,8 @@ class _HeatCell extends StatelessWidget {
         decoration: BoxDecoration(
           // Lerping from the surface colour means an empty hour reads as
           // background rather than as a deliberate "zero" block.
-          color: Color.lerp(scheme.surfaceContainerHighest, scheme.primary,
-              intensity),
+          color: Color.lerp(
+              scheme.surfaceContainerHighest, scheme.primary, intensity),
           borderRadius: BorderRadius.circular(4),
         ),
         child: Center(
@@ -715,7 +769,8 @@ class _PrepTabState extends State<_PrepTab> {
               for (var weekday = 1; weekday <= 7; weekday++)
                 ButtonSegment(
                   value: weekday,
-                  label: Text(DemandProfile.weekdayName(weekday).substring(0, 1)),
+                  label:
+                      Text(DemandProfile.weekdayName(weekday).substring(0, 1)),
                 ),
             ],
             selected: {_weekday},
@@ -726,7 +781,7 @@ class _PrepTabState extends State<_PrepTab> {
         ),
         Expanded(
           child: forecast.isEmpty
-              ? _EmptyNotice(
+              ? EmptyState(
                   icon: Icons.no_food_outlined,
                   title: 'No ${DemandProfile.weekdayName(_weekday)} on record',
                   body: 'Either the shop does not open that day, or the window '
@@ -745,7 +800,9 @@ class _PrepTabState extends State<_PrepTab> {
                         padding: const EdgeInsets.only(top: 8),
                         child: Card(
                           elevation: 0,
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
                           child: const ListTile(
                             dense: true,
                             leading: Icon(Icons.info_outline),
@@ -858,7 +915,7 @@ class _PairingsTabState extends State<_PairingsTab> {
 
         final analysis = snapshot.data!;
         if (analysis.isEmpty) {
-          return _EmptyNotice(
+          return EmptyState(
             icon: Icons.hub_outlined,
             title: 'No pairings stand out',
             body: analysis.multiItemBasketCount == 0
@@ -898,49 +955,5 @@ class _PairingsTabState extends State<_PairingsTab> {
 }
 
 // ---------------------------------------------------------------------- bits
-
-class _EmptyNotice extends StatelessWidget {
-  const _EmptyNotice({
-    required this.icon,
-    required this.title,
-    required this.body,
-    this.action,
-  });
-
-  final IconData icon;
-  final String title;
-  final String body;
-
-  /// A way out. Telling someone their menu has no costs on it and leaving them
-  /// to find the screen themselves is where this page used to stop.
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon,
-                  size: 48,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
-              const SizedBox(height: 16),
-              Text(title,
-                  style: Theme.of(context).textTheme.titleMedium,
-                  textAlign: TextAlign.center),
-              const SizedBox(height: 8),
-              Text(body,
-                  style: Theme.of(context).textTheme.bodySmall,
-                  textAlign: TextAlign.center),
-              if (action != null) ...[
-                const SizedBox(height: 24),
-                action!,
-              ],
-            ],
-          ),
-        ),
-      );
-}
 
 String _hourLabel(int hour) => '${hour.toString().padLeft(2, '0')}:00';

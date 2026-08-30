@@ -73,7 +73,8 @@ void main() {
         dish('乾麵', price: 70),
       ];
       expect(flagsOn(items, '牛肉麵'), contains(MenuImportFlag.priceOutlier));
-      expect(flagsOn(items, '陽春麵'), isNot(contains(MenuImportFlag.priceOutlier)));
+      expect(
+          flagsOn(items, '陽春麵'), isNot(contains(MenuImportFlag.priceOutlier)));
     });
 
     test('a lost digit is caught too', () {
@@ -124,7 +125,8 @@ void main() {
         dish('炸醬麵', price: 90),
       ];
       // 120 is four times the drinks median and would be an outlier there.
-      expect(flagsOn(items, '牛肉麵'), isNot(contains(MenuImportFlag.priceOutlier)));
+      expect(
+          flagsOn(items, '牛肉麵'), isNot(contains(MenuImportFlag.priceOutlier)));
     });
 
     test('two identical rows are both flagged', () {
@@ -224,8 +226,7 @@ void main() {
 
     test('an imported dish never carries a guessed icon', () {
       final item = MenuImportItem.fromMap({'name': '牛肉麵', 'price': 120});
-      expect(item.toMenuItem(sortOrder: 0).icon,
-          MenuItem.defaultIconCodePoint);
+      expect(item.toMenuItem(sortOrder: 0).icon, MenuItem.defaultIconCodePoint);
     });
   });
 }

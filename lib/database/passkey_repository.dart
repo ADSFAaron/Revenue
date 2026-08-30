@@ -249,9 +249,8 @@ class PasskeyRepository {
     return value;
   }
 
-  static DateTime? _millis(Object? value) => value is num
-      ? DateTime.fromMillisecondsSinceEpoch(value.toInt())
-      : null;
+  static DateTime? _millis(Object? value) =>
+      value is num ? DateTime.fromMillisecondsSinceEpoch(value.toInt()) : null;
 
   /// Turns the platform authenticator's vocabulary into this app's.
   ///
@@ -267,19 +266,21 @@ class PasskeyRepository {
         NoCredentialsAvailableException() => const PasskeyException(
             PasskeyFailure.noCredentials,
             'No passkey on this device for Revenue. Sign in another way, then '
-                'add one from Settings.',
+            'add one from Settings.',
           ),
-        ExcludeCredentialsCanNotBeRegisteredException() => const PasskeyException(
+        ExcludeCredentialsCanNotBeRegisteredException() =>
+          const PasskeyException(
             PasskeyFailure.alreadyRegistered,
             'This device already has a passkey for your account.',
           ),
         DomainNotAssociatedException() => const PasskeyException(
             PasskeyFailure.domainNotAssociated,
             'This app is not associated with the Revenue domain yet, so it '
-                'cannot use passkeys. /.well-known/assetlinks.json needs to be '
-                'published with this build\'s signing fingerprint.',
+            'cannot use passkeys. /.well-known/assetlinks.json needs to be '
+            'published with this build\'s signing fingerprint.',
           ),
-        PasskeyUnsupportedException() || DeviceNotSupportedException() =>
+        PasskeyUnsupportedException() ||
+        DeviceNotSupportedException() =>
           const PasskeyException(
             PasskeyFailure.unsupported,
             'This device cannot use passkeys.',
@@ -291,7 +292,7 @@ class PasskeyRepository {
         SyncAccountNotAvailableException() => const PasskeyException(
             PasskeyFailure.unsupported,
             'Turn on a password-manager account on this device before using '
-                'passkeys.',
+            'passkeys.',
           ),
         PasskeyException() => error,
         _ => PasskeyException(PasskeyFailure.unknown, '$error'),
@@ -310,7 +311,7 @@ class PasskeyRepository {
         'not-found' => const PasskeyException(
             PasskeyFailure.unknown,
             'The passkey service is not deployed. Run '
-                '`firebase deploy --only functions`.',
+            '`firebase deploy --only functions`.',
           ),
         'unavailable' => const PasskeyException(
             PasskeyFailure.unknown,

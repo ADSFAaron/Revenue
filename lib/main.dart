@@ -1,5 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'animation/FadeAnimation.dart';
@@ -9,13 +10,23 @@ import 'home.dart';
 import 'login.dart';
 import 'register.dart';
 import 'settings/theme_controller.dart';
+import 'widgets/feedback.dart';
+import 'widgets/page_body.dart';
 import 'widgets/pre_auth_theme.dart';
 import 'theme.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  final binding = WidgetsFlutterBinding.ensureInitialized();
+  // Hold the native splash through the async work below.
+  //
+  // Without this the splash is drawn and then thrown away before anybody sees
+  // it: the Android embedding swaps LaunchTheme for NormalTheme the moment the
+  // engine attaches, which is long before Firebase has answered, so what the
+  // person actually watches is a blank surface-coloured window. The package
+  // was configured but this half of it was never called.
+  FlutterNativeSplash.preserve(widgetsBinding: binding);
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -30,6 +41,10 @@ Future<void> main() async {
   // to dark a moment later.
   await themeController.load();
   runApp(const MyApp());
+  // Lets Flutter paint. Holding it any longer would mean holding it across the
+  // auth stream, and a slow network has no upper bound — better a spinner on
+  // the app's own surface than a splash that will not go away.
+  FlutterNativeSplash.remove();
 }
 
 class MyApp extends StatelessWidget {
@@ -67,12 +82,14 @@ class HomePage extends StatelessWidget {
           } else if (snapshot.hasData) {
             return const _SessionGate();
           } else if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                'An error occurred: ${snapshot.error}',
-                style: const TextStyle(color: Colors.red),
-              ),
-            );
+            // Was `'An error occurred: ${snapshot.error}'`. This is the first
+            // screen the app ever draws, and the thing being interpolated is a
+            // `FirebaseAuthException` whose `toString()` opens with
+            // `[firebase_auth/…]` — an error code, with no next step, to
+            // somebody who has not even reached a login field. The session
+            // gate fifty lines below already does this properly; this is the
+            // one place that was still doing it by hand.
+            return ErrorView(snapshot.error!);
           } else {
             return const WelcomeScreen();
           }
@@ -127,14 +144,14 @@ class _SessionGateState extends State<_SessionGate> {
           // reaching here is a Firestore failure whose `toString()` starts
           // `[cloud_firestore/…]`, and this is the first screen after sign-in
           // — the worst place in the app to show somebody an error code.
-          return _buildError(describeFailure(snapshot.error!).message);
+          return _buildError(context, describeFailure(snapshot.error!).message);
         }
         return const LoginHomePage();
       },
     );
   }
 
-  Widget _buildError(String message) {
+  Widget _buildError(BuildContext context, String message) {
     return SafeArea(
       child: Center(
         child: Padding(
@@ -142,7 +159,9 @@ class _SessionGateState extends State<_SessionGate> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.cloud_off_rounded, size: 48, color: Colors.grey),
+              Icon(Icons.cloud_off_rounded,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
               const SizedBox(height: 16),
               Text(message, textAlign: TextAlign.center),
               const SizedBox(height: 24),
@@ -178,20 +197,23 @@ class WelcomeScreen extends StatelessWidget {
     // belongs to the signed-in half of the app.
     return PreAuthTheme(
       child: Scaffold(
-      body: SafeArea(
-      child: Container(
-        width: double.infinity,
-        height: MediaQuery.of(context).size.height,
-        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 50),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: <Widget>[
-            _buildWelcomeMessage(context),
-            _buildAuthButtons(context),
-          ],
+        body: SafeArea(
+          child: PageBody(
+            maxWidth: 480,
+            child: Container(
+              width: double.infinity,
+              height: MediaQuery.of(context).size.height,
+              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 50),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: <Widget>[
+                  _buildWelcomeMessage(context),
+                  _buildAuthButtons(context),
+                ],
+              ),
+            ),
+          ),
         ),
-      ),
-      ),
       ),
     );
   }

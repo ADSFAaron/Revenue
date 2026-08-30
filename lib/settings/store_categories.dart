@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../database/repositories.dart';
 import '../models/store.dart';
 import '../widgets/feedback.dart';
+import '../widgets/page_body.dart';
+import '../widgets/empty_state.dart';
 
 /// Menu categories — 主餐 / 小菜 / 飲料, or whatever this kitchen actually calls
 /// its sections.
@@ -101,16 +103,24 @@ class _StoreCategoriesState extends State<StoreCategories> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _categories.isEmpty
-              ? const _EmptyState()
-              : ReorderableListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 0, 88),
-                  itemCount: _categories.length,
-                  itemBuilder: (context, index) => _tile(_categories[index]),
-                  onReorderItem: (oldIndex, newIndex) {
-                    final reordered = [..._categories];
-                    reordered.insert(newIndex, reordered.removeAt(oldIndex));
-                    _persist(reordered);
-                  },
+              ? const EmptyState(
+                  icon: Icons.category_outlined,
+                  title: 'No categories yet',
+                  body: 'Dishes work without them, but grouping the menu '
+                      'is what makes "drinks are 18% of revenue" a '
+                      'question the analysis page can answer.',
+                )
+              : ReadingWidth(
+                  builder: (context, insets) => ReorderableListView.builder(
+                    padding: insets + const EdgeInsets.fromLTRB(16, 8, 0, 88),
+                    itemCount: _categories.length,
+                    itemBuilder: (context, index) => _tile(_categories[index]),
+                    onReorderItem: (oldIndex, newIndex) {
+                      final reordered = [..._categories];
+                      reordered.insert(newIndex, reordered.removeAt(oldIndex));
+                      _persist(reordered);
+                    },
+                  ),
                 ),
     );
   }
@@ -120,7 +130,7 @@ class _StoreCategoriesState extends State<StoreCategories> {
     return ListTile(
       key: ValueKey(category.id),
       leading: Icon(Icons.drag_indicator,
-          color: Theme.of(context).colorScheme.outlineVariant),
+          color: Theme.of(context).colorScheme.onSurfaceVariant),
       title: Text(category.name),
       subtitle: Text(count == 0
           ? 'No dishes'
@@ -260,33 +270,4 @@ class _StoreCategoriesState extends State<StoreCategories> {
     if (!mounted) return;
     showSnack(context, message, isError: isError);
   }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.category_outlined,
-                size: 40, color: Theme.of(context).disabledColor),
-            const SizedBox(height: 12),
-            const Text(
-              'No categories yet',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Dishes work without them, but grouping the menu is what makes '
-              '"drinks are 18% of revenue" a question the analysis page can '
-              'answer.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
-      );
 }

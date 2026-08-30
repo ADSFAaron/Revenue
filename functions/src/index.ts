@@ -30,3 +30,5 @@ export {
 } from "./passkeys.js";
 
 export { importMenuFromPhotos } from "./menu_import.js";
+
+export { deleteAccount } from "./account.js";

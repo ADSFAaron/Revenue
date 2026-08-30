@@ -7,6 +7,7 @@ import '../models/store.dart';
 import '../page/addorder.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
+import '../widgets/page_body.dart';
 
 /// One order, with the option to edit it or void it.
 ///
@@ -80,9 +81,9 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
       child: Scaffold(
         appBar: AppBar(title: const Text('Detail')),
         body: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: SingleChildScrollView(
+          child: ReadingWidth(
+            builder: (context, insets) => SingleChildScrollView(
+              padding: insets + const EdgeInsets.all(20),
               child: Column(
                 spacing: 20,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -133,8 +134,7 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
                 color: order.isVoided
                     ? Theme.of(context).colorScheme.onSurfaceVariant
                     : null,
-                decoration:
-                    order.isVoided ? TextDecoration.lineThrough : null,
+                decoration: order.isVoided ? TextDecoration.lineThrough : null,
               ),
         ),
         const SizedBox(width: 12),
@@ -212,8 +212,7 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
   Widget _buildLine(OrderLine line) {
     return Card(
       child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(vertical: 3, horizontal: 24),
+        contentPadding: const EdgeInsets.symmetric(vertical: 3, horizontal: 24),
         title: Text(line.name),
         subtitle: Text('${_money.format(line.unitPrice)} × ${line.qty}'),
         trailing: Text(
@@ -326,7 +325,9 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
     final store = _store;
     if (store == null) {
       if (mounted) {
-        showError(context, 'The store settings have not loaded yet. Try again '
+        showError(
+            context,
+            'The store settings have not loaded yet. Try again '
             'in a moment.');
       }
       return;

@@ -4,6 +4,8 @@ import '../database/repositories.dart';
 import '../models/app_user.dart';
 import 'store_invites.dart';
 import '../widgets/feedback.dart';
+import '../widgets/page_body.dart';
+import '../widgets/empty_state.dart';
 
 /// The store's staff, read by reverse lookup on `users.storeId`.
 ///
@@ -44,42 +46,55 @@ class StoreStaff extends StatelessWidget {
                   label: const Text('Invite'),
                 )
               : null,
-          body: StreamBuilder<List<AppUser>>(
-            stream: userRepository.watchStaff(storeId),
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return ErrorView(snapshot.error!);
-              }
-              if (!snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
+          // Without knowing who is looking, this page cannot say what they
+          // are allowed to do: `me` falling to null took the Invite button and
+          // every role control away and said nothing, so a manager hitting a
+          // transient error on their own document looked like a manager who
+          // had been demoted. The inner stream reports its own failure; this
+          // one had nowhere to report to.
+          body: meSnapshot.hasError
+              ? ErrorView(meSnapshot.error!)
+              : StreamBuilder<List<AppUser>>(
+                  stream: userRepository.watchStaff(storeId),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return ErrorView(snapshot.error!);
+                    }
+                    if (!snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
 
-              final staff = snapshot.data!;
-              if (staff.isEmpty) {
-                return const Center(
-                    child: Text('No staff found for this store.'));
-              }
+                    final staff = snapshot.data!;
+                    if (staff.isEmpty) {
+                      return EmptyState(
+                        icon: Icons.groups_outlined,
+                        title: 'Nobody on the team yet',
+                        body: canManage
+                            ? 'Issue an invite code and whoever redeems it joins '
+                                'this store.'
+                            : 'Ask the owner to invite your colleagues.',
+                      );
+                    }
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0, vertical: 8.0),
-                child: ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 88),
-                  itemCount: staff.length,
-                  itemBuilder: (context, index) {
-                    final user = staff[index];
-                    return _StaffTile(
-                      user: user,
-                      me: me,
-                      onChangeRole: _mayChangeRoleOf(me, user)
-                          ? () => _changeRole(context, user)
-                          : null,
+                    return ReadingWidth(
+                      builder: (context, insets) => ListView.builder(
+                        padding:
+                            insets + const EdgeInsets.fromLTRB(16, 8, 16, 88),
+                        itemCount: staff.length,
+                        itemBuilder: (context, index) {
+                          final user = staff[index];
+                          return _StaffTile(
+                            user: user,
+                            me: me,
+                            onChangeRole: _mayChangeRoleOf(me, user)
+                                ? () => _changeRole(context, user)
+                                : null,
+                          );
+                        },
+                      ),
                     );
                   },
                 ),
-              );
-            },
-          ),
         );
       },
     );
@@ -120,8 +135,8 @@ class StoreStaff extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(role.label,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w700)),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700)),
                           const SizedBox(height: 2),
                           Text(
                             role == UserRole.manager

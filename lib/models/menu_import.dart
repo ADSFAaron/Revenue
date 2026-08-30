@@ -126,7 +126,8 @@ class MenuImportItem {
         name: name ?? this.name,
         variant: clearVariant ? null : (variant ?? this.variant),
         price: price ?? this.price,
-        categoryName: clearCategory ? null : (categoryName ?? this.categoryName),
+        categoryName:
+            clearCategory ? null : (categoryName ?? this.categoryName),
         modelUnsure: modelUnsure,
         modelNote: modelNote,
         flags: flags ?? this.flags,

@@ -38,6 +38,26 @@ class _MenuCapturePageState extends State<MenuCapturePage>
   String? _error;
   bool _capturing = false;
 
+  /// The one [_open] in flight, or null.
+  ///
+  /// This is the fix for a black viewfinder with a working shutter, and the
+  /// path to it is worth writing down because nothing about it is visible in
+  /// the code that produced it. On Android, `initialize()` is what raises the
+  /// CAMERA permission dialog. A permission dialog pauses the activity, so
+  /// Flutter reports `inactive` and then `resumed` — *while the first
+  /// `initialize()` is still awaiting*. `resumed` used to call [_start] again,
+  /// so first use opened the sensor twice; the second controller's `setState`
+  /// overwrote the first without disposing it, and the `Texture` the page was
+  /// showing pointed at a surface CameraX had already unbound. Black preview,
+  /// live shutter, and it only ever reproduced on the very first run after an
+  /// install, because that is the only run with a permission dialog in it.
+  Future<void>? _starting;
+
+  /// Whether this page currently wants the sensor open. False while the app is
+  /// in the background, so a controller that finishes opening into a
+  /// backgrounded app is closed rather than left holding the camera.
+  bool _wanted = true;
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +68,7 @@ class _MenuCapturePageState extends State<MenuCapturePage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _wanted = false;
     _controller?.dispose();
     super.dispose();
   }
@@ -56,19 +77,57 @@ class _MenuCapturePageState extends State<MenuCapturePage>
   /// preview comes back black after the app has been in the background —
   /// which is exactly what happens when somebody switches away to check
   /// something and comes back.
+  ///
+  /// Every non-resumed state releases, not just `inactive`. `hidden` and
+  /// `paused` are the ones a real backgrounding sends, and leaving the sensor
+  /// open through them holds a camera the rest of the phone may want.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
-    if (state == AppLifecycleState.inactive) {
-      controller.dispose();
-      _controller = null;
-    } else if (state == AppLifecycleState.resumed) {
-      _start();
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _wanted = true;
+        _start();
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        _wanted = false;
+        _release();
     }
   }
 
-  Future<void> _start() async {
+  void _release() {
+    final controller = _controller;
+    if (controller == null) return;
+    // Cleared through setState: the old code dropped the reference without
+    // one, so `build` went on handing a disposed controller to CameraPreview
+    // until something else happened to rebuild.
+    setState(() => _controller = null);
+    controller.dispose();
+  }
+
+  /// Opens the camera, at most once at a time.
+  ///
+  /// Returning the in-flight future rather than starting a second open is the
+  /// whole point — see [_starting].
+  Future<void> _start() {
+    final running = _starting;
+    if (running != null) return running;
+
+    final started = _open().whenComplete(() {
+      _starting = null;
+      // The app went away and came back while the sensor was opening, so the
+      // controller that opening produced was thrown away for a background this
+      // page is no longer in. Nothing else is going to ask.
+      if (mounted && _wanted && _controller == null && _error == null) {
+        _start();
+      }
+    });
+    _starting = started;
+    return started;
+  }
+
+  Future<void> _open() async {
     try {
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
@@ -86,17 +145,34 @@ class _MenuCapturePageState extends State<MenuCapturePage>
         orElse: () => cameras.first,
       );
 
-      final controller = await _open(camera);
-      if (!mounted) {
+      final controller = await _openAt(camera);
+
+      // Opening is slow enough for the page to have gone or the app to have
+      // been backgrounded meanwhile. Either way this controller has nobody to
+      // show it, and an undisposed one keeps the sensor.
+      if (!mounted || !_wanted) {
         await controller.dispose();
         return;
       }
+
+      final previous = _controller;
       setState(() {
         _controller = controller;
         _error = null;
       });
+      // After the swap, never before: disposing the controller the widget tree
+      // is still holding is what turns a live preview black.
+      await previous?.dispose();
     } on CameraException catch (e) {
       if (mounted) setState(() => _error = _describe(e));
+    } catch (e) {
+      // A plugin that threw something other than a CameraException would
+      // otherwise leave this page on a spinner for ever, with the shutter
+      // showing and nothing behind it.
+      if (mounted) {
+        setState(() => _error = 'The camera could not be opened ($e). Go back '
+            'and use Choose image instead.');
+      }
     }
   }
 
@@ -110,7 +186,7 @@ class _MenuCapturePageState extends State<MenuCapturePage>
   /// old handset can refuse one — failing outright there would mean the app
   /// works on the developer's phone and not on the shop's. 720p still reads a
   /// menu; no camera at all does not.
-  static Future<CameraController> _open(CameraDescription camera) async {
+  static Future<CameraController> _openAt(CameraDescription camera) async {
     const presets = [
       ResolutionPreset.veryHigh,
       ResolutionPreset.high,
@@ -119,8 +195,7 @@ class _MenuCapturePageState extends State<MenuCapturePage>
 
     CameraException? last;
     for (final preset in presets) {
-      final controller =
-          CameraController(camera, preset, enableAudio: false);
+      final controller = CameraController(camera, preset, enableAudio: false);
       try {
         await controller.initialize();
         return controller;
@@ -136,7 +211,8 @@ class _MenuCapturePageState extends State<MenuCapturePage>
   }
 
   static String _describe(CameraException e) => switch (e.code) {
-        'CameraAccessDenied' || 'CameraAccessDeniedWithoutPrompt' =>
+        'CameraAccessDenied' ||
+        'CameraAccessDeniedWithoutPrompt' =>
           'Camera access was refused. Allow it for Revenue in the system '
               'settings, or go back and use Choose image instead.',
         'CameraAccessRestricted' =>
@@ -189,7 +265,21 @@ class _MenuCapturePageState extends State<MenuCapturePage>
           : SafeArea(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
+                // `heightFactor: 1` is not a tweak — without it this bar is the
+                // whole screen and there is no viewfinder at all.
+                //
+                // Scaffold measures `bottomNavigationBar` with
+                // `BoxConstraints.loose(size)`: the height is *bounded*, at the
+                // full height of the window. A bare `Center` is an `Align` with
+                // no size factors, and `RenderPositionedBox` only shrink-wraps
+                // an axis whose constraint is unbounded — given a bounded one it
+                // takes all of it. So the bar measured 960dp instead of 120dp,
+                // Scaffold gave the body the nothing that was left, and the
+                // shutter came to rest in the exact middle of a black screen.
+                // Every symptom followed from that: no preview, no guide
+                // rectangle, no caption, and a shutter that still took photos.
                 child: Center(
+                  heightFactor: 1,
                   child: _ShutterButton(
                     busy: _capturing,
                     onPressed: _capture,

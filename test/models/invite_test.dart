@@ -105,7 +105,8 @@ void main() {
     });
 
     test('a spent code is not redeemable however much time is left', () {
-      expect(make(usedBy: 'uid2', expiresIn: const Duration(minutes: 30)).isUsed,
+      expect(
+          make(usedBy: 'uid2', expiresIn: const Duration(minutes: 30)).isUsed,
           isTrue);
     });
 

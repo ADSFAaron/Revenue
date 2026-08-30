@@ -12,6 +12,7 @@ import 'store_settings_audit_log.dart';
 import 'store_settings_edit_menu.dart';
 import 'store_settings_history_order.dart';
 import 'store_staff.dart';
+import '../widgets/page_body.dart';
 
 class StoreSettings extends StatefulWidget {
   final String storeId;
@@ -65,80 +66,82 @@ class _StoreSettingsState extends State<StoreSettings> {
           }
 
           return SafeArea(
-            child: ListView(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-              children: [
-                _buildListTile(
-                  icon: Symbols.id_card,
-                  title: 'Store Name',
-                  subtitle: store.name,
-                  trailing: const Icon(Icons.keyboard_arrow_right_outlined),
-                  onTap: () => _editStoreNameDialog(store),
-                ),
-                // No "Store ID" row. The id is an internal identifier now —
-                // generated at registration, never displayed and never typed.
-                // Colleagues are added with an invite code instead, from the
-                // Staff screen.
-                _buildStaffTile(store),
-                if (store.createdAt != null)
+            child: ReadingWidth(
+              builder: (context, insets) => ListView(
+                padding: insets +
+                    const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                children: [
                   _buildListTile(
-                    icon: Symbols.timer_arrow_up,
-                    title: 'Join Time',
-                    subtitle: DateFormat('yyyy-MM-dd  kk:mm')
-                        .format(store.createdAt!),
+                    icon: Symbols.id_card,
+                    title: 'Store Name',
+                    subtitle: store.name,
+                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                    onTap: () => _editStoreNameDialog(store),
                   ),
-                const Divider(height: 24),
-                _buildListTile(
-                  icon: Icons.bedtime_outlined,
-                  title: 'Trading day starts at',
-                  subtitle:
-                      '${store.dayCutoffHour.toString().padLeft(2, '0')}:00 — '
-                      'orders before this count towards the previous day',
-                  trailing: const Icon(Icons.keyboard_arrow_right_outlined),
-                  onTap: () => _editDayCutoffDialog(store),
-                ),
-                _buildListTile(
-                  icon: Icons.percent_outlined,
-                  title: 'Tax',
-                  subtitle: store.taxRate <= 0
-                      ? 'Not applied'
-                      : '${(store.taxRate * 100).toStringAsFixed(0)}% · '
-                          '${store.taxIncluded ? 'included in prices' : 'added on top'}',
-                  trailing: const Icon(Icons.keyboard_arrow_right_outlined),
-                  onTap: () => _editTaxDialog(store),
-                ),
-                _buildListTile(
-                  icon: Icons.flag_outlined,
-                  title: 'Daily targets',
-                  subtitle: '${store.targets.dailyOrders} orders · '
-                      '${moneyFormat(store).format(store.targets.dailyRevenue)}',
-                  trailing: const Icon(Icons.keyboard_arrow_right_outlined),
-                  onTap: () => _editTargetsDialog(store),
-                ),
-                const Divider(height: 24),
-                _buildListTile(
-                  icon: Icons.menu_book_outlined,
-                  title: 'Edit Menu',
-                  trailing: const Icon(Icons.keyboard_arrow_right_outlined),
-                  subtitle: 'Add, edit, or retire menu items',
-                  onTap: () => _push(StoreEditMenu(widget.storeId)),
-                ),
-                _buildListTile(
-                  icon: Icons.history,
-                  title: 'History Order',
-                  trailing: const Icon(Icons.keyboard_arrow_right_outlined),
-                  subtitle: 'View order history',
-                  onTap: () => _push(StoreHistoryOrder(widget.storeId)),
-                ),
-                _buildListTile(
-                  icon: Icons.fact_check_outlined,
-                  title: 'Change history',
-                  trailing: const Icon(Icons.keyboard_arrow_right_outlined),
-                  subtitle: 'Voids, order edits and price changes',
-                  onTap: () => _push(StoreAuditLog(widget.storeId)),
-                ),
-              ],
+                  // No "Store ID" row. The id is an internal identifier now —
+                  // generated at registration, never displayed and never typed.
+                  // Colleagues are added with an invite code instead, from the
+                  // Staff screen.
+                  _buildStaffTile(store),
+                  if (store.createdAt != null)
+                    _buildListTile(
+                      icon: Symbols.timer_arrow_up,
+                      title: 'Join Time',
+                      subtitle: DateFormat('yyyy-MM-dd  kk:mm')
+                          .format(store.createdAt!),
+                    ),
+                  const Divider(height: 24),
+                  _buildListTile(
+                    icon: Icons.bedtime_outlined,
+                    title: 'Trading day starts at',
+                    subtitle:
+                        '${store.dayCutoffHour.toString().padLeft(2, '0')}:00 — '
+                        'orders before this count towards the previous day',
+                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                    onTap: () => _editDayCutoffDialog(store),
+                  ),
+                  _buildListTile(
+                    icon: Icons.percent_outlined,
+                    title: 'Tax',
+                    subtitle: store.taxRate <= 0
+                        ? 'Not applied'
+                        : '${formatTaxPercent(store.taxRate)}% · '
+                            '${store.taxIncluded ? 'included in prices' : 'added on top'}',
+                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                    onTap: () => _editTaxDialog(store),
+                  ),
+                  _buildListTile(
+                    icon: Icons.flag_outlined,
+                    title: 'Daily targets',
+                    subtitle: '${store.targets.dailyOrders} orders · '
+                        '${moneyFormat(store).format(store.targets.dailyRevenue)}',
+                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                    onTap: () => _editTargetsDialog(store),
+                  ),
+                  const Divider(height: 24),
+                  _buildListTile(
+                    icon: Icons.menu_book_outlined,
+                    title: 'Edit Menu',
+                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                    subtitle: 'Add, edit, or retire menu items',
+                    onTap: () => _push(StoreEditMenu(widget.storeId)),
+                  ),
+                  _buildListTile(
+                    icon: Icons.history,
+                    title: 'History Order',
+                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                    subtitle: 'View order history',
+                    onTap: () => _push(StoreHistoryOrder(widget.storeId)),
+                  ),
+                  _buildListTile(
+                    icon: Icons.fact_check_outlined,
+                    title: 'Change history',
+                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                    subtitle: 'Voids, order edits and price changes',
+                    onTap: () => _push(StoreAuditLog(widget.storeId)),
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -157,11 +160,17 @@ class _StoreSettingsState extends State<StoreSettings> {
           icon: Icons.group_outlined,
           trailing: const Icon(Icons.keyboard_arrow_right_outlined),
           title: 'Staff',
-          subtitle: count == null
-              ? 'Loading…'
-              : '$count ${count == 1 ? 'person' : 'people'} · invite a colleague',
-          onTap: () => _push(
-              StoreStaff(widget.storeId, storeName: store.name)),
+          // `count == null` covers two different situations and used to say
+          // "Loading…" for both, so a refused or offline staff query left a
+          // row that loads forever — the one wording that promises something
+          // is still on its way when nothing is. The row stays tappable
+          // either way: the page behind it reports the failure properly.
+          subtitle: snapshot.hasError
+              ? 'Could not read the staff list'
+              : count == null
+                  ? 'Loading…'
+                  : '$count ${count == 1 ? 'person' : 'people'} · invite a colleague',
+          onTap: () => _push(StoreStaff(widget.storeId, storeName: store.name)),
         );
       },
     );
@@ -219,7 +228,12 @@ class _StoreSettingsState extends State<StoreSettings> {
       ),
     );
 
-    if (newName == null || newName.isEmpty) return;
+    if (newName == null) return; // Cancel
+    if (newName.isEmpty) {
+      // Was a silent return: the dialog closed, nothing saved, nothing said.
+      if (mounted) showError(context, 'A store needs a name.');
+      return;
+    }
     try {
       await storeRepository.updateName(widget.storeId, newName);
       _showSnackBar('Store name updated successfully');
@@ -288,7 +302,7 @@ class _StoreSettingsState extends State<StoreSettings> {
   }
 
   Future<void> _editTaxDialog(Store store) async {
-    rateController.text = (store.taxRate * 100).toStringAsFixed(0);
+    rateController.text = formatTaxPercent(store.taxRate);
     var included = store.taxIncluded;
 
     final saved = await showDialog<bool>(
@@ -302,11 +316,19 @@ class _StoreSettingsState extends State<StoreSettings> {
               TextField(
                 controller: rateController,
                 autofocus: true,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                // Digits and one point. `digitsOnly` was here, which made a
+                // 1.5% rate physically untypeable — the keyboard offered the
+                // decimal point and the field swallowed it.
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                  _SingleDecimalPoint(),
+                ],
                 decoration: const InputDecoration(
                   labelText: 'Rate (%)',
                   hintText: '5',
+                  helperText: 'Decimals are fine — 1.5, 8.25',
                 ),
               ),
               const SizedBox(height: 8),
@@ -332,13 +354,17 @@ class _StoreSettingsState extends State<StoreSettings> {
       ),
     );
 
-    final percent = int.tryParse(rateController.text) ?? 0;
     if (saved != true) return;
+    final rate = parseTaxPercent(rateController.text);
+    if (rate == null) {
+      if (mounted) showError(context, 'Enter a tax rate between 0 and 100.');
+      return;
+    }
 
     try {
       await storeRepository.updateTax(
         widget.storeId,
-        taxRate: percent / 100,
+        taxRate: rate,
         taxIncluded: included,
       );
       _showSnackBar('Tax settings updated');
@@ -370,8 +396,9 @@ class _StoreSettingsState extends State<StoreSettings> {
               controller: revenueController,
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration:
-                  const InputDecoration(labelText: 'Revenue per day (NTD)'),
+              decoration: InputDecoration(
+                  labelText: 'Revenue per day '
+                      '(${store.currency})'),
             ),
           ],
         ),
@@ -388,9 +415,15 @@ class _StoreSettingsState extends State<StoreSettings> {
       ),
     );
 
+    if (saved != true) return;
     final orders = int.tryParse(ordersController.text);
     final revenue = int.tryParse(revenueController.text);
-    if (saved != true || orders == null || revenue == null) return;
+    if (orders == null || revenue == null || orders <= 0 || revenue <= 0) {
+      if (mounted) {
+        showError(context, 'Both targets need to be a number above zero.');
+      }
+      return;
+    }
 
     try {
       await storeRepository.updateTargets(
@@ -408,4 +441,19 @@ class _StoreSettingsState extends State<StoreSettings> {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
   }
+}
+
+/// Keeps a decimal field to one decimal point.
+///
+/// `FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))` lets "1.5.5" through
+/// because it filters characters, not strings; this rejects the edit that
+/// would produce a second point rather than trying to repair it, which leaves
+/// the caret where the person left it.
+class _SingleDecimalPoint extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) =>
+      '.'.allMatches(newValue.text).length > 1 ? oldValue : newValue;
 }

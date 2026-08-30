@@ -49,8 +49,18 @@ dependencies:
   # Use for opening app splash screen
   flutter_native_splash: ^2.4.4
 
-  # Use for statistics graph
-  syncfusion_flutter_charts: ^29.1.35
+  # Charts on the Reports page.
+  #
+  # `syncfusion_flutter_charts` was here and is not a free package: it ships
+  # under a commercial licence with a Community exemption that only holds while
+  # the organisation is under a million dollars of revenue and under five
+  # developers. That is a condition on the *company*, not on the code, so it can
+  # stop being true without anybody touching a line — a poor thing to have
+  # underneath a shop's reports. fl_chart is MIT.
+  #
+  # There is no first-party option to compare against: Google archived
+  # `charts_flutter` in January 2023.
+  fl_chart: ^1.1.1
 
   # Use for output Excel file
   excel: ^4.0.6
@@ -111,8 +121,16 @@ dependencies:
   # several seconds of upload for no gain.
   image_picker: ^1.1.2
 
-  # Use for edit menu icon
-  flutter_iconpicker: ^4.0.1
+  # Dish icons are a hand-picked list in lib/widgets/dish_icons.dart, not a
+  # picker over the whole font.
+  #
+  # `flutter_iconpicker` used to do this and stopped working without a single
+  # line of this app changing: 4.0.2 moved the icon data out of the package
+  # into a code generator and left `const defaultIcons = {}` behind, so a
+  # `^4.0.1` that resolved to 4.0.3 opened a picker with nothing in it. Fifty
+  # icons that are all food beat six thousand that are not, and being `const`
+  # they also survive `--tree-shake-icons` in a release build, which a code
+  # point read out of Firestore does not.
   material_symbols_icons: ^4.2811.0
 
 dev_dependencies:
@@ -122,40 +140,88 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   change_app_package_name: ^1.5.0
 
-# App Icon
+# App icon.
+#
+# Every image below is derived from assets/icon/AppLogo.png by
+# `python3 tool/logo_assets.py` — read that file before changing any path
+# here. Backgrounds are `colorScheme.surface`, the same value the splash uses,
+# so the icon and the launch screen are one surface (docs/design-tokens.md).
+#
+# Re-run after any change here: `dart run flutter_launcher_icons`.
 flutter_launcher_icons:
   android: "launcher_icon"
-  image_path: "./assets/icon/AppLogo.png"
+  # Opaque: an iOS app icon may not carry an alpha channel, and this same
+  # square is what Android legacy, web and the desktop targets fall back to.
+  image_path: "assets/icon/AppLogoIcon.png"
   min_sdk_android: 27 # android min sdk min:16, default 21
-  adaptive_icon_background: "#eae9e4"
-  adaptive_icon_foreground: "assets/icon/AppLogo.png"
+  adaptive_icon_background: "#F9FAEF"
+  adaptive_icon_foreground: "assets/icon/AppLogoAdaptive.png"
   adaptive_icon_monochrome: "assets/icon/AppLogoMonochrome.png"
-  adaptive_icon_foreground_inset: 64
+  # 0, because the padding is already in the two images above — tool/
+  # logo_assets.py draws the mark at half the canvas so it sits comfortably
+  # inside the circular mask rather than against it.
+  # This used to be 64, which becomes `android:inset="64%"` on each side and
+  # would have collapsed the foreground to nothing; it had never run, because
+  # AppLogoMonochrome.png did not exist and the tool exits on a missing file.
+  adaptive_icon_foreground_inset: 0
   ios: true
   remove_alpha_ios: false
-  image_path_ios_dark_transparent: "assets/icon/AppLogo.png"
-  image_path_ios_tinted_grayscale: "assets/icon/AppLogo.png"
+  # iOS 18's dark and tinted icons composite over a ground the system draws,
+  # so these are transparent and use the dark-mode pair.
+  image_path_ios_dark_transparent: "assets/icon/AppLogoIconDark.png"
+  image_path_ios_tinted_grayscale: "assets/icon/AppLogoIconDark.png"
   desaturate_tinted_to_grayscale_ios: true
-  background_color_ios: "#eae9e4"
+  background_color_ios: "#F9FAEF"
   web:
     generate: true
-    image_path: "assets/icon/AppLogo.png"
-    background_color: "#eae9e4"
-    theme_color: "#eae9e4"
+    image_path: "assets/icon/AppLogoIcon.png"
+    background_color: "#F9FAEF"
+    theme_color: "#F9FAEF"
   windows:
     generate: true
-    image_path: "assets/icon/AppLogo.png"
+    image_path: "assets/icon/AppLogoIcon.png"
     icon_size: 48 # min:48, max:256, default: 48
   macos:
     generate: true
-    image_path: "assets/icon/AppLogo.png"
+    image_path: "assets/icon/AppLogoIcon.png"
 
+# Native splash screen.
+#
+# Colours are design tokens, not free choices — see docs/design-tokens.md.
+# The background is `colorScheme.surface` in each mode (Warm Cream #F9FAEF /
+# dark #12140E) so the launch screen and the first painted frame are the same
+# colour and the handover is invisible. The previous values were #eae9e4 in
+# this file and a cyan #54EFEF baked into every generated asset — the config
+# had been edited without re-running the generator, so what shipped was the
+# cyan.
+#
+# Re-run after any change here: `dart run flutter_native_splash:create`.
 flutter_native_splash:
-  color: "#eae9e4"
-  image: "assets/icon/AppLogo.png"
+  # Web is handled by hand in web/index.html instead. The generator injects its
+  # own <picture id="splash"> plus a `removeSplashFromWeb()` that only Flutter's
+  # stock bootstrap calls — this app has a custom one (it has to load the
+  # passkeys bundle first), so the generated splash would never be removed. It
+  # also adds a second viewport meta carrying `user-scalable=no`, which takes
+  # pinch-zoom away from the whole web app. The hand-written #loading overlay
+  # already does this job, off the same two tokens.
+  web: false
+  color: "#F9FAEF"
+  color_dark: "#12140E"
+  # Both derived from assets/icon/AppLogo.png by `python3 tool/logo_assets.py`.
+  # The dark copy is not a tint of the light one: the R is #4A672D, which on
+  # #12140E is 1.9:1, so it moves to `primaryContainer` #CBEEA5 (14.4:1) while
+  # the rays keep Growth Green.
+  image: "assets/icon/AppLogoSplash.png"
+  image_dark: "assets/icon/AppLogoSplashDark.png"
+  # Android 12+ draws the splash itself and masks the icon to a circle 768px
+  # across on a 1152px canvas. These two are pre-rendered to that spec; the
+  # mark's own enclosing circle is 1.26x its width, so it is the circle and not
+  # the bounding box that sets the size.
   android_12:
-    image: "assets/icon/AppLogo.png"
-    color: "#eae9e4"
+    color: "#F9FAEF"
+    color_dark: "#12140E"
+    image: "assets/icon/AppLogoAndroid12.png"
+    image_dark: "assets/icon/AppLogoAndroid12Dark.png"
 
 # The following section is specific to Flutter.
 flutter:

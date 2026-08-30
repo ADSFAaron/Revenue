@@ -7,6 +7,7 @@ import 'database/repositories.dart';
 import 'widgets/feedback.dart';
 import 'register.dart';
 import 'sign_in_options.dart';
+import 'widgets/page_body.dart';
 import 'widgets/pre_auth_theme.dart';
 
 class LoginPage extends StatefulWidget {
@@ -43,212 +44,222 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     return PreAuthTheme(
       child: Scaffold(
-      resizeToAvoidBottomInset: true,
-      appBar: AppBar(
-        // Dark status-bar icons, because the bar behind them is light.
-        systemOverlayStyle: SystemUiOverlayStyle.dark,
-        // Transparent rather than a fixed colour, so the bar always picks up
-        // the scaffold background instead of drifting from it when the theme
-        // changes. surfaceTint and scrolledUnderElevation are what would
-        // otherwise tint it the moment content scrolls underneath.
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        scrolledUnderElevation: 0,
-        elevation: 0,
-        leading: IconButton(
-          tooltip: 'Back',
-          icon: Icon(
-            Icons.arrow_back,
-            color: Colors.grey[700],
-            size: 20,
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(
+          // Dark status-bar icons, because the bar behind them is light.
+          systemOverlayStyle: SystemUiOverlayStyle.dark,
+          // Transparent rather than a fixed colour, so the bar always picks up
+          // the scaffold background instead of drifting from it when the theme
+          // changes. surfaceTint and scrolledUnderElevation are what would
+          // otherwise tint it the moment content scrolls underneath.
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          scrolledUnderElevation: 0,
+          elevation: 0,
+          leading: IconButton(
+            tooltip: 'Back',
+            icon: Icon(
+              Icons.arrow_back,
+              color: Colors.grey[700],
+              size: 20,
+            ),
+            onPressed: () => Navigator.pop(context),
           ),
-          onPressed: () => Navigator.pop(context),
         ),
-      ),
-      body: SingleChildScrollView(
-        child: ConstrainedBox(
-          // minHeight rather than a fixed height: with the Google and passkey
-          // buttons added, a short screen has to be allowed to scroll rather
-          // than overflow.
-          constraints: BoxConstraints(
-            minHeight: MediaQuery.of(context).size.height - 100,
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: <Widget>[
-              Column(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        body: SingleChildScrollView(
+          // A sign-in form has no reason to be 1400pt wide in a browser.
+          child: PageBody(
+            maxWidth: 480,
+            child: ConstrainedBox(
+              // minHeight rather than a fixed height: with the Google and passkey
+              // buttons added, a short screen has to be allowed to scroll rather
+              // than overflow.
+              constraints: BoxConstraints(
+                minHeight: MediaQuery.of(context).size.height - 100,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: <Widget>[
-                  FadeAnimation(
-                    0,
-                    Text(
-                      "Login",
-                      style: TextStyle(
-                          fontSize: 30,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black),
-                    ),
-                  ),
-                  SizedBox(height: 10),
-                  FadeAnimation(
-                      100,
-                      Text(
-                        "Login to your account",
-                        style: TextStyle(fontSize: 15, color: Colors.grey[700]),
-                      )),
-                  SizedBox(height: 10),
-                  // Was a bare red DecoratedBox with no padding or radius that
-                  // shoved the fields down as it appeared.
-                  Visibility(
-                    visible: errorVisible,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(40, 0, 40, 8),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFEBEE),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFE57373)),
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: <Widget>[
+                      FadeAnimation(
+                        0,
+                        Text(
+                          "Login",
+                          style: TextStyle(
+                              fontSize: 30,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black),
                         ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.error_outline,
-                                color: Color(0xFFB71C1C), size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                errorString,
-                                style: const TextStyle(
-                                    fontSize: 15, color: Color(0xFFB71C1C)),
+                      ),
+                      SizedBox(height: 10),
+                      FadeAnimation(
+                          100,
+                          Text(
+                            "Login to your account",
+                            style: TextStyle(
+                                fontSize: 15, color: Colors.grey[700]),
+                          )),
+                      SizedBox(height: 10),
+                      // Was a bare red DecoratedBox with no padding or radius that
+                      // shoved the fields down as it appeared.
+                      Visibility(
+                        visible: errorVisible,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(40, 0, 40, 8),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFEBEE),
+                              borderRadius: BorderRadius.circular(8),
+                              border:
+                                  Border.all(color: const Color(0xFFE57373)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.error_outline,
+                                    color: Color(0xFFB71C1C), size: 20),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    errorString,
+                                    style: const TextStyle(
+                                        fontSize: 15, color: Color(0xFFB71C1C)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding:
+                            EdgeInsets.symmetric(vertical: 20, horizontal: 40),
+                        // Without this the hints on the fields are advisory only —
+                        // the platform needs a group to know the two belong to one
+                        // credential and to offer to save it.
+                        child: AutofillGroup(
+                          child: Column(
+                            children: <Widget>[
+                              FadeAnimation(
+                                  250,
+                                  makeInput(
+                                      label: "Email",
+                                      controller: emailController)),
+                              FadeAnimation(
+                                  500,
+                                  makeInput(
+                                      label: "Password",
+                                      isPassword: true,
+                                      controller: passwordController)),
+                              FadeAnimation(
+                                600,
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    onPressed:
+                                        _signingIn ? null : _resetPassword,
+                                    child: const Text('Forgot password?'),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      FadeAnimation(
+                          750,
+                          Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 40,
+                            ),
+                            child: Container(
+                              padding: EdgeInsets.only(top: 3, left: 3),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(50),
+                                border: Border.all(color: Colors.black),
+                              ),
+                              child: MaterialButton(
+                                height: 60,
+                                minWidth: double.infinity,
+                                onPressed: _signingIn
+                                    ? null
+                                    : () {
+                                        signIn(emailController.text.trim(),
+                                            passwordController.text.trim());
+                                      },
+                                color: Colors.greenAccent,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(50)),
+                                child: _signingIn
+                                    ? const SizedBox(
+                                        height: 24,
+                                        width: 24,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.black54),
+                                      )
+                                    : Text(
+                                        'Login',
+                                        style: TextStyle(
+                                            fontSize: 20,
+                                            fontWeight: FontWeight.w600),
+                                      ),
                               ),
                             ),
-                          ],
+                          )),
+                      FadeAnimation(
+                        900,
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(40, 24, 40, 0),
+                          child: SignInOptions(
+                            onGoogle: signInWithGoogle,
+                            onPasskey: signInWithPasskey,
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                  Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20, horizontal: 40),
-                    // Without this the hints on the fields are advisory only —
-                    // the platform needs a group to know the two belong to one
-                    // credential and to offer to save it.
-                    child: AutofillGroup(
-                      child: Column(
-                      children: <Widget>[
-                        FadeAnimation(
-                            250,
-                            makeInput(
-                                label: "Email", controller: emailController)),
-                        FadeAnimation(
-                            500,
-                            makeInput(
-                                label: "Password",
-                                isPassword: true,
-                                controller: passwordController)),
-                        FadeAnimation(
-                          600,
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: _signingIn ? null : _resetPassword,
-                              child: const Text('Forgot password?'),
+                  FadeAnimation(
+                      1000,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text("Don't have an account? "),
+                          TextButton(
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const RegisterPage()),
+                            ),
+                            child: const Text(
+                              "Sign UP",
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 20,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                      ),
-                    ),
-                  ),
-                  FadeAnimation(
-                      750,
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 40,
-                        ),
-                        child: Container(
-                          padding: EdgeInsets.only(top: 3, left: 3),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(50),
-                            border: Border.all(color: Colors.black),
-                          ),
-                          child: MaterialButton(
-                            height: 60,
-                            minWidth: MediaQuery.of(context).size.width,
-                            onPressed: _signingIn
-                                ? null
-                                : () {
-                                    signIn(emailController.text.trim(),
-                                        passwordController.text.trim());
-                                  },
-                            color: Colors.greenAccent,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(50)),
-                            child: _signingIn
-                                ? const SizedBox(
-                                    height: 24,
-                                    width: 24,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: Colors.black54),
-                                  )
-                                : Text(
-                                    'Login',
-                                    style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w600),
-                                  ),
-                          ),
-                        ),
+                        ],
                       )),
                   FadeAnimation(
-                    900,
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(40, 24, 40, 0),
-                      child: SignInOptions(
-                        onGoogle: signInWithGoogle,
-                        onPasskey: signInWithPasskey,
+                    1250,
+                    SizedBox(
+                      height: MediaQuery.of(context).size.height / 4,
+                      child: SvgPicture.asset(
+                        'assets/login_bg.svg',
+                        fit: BoxFit.fitHeight,
                       ),
                     ),
                   ),
                 ],
               ),
-              FadeAnimation(
-                  1000,
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text("Don't have an account? "),
-                      TextButton(
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const RegisterPage()),
-                        ),
-                        child: const Text(
-                          "Sign UP",
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 20,
-                          ),
-                        ),
-                      ),
-                    ],
-                  )),
-              FadeAnimation(
-                1250,
-                SizedBox(
-                  height: MediaQuery.of(context).size.height / 4,
-                  child: SvgPicture.asset(
-                    'assets/login_bg.svg',
-                    fit: BoxFit.fitHeight,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -335,13 +346,13 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    if (result.isNewAccount) {
-      // Created seconds ago and never used. Leaving it behind would mean the
-      // person's second attempt at registering hits "email already in use".
-      await authRepository.deleteCurrentAccount();
-    } else {
-      await authRepository.signOut();
-    }
+    // Best-effort, and it has to be: this runs after a *successful* sign-in
+    // that turned out to lead nowhere, and the callers above catch
+    // `AuthException` and `PasskeyException` only. A bare `signOut()` throwing
+    // a raw `FirebaseAuthException` here escaped all of them, so the person
+    // saw a framework error instead of the sentence below telling them which
+    // button they actually wanted.
+    await authRepository.discardSignIn(result);
 
     _showError(
       'There is no Revenue account for that sign-in yet. Tap Sign UP to open '
@@ -388,14 +399,16 @@ class _LoginPageState extends State<LoginPage> {
               isPassword ? TextInputAction.done : TextInputAction.next,
           onSubmitted: (value) {
             if (isPassword) {
-              signIn(emailController.text.trim(),
-                  passwordController.text.trim());
+              signIn(
+                  emailController.text.trim(), passwordController.text.trim());
             }
           },
           decoration: InputDecoration(
             contentPadding: EdgeInsets.symmetric(vertical: 0, horizontal: 10),
-            border: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
-            enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+            border:
+                OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+            enabledBorder:
+                OutlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
             suffixIcon: isPassword
                 ? IconButton(
                     tooltip:
@@ -403,8 +416,8 @@ class _LoginPageState extends State<LoginPage> {
                     icon: Icon(_obscurePassword
                         ? Icons.visibility_outlined
                         : Icons.visibility_off_outlined),
-                    onPressed: () => setState(
-                        () => _obscurePassword = !_obscurePassword),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                   )
                 : null,
           ),
@@ -413,5 +426,4 @@ class _LoginPageState extends State<LoginPage> {
       ],
     );
   }
-
 }

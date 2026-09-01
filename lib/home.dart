@@ -6,6 +6,7 @@ import 'page/analysis.dart';
 import 'page/statistics.dart';
 import 'page/store.dart';
 import 'page/transaction.dart';
+import 'widgets/pending_orders.dart';
 
 /// The signed-in shell.
 ///
@@ -33,11 +34,15 @@ class _LoginHomePageState extends State<LoginHomePage> {
     super.initState();
     final uid = authRepository.currentUid;
     if (uid != null) connectionStatus.watch(uid);
+    // Reads back anything rung up offline last time and starts draining it the
+    // moment there is a connection.
+    pendingOrders.start();
   }
 
   @override
   void dispose() {
     connectionStatus.stop();
+    pendingOrders.stop();
     super.dispose();
   }
 
@@ -101,6 +106,11 @@ class _LoginHomePageState extends State<LoginHomePage> {
   Widget _body() => Column(
         children: [
           const _OfflineBanner(),
+          // Below the offline banner on purpose: "you are offline" is the
+          // cause, "three orders are waiting" is the consequence, and the
+          // consequence outlives the cause — the queue is still there for the
+          // seconds it takes to drain after the connection returns.
+          const PendingOrdersBar(),
           Expanded(
             child: IndexedStack(
               index: pageIndex,
@@ -193,7 +203,8 @@ class _OfflineBanner extends StatelessWidget {
                           Expanded(
                             child: Text(
                               'Offline — showing the last figures this device '
-                              'saw. New orders are saved and will sync.',
+                              'saw. New orders are kept here and sent when the '
+                              'connection is back.',
                               style: Theme.of(context)
                                   .textTheme
                                   .bodySmall

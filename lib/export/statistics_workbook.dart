@@ -206,7 +206,7 @@ class StatisticsWorkbook {
 
   List<(String, StatBucket)> _paymentTotals() => [
         for (final entry in _total.byPayment.entries)
-          (PaymentMethod.fromId(entry.key).label, entry.value),
+          (store.paymentMethodById(entry.key).name, entry.value),
       ];
 
   List<(String, StatBucket)> _channelTotals() => [

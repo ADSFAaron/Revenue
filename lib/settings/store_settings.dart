@@ -8,11 +8,12 @@ import '../models/app_user.dart';
 import '../models/store.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
-import 'store_settings_audit_log.dart';
 import 'store_settings_edit_menu.dart';
-import 'store_settings_history_order.dart';
+import 'store_delivery_platforms.dart';
+import 'store_payment_methods.dart';
 import 'store_staff.dart';
 import '../widgets/page_body.dart';
+import '../widgets/setting_tile.dart';
 
 class StoreSettings extends StatefulWidget {
   final String storeId;
@@ -37,6 +38,37 @@ class _StoreSettingsState extends State<StoreSettings> {
   final TextEditingController rateController = TextEditingController();
   final TextEditingController ordersController = TextEditingController();
   final TextEditingController revenueController = TextEditingController();
+
+  /// Whether this account may change any of this.
+  ///
+  /// `firestore.rules` has always refused a store assistant's write here, but
+  /// the screen never asked. So every manager-only row was tappable, opened a
+  /// dialog, took a new value, and only then failed on save with a permission
+  /// error — the worst possible order to find out in, because the person has
+  /// already decided what they wanted and typed it.
+  ///
+  /// Resolved once on the way in, the way the order-detail screen does it,
+  /// rather than watched: somebody's role changing while they have this screen
+  /// open is not a case worth a second listener.
+  bool _isManager = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRole();
+  }
+
+  /// A failed lookup leaves [_isManager] false, which is the safe way round —
+  /// the rows render read-only rather than offering an edit the rules would
+  /// refuse anyway.
+  Future<void> _loadRole() async {
+    try {
+      final session = await loadSession();
+      if (mounted) setState(() => _isManager = session.user.role.canManage);
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
+  }
 
   @override
   void dispose() {
@@ -71,11 +103,12 @@ class _StoreSettingsState extends State<StoreSettings> {
                 padding: insets +
                     const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                 children: [
-                  _buildListTile(
+                  const SettingSection('Store', first: true),
+                  SettingTile.inline(
                     icon: Symbols.id_card,
-                    title: 'Store Name',
+                    title: 'Store name',
                     subtitle: store.name,
-                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                    locked: !_isManager,
                     onTap: () => _editStoreNameDialog(store),
                   ),
                   // No "Store ID" row. The id is an internal identifier now —
@@ -84,61 +117,68 @@ class _StoreSettingsState extends State<StoreSettings> {
                   // Staff screen.
                   _buildStaffTile(store),
                   if (store.createdAt != null)
-                    _buildListTile(
+                    SettingTile.readOnly(
                       icon: Symbols.timer_arrow_up,
-                      title: 'Join Time',
+                      title: 'Opened',
                       subtitle: DateFormat('yyyy-MM-dd  kk:mm')
                           .format(store.createdAt!),
                     ),
-                  const Divider(height: 24),
-                  _buildListTile(
+                  const SettingSection('Trading rules'),
+                  SettingTile.inline(
                     icon: Icons.bedtime_outlined,
                     title: 'Trading day starts at',
                     subtitle:
                         '${store.dayCutoffHour.toString().padLeft(2, '0')}:00 — '
                         'orders before this count towards the previous day',
-                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                    locked: !_isManager,
                     onTap: () => _editDayCutoffDialog(store),
                   ),
-                  _buildListTile(
+                  SettingTile.inline(
                     icon: Icons.percent_outlined,
                     title: 'Tax',
                     subtitle: store.taxRate <= 0
                         ? 'Not applied'
                         : '${formatTaxPercent(store.taxRate)}% · '
                             '${store.taxIncluded ? 'included in prices' : 'added on top'}',
-                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                    locked: !_isManager,
                     onTap: () => _editTaxDialog(store),
                   ),
-                  _buildListTile(
+                  SettingTile.inline(
                     icon: Icons.flag_outlined,
                     title: 'Daily targets',
                     subtitle: '${store.targets.dailyOrders} orders · '
                         '${moneyFormat(store).format(store.targets.dailyRevenue)}',
-                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
+                    locked: !_isManager,
                     onTap: () => _editTargetsDialog(store),
                   ),
-                  const Divider(height: 24),
-                  _buildListTile(
+                  // The two below stay open to everyone, because the page
+                  // behind each is worth reading on a shift even when nothing
+                  // on it can be changed: which methods the till offers and in
+                  // what order, and what each platform keeps. The screens
+                  // themselves drop their editing controls for a store
+                  // assistant rather than the row refusing entry.
+                  SettingTile.page(
+                    icon: Icons.payments_outlined,
+                    title: 'Payment methods',
+                    subtitle: _paymentSummary(store),
+                    onTap: () => _push(StorePaymentMethods(widget.storeId)),
+                  ),
+                  SettingTile.page(
+                    icon: Icons.delivery_dining_outlined,
+                    title: 'Delivery platforms',
+                    subtitle: _platformSummary(store),
+                    onTap: () => _push(StoreDeliveryPlatforms(widget.storeId)),
+                  ),
+                  const SettingSection('Menu'),
+                  SettingTile.page(
                     icon: Icons.menu_book_outlined,
-                    title: 'Edit Menu',
-                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
-                    subtitle: 'Add, edit, or retire menu items',
+                    // Calling it "Edit Menu" to somebody who cannot edit it is
+                    // a promise the next screen does not keep.
+                    title: _isManager ? 'Edit menu' : 'Menu',
+                    subtitle: _isManager
+                        ? 'Add, edit, or retire menu items'
+                        : 'Dishes, prices and categories',
                     onTap: () => _push(StoreEditMenu(widget.storeId)),
-                  ),
-                  _buildListTile(
-                    icon: Icons.history,
-                    title: 'History Order',
-                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
-                    subtitle: 'View order history',
-                    onTap: () => _push(StoreHistoryOrder(widget.storeId)),
-                  ),
-                  _buildListTile(
-                    icon: Icons.fact_check_outlined,
-                    title: 'Change history',
-                    trailing: const Icon(Icons.keyboard_arrow_right_outlined),
-                    subtitle: 'Voids, order edits and price changes',
-                    onTap: () => _push(StoreAuditLog(widget.storeId)),
                   ),
                 ],
               ),
@@ -149,6 +189,26 @@ class _StoreSettingsState extends State<StoreSettings> {
     );
   }
 
+  /// The first few methods by name, so the row says what this shop takes
+  /// without being opened.
+  String _paymentSummary(Store store) {
+    final names = store.paymentMethods.map((m) => m.name).toList();
+    final shown = names.take(3).join(' · ');
+    return names.length <= 3 ? shown : '$shown · +${names.length - 3} more';
+  }
+
+  /// Names and rates, so the row says whether delivery is costed at all.
+  String _platformSummary(Store store) {
+    if (store.deliveryPlatforms.isEmpty) {
+      return 'None yet — delivery orders are booked at zero commission';
+    }
+    return store.deliveryPlatforms
+        .map((p) => p.commissionRate <= 0
+            ? p.name
+            : '${p.name} ${formatTaxPercent(p.commissionRate)}%')
+        .join(' · ');
+  }
+
   /// Staff are found by reverse lookup on `users.storeId` rather than from a
   /// list kept on the store document, which used to drift out of sync.
   Widget _buildStaffTile(Store store) {
@@ -156,42 +216,25 @@ class _StoreSettingsState extends State<StoreSettings> {
       stream: userRepository.watchStaff(widget.storeId),
       builder: (context, snapshot) {
         final count = snapshot.data?.length;
-        return _buildListTile(
+        return SettingTile.page(
           icon: Icons.group_outlined,
-          trailing: const Icon(Icons.keyboard_arrow_right_outlined),
           title: 'Staff',
           // `count == null` covers two different situations and used to say
           // "Loading…" for both, so a refused or offline staff query left a
           // row that loads forever — the one wording that promises something
           // is still on its way when nothing is. The row stays tappable
-          // either way: the page behind it reports the failure properly.
+          // either way: the page behind it reports the failure properly, and
+          // a store assistant may read the roster even though only a manager
+          // can change it.
           subtitle: snapshot.hasError
               ? 'Could not read the staff list'
               : count == null
                   ? 'Loading…'
-                  : '$count ${count == 1 ? 'person' : 'people'} · invite a colleague',
+                  : '$count ${count == 1 ? 'person' : 'people'}'
+                      '${_isManager ? ' · invite a colleague' : ''}',
           onTap: () => _push(StoreStaff(widget.storeId, storeName: store.name)),
         );
       },
-    );
-  }
-
-  Widget _buildListTile({
-    required IconData? icon,
-    required String title,
-    String? subtitle,
-    Widget? trailing,
-    void Function()? onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: ListTile(
-        leading: Icon(icon),
-        title: Text(title),
-        subtitle: subtitle != null ? Text(subtitle) : null,
-        trailing: trailing,
-        onTap: onTap,
-      ),
     );
   }
 

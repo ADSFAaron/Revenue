@@ -87,10 +87,12 @@ class _LoginPageState extends State<LoginPage> {
                         0,
                         Text(
                           "Login",
-                          style: TextStyle(
-                              fontSize: 30,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black),
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineMedium
+                              ?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black),
                         ),
                       ),
                       SizedBox(height: 10),
@@ -98,8 +100,10 @@ class _LoginPageState extends State<LoginPage> {
                           100,
                           Text(
                             "Login to your account",
-                            style: TextStyle(
-                                fontSize: 15, color: Colors.grey[700]),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyLarge
+                                ?.copyWith(color: Colors.grey[700]),
                           )),
                       SizedBox(height: 10),
                       // Was a bare red DecoratedBox with no padding or radius that
@@ -125,8 +129,11 @@ class _LoginPageState extends State<LoginPage> {
                                 Expanded(
                                   child: Text(
                                     errorString,
-                                    style: const TextStyle(
-                                        fontSize: 15, color: Color(0xFFB71C1C)),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge
+                                        ?.copyWith(
+                                            color: const Color(0xFFB71C1C)),
                                   ),
                                 ),
                               ],
@@ -204,9 +211,11 @@ class _LoginPageState extends State<LoginPage> {
                                       )
                                     : Text(
                                         'Login',
-                                        style: TextStyle(
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.w600),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleLarge
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.w600),
                                       ),
                               ),
                             ),
@@ -235,12 +244,12 @@ class _LoginPageState extends State<LoginPage> {
                               MaterialPageRoute(
                                   builder: (_) => const RegisterPage()),
                             ),
-                            child: const Text(
+                            child: Text(
                               "Sign UP",
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 20,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                           ),
                         ],
@@ -380,8 +389,10 @@ class _LoginPageState extends State<LoginPage> {
       children: <Widget>[
         Text(
           label,
-          style: TextStyle(
-              fontSize: 15, fontWeight: FontWeight.w700, color: Colors.black87),
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: Colors.black87,
+              ),
         ),
         SizedBox(height: 5),
         TextField(

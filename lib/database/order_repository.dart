@@ -39,6 +39,13 @@ class OrderRepository {
 
   // ---------------------------------------------------------------- writing
 
+  /// A document id for an order that has not been written yet.
+  ///
+  /// Client-generated, which Firestore is happy to do offline — it is what
+  /// lets the offline queue name an order before it can send it, and so what
+  /// makes sending it twice harmless.
+  String newOrderId(String storeId) => _orders(storeId).doc().id;
+
   /// Writes a new order, takes the next order number for its trading day and
   /// folds it into that day's rollup — all in one transaction, so two phones
   /// ringing up at the same moment cannot take the same number or lose a sale
@@ -49,12 +56,27 @@ class OrderRepository {
     required Store store,
     required OrderDraft draft,
     String? createdBy,
+    String? orderId,
   }) async {
     final businessDate = store.businessDateOf(draft.placedAt);
-    final orderRef = _orders(store.id).doc();
+    final orderRef = orderId == null
+        ? _orders(store.id).doc()
+        : _orders(store.id).doc(orderId);
     final counterRef = _counter(store.id, businessDate);
 
     return _db.runTransaction<int>((tx) async {
+      // All reads before any write, and this one first: an order sent from the
+      // offline queue carries the id it was given on the device, so a flush
+      // interrupted between the commit and the queue being cleaned up sends it
+      // again. Finding it already there means the sale is already rung up —
+      // going on would take a second order number and add the money twice.
+      if (orderId != null) {
+        final existing = await tx.get(orderRef);
+        if (existing.exists) {
+          return (existing.data()?['orderNo'] as num?)?.toInt() ?? 0;
+        }
+      }
+
       final counterSnap = await tx.get(counterRef);
       final orderNo =
           (counterSnap.data()?['nextOrderNo'] as num?)?.toInt() ?? 1;
@@ -281,7 +303,7 @@ class OrderRepository {
           },
         },
         'byPayment': {
-          order.paymentMethod.id: {
+          order.paymentMethodId: {
             'orders': inc(1),
             'revenue': inc(order.total),
           },

@@ -3,14 +3,32 @@ import 'package:intl/intl.dart';
 
 import '../database/repositories.dart';
 import '../models/app_user.dart';
-import '../settings/app_settings.dart';
+import '../settings/account_settings.dart';
+import '../settings/store_import_orders.dart';
 import '../settings/store_settings.dart';
-import '../settings/user_settings.dart';
+import '../settings/store_settings_audit_log.dart';
+import '../settings/store_settings_history_order.dart';
+import '../settings/user_manual.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
 import '../widgets/page_body.dart';
-import '../widgets/stat_card.dart';
+import '../widgets/setting_tile.dart';
 
+/// The shop, and everything about it that is not an order.
+///
+/// Three groups, each answering a question that can be asked in one sentence:
+/// how is the shop set up, what has it done, and who am I on this device.
+/// What used to be here instead was three settings entries plus a loose Log
+/// out row, with a duplicate way into Store Settings above them and two
+/// lifetime totals — a figure the Reports tab exists to show — taking up the
+/// first screenful.
+///
+/// The three records are rows here rather than a "Records" screen holding
+/// them. Wrapping them in one would have grouped them correctly and moved
+/// nothing: an order history two pushes from the tab is two pushes either way,
+/// and the whole complaint was that it sat too deep to be daily work. Flat,
+/// the history is one push and an order's detail is two, which is what killed
+/// the "View All" shortcut Today had grown to route around it.
 class StorePage extends StatefulWidget {
   const StorePage({super.key});
 
@@ -21,10 +39,44 @@ class StorePage extends StatefulWidget {
 class _StorePageState extends State<StorePage> {
   late Future<_StoreOverview> _future = _load();
 
+  /// The last load that worked.
+  ///
+  /// Pulling to refresh used to be able to destroy this screen. The gesture
+  /// re-ran the load, and a load that failed — a moment offline is enough —
+  /// replaced the entire page with an error, navigation rows and all. So one
+  /// pull on a bad connection took away the way into Store settings, the order
+  /// history and the account screen, none of which had anything to do with the
+  /// figures being refreshed.
+  ///
+  /// Holding the last good result means a failed refresh leaves the page
+  /// exactly as it was and says so in a snack bar, which is what a refresh
+  /// gesture should do everywhere.
+  _StoreOverview? _lastGood;
+
+  /// The store id is the one thing on this screen that nothing can be drawn
+  /// without, so [loadSession] is the only call allowed to fail the page. The
+  /// lifetime totals are a caption; if the rollup read fails, the caption goes
+  /// and the rest of the screen carries on.
   Future<_StoreOverview> _load() async {
     final session = await loadSession();
-    final totals = await statsRepository.fetchTotals(session.storeId);
+    StoreTotals? totals;
+    try {
+      totals = await statsRepository.fetchTotals(session.storeId);
+    } catch (_) {
+      totals = null;
+    }
     return _StoreOverview(session: session, totals: totals);
+  }
+
+  /// Re-reads, and reports a failure without taking the screen down with it.
+  Future<void> _refresh() async {
+    final next = _load();
+    setState(() => _future = next);
+    try {
+      await next;
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
   }
 
   @override
@@ -32,82 +84,88 @@ class _StorePageState extends State<StorePage> {
     return FutureBuilder<_StoreOverview>(
       future: _future,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        final overview = snapshot.data ?? _lastGood;
+        if (overview == null) {
+          // Nothing has ever loaded, so there is genuinely nothing to draw.
+          if (snapshot.hasError) {
+            return ErrorView(
+              snapshot.error!,
+              onRetry: () => setState(() => _future = _load()),
+            );
+          }
           return const Center(child: CircularProgressIndicator());
         }
-        if (snapshot.hasError) {
-          // Retryable on purpose: the two calls behind this are a profile read
-          // and a rollup read, and the usual reason either fails is a network
-          // that has since come back.
-          return ErrorView(
-            snapshot.error!,
-            onRetry: () => setState(() => _future = _load()),
-          );
-        }
-        return _buildStorePage(snapshot.data!);
+        _lastGood = overview;
+        return _buildStorePage(overview);
       },
     );
   }
 
   Widget _buildStorePage(_StoreOverview overview) {
     final session = overview.session;
-    // Lifetime revenue is summed from the daily rollups rather than kept as a
-    // running counter on the store document, and formatted with separators
-    // instead of being truncated once it got long.
-    final money = moneyFormat(session.store);
-    final counts = NumberFormat.decimalPattern();
 
     return Scaffold(
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () async => setState(() => _future = _load()),
+          // Worth keeping despite this being mostly a navigation screen: the
+          // lifetime figures on the card are a one-shot read, and the shell
+          // keeps this page alive once built, so without a pull there is no
+          // way to see them move.
+          onRefresh: _refresh,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
             child: PageBody(
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  _buildStoreCard(session),
-                  const SizedBox(height: 10),
-                  StatCardGrid(
-                    children: <Widget>[
-                      StatCard(
-                        title: 'Revenue',
-                        icon: Icons.savings_rounded,
-                        value: money.format(overview.totals.revenue),
-                      ),
-                      StatCard(
-                        title: 'Orders',
-                        icon: Icons.grading_rounded,
-                        value: counts.format(overview.totals.orderCount),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  _buildListTile(
-                    title: 'Store Settings',
-                    subtitle: 'Menu editing, History orders',
+                  _buildStoreCard(overview),
+                  const SettingSection('Setup'),
+                  SettingTile.page(
                     icon: Icons.storefront_outlined,
+                    title: 'Store settings',
+                    subtitle: 'Menu, prices, tax, targets, staff',
                     onTap: () => _navigateTo(StoreSettings(session.storeId)),
                   ),
-                  _buildListTile(
-                    title: 'User Settings',
-                    subtitle: 'User name, Change password',
+                  const SettingSection('Records'),
+                  SettingTile.page(
+                    icon: Icons.history,
+                    title: 'Order history',
+                    subtitle: 'Every order, with what was in it',
+                    onTap: () =>
+                        _navigateTo(StoreHistoryOrder(session.storeId)),
+                  ),
+                  SettingTile.page(
+                    icon: Icons.upload_file_outlined,
+                    title: 'Import orders',
+                    subtitle: 'Read a delivery platform’s statement into '
+                        'the till',
+                    onTap: () => _navigateTo(StoreImportOrders(session.storeId)),
+                  ),
+                  SettingTile.page(
+                    icon: Icons.fact_check_outlined,
+                    title: 'Change history',
+                    subtitle: 'Voids, order edits and price changes',
+                    // `auditLogs` grants read to managers alone, so for anybody
+                    // else this row would open and then show a permission
+                    // error — which reads as a broken screen, not a closed
+                    // door. The other two rows stay open: orders are readable
+                    // and creatable by any member.
+                    locked: !session.user.role.canManage,
+                    onTap: () => _navigateTo(StoreAuditLog(session.storeId)),
+                  ),
+                  const SettingSection('You'),
+                  SettingTile.page(
                     icon: Icons.manage_accounts_outlined,
-                    onTap: () => _navigateTo(const UserSettings()),
+                    title: 'Account & app',
+                    subtitle: 'Your profile, sign-in, appearance, log out',
+                    onTap: () => _navigateTo(const AccountSettings()),
                   ),
-                  _buildListTile(
-                    title: 'App Settings',
-                    subtitle: 'App version, Privacy policy, Feedback',
-                    icon: Icons.info_outline,
-                    onTap: () => _navigateTo(AppSettings(session.storeId)),
-                  ),
-                  _buildListTile(
-                    title: 'Logout',
-                    icon: Icons.logout_outlined,
-                    // Was a bare call, sitting in a row of navigation tiles: one
-                    // mis-tap and you are out and typing a password again.
-                    onTap: _confirmLogout,
+                  SettingTile.page(
+                    icon: Icons.help_outline_rounded,
+                    title: 'How this works',
+                    subtitle: 'What the figures mean and where they come from',
+                    onTap: () => _navigateTo(const UserManual()),
                   ),
                 ],
               ),
@@ -118,31 +176,43 @@ class _StorePageState extends State<StorePage> {
     );
   }
 
-  Widget _buildStoreCard(Session session) {
+  Widget _buildStoreCard(_StoreOverview overview) {
+    final theme = Theme.of(context);
+    final session = overview.session;
+    // Lifetime revenue is summed from the daily rollups rather than kept as a
+    // running counter on the store document. It was two large stat cards, the
+    // same shape and weight the Reports tab uses for the figures it is *for*;
+    // one line of caption is the right size for a number nobody comes to this
+    // screen to read.
+    final money = moneyFormat(session.store);
+    final counts = NumberFormat.decimalPattern();
+    final totals = overview.totals;
+
     return Card(
       elevation: 0,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    session.store.name,
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineSmall
-                        ?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => _navigateTo(StoreSettings(session.storeId)),
-                  child: const Text('Edit'),
-                ),
-              ],
+            Text(
+              session.store.name,
+              style: theme.textTheme.headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 10),
+            // Omitted rather than zeroed when the rollup could not be read:
+            // "0 across 0 orders" is a shop that has never sold anything, and
+            // that is not what happened.
+            if (totals != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                '${money.format(totals.revenue)} across '
+                '${counts.format(totals.orderCount)} orders, all time',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
+            const SizedBox(height: 8),
             StreamBuilder<List<AppUser>>(
               stream: userRepository.watchStaff(session.storeId),
               builder: (context, snapshot) {
@@ -152,8 +222,7 @@ class _StorePageState extends State<StorePage> {
                 if (snapshot.hasError) {
                   return Text(
                     describeFailure(snapshot.error!).message,
-                    style:
-                        TextStyle(color: Theme.of(context).colorScheme.error),
+                    style: TextStyle(color: theme.colorScheme.error),
                   );
                 }
                 final staff = snapshot.data ?? const <AppUser>[];
@@ -167,10 +236,9 @@ class _StorePageState extends State<StorePage> {
                     return ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: CircleAvatar(
-                        backgroundColor:
-                            Theme.of(context).colorScheme.secondaryContainer,
+                        backgroundColor: theme.colorScheme.secondaryContainer,
                         foregroundColor:
-                            Theme.of(context).colorScheme.onSecondaryContainer,
+                            theme.colorScheme.onSecondaryContainer,
                         child: Text(user.initials),
                       ),
                       title: Text(user.email),
@@ -187,51 +255,6 @@ class _StorePageState extends State<StorePage> {
     );
   }
 
-  Widget _buildListTile({
-    required String title,
-    String? subtitle,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      title: Text(title),
-      subtitle: subtitle != null ? Text(subtitle) : null,
-      leading: Icon(icon),
-      onTap: onTap,
-    );
-  }
-
-  Future<void> _confirmLogout() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Log out?'),
-        content: const Text(
-            'You will need your password, or a passkey, to get back in.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Stay'),
-          ),
-          DestructiveButton(
-            label: 'Log out',
-            onPressed: () => Navigator.pop(context, true),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    // Signing out rarely fails, but when it does the person is still signed in
-    // and the screen has not changed — so without this they would tap Log out,
-    // watch nothing happen, and have no idea why.
-    try {
-      await authRepository.signOut();
-    } catch (e) {
-      if (mounted) showFailure(context, e);
-    }
-  }
-
   void _navigateTo(Widget page) {
     Navigator.push(context, MaterialPageRoute(builder: (context) => page));
   }
@@ -241,5 +264,8 @@ class _StoreOverview {
   const _StoreOverview({required this.session, required this.totals});
 
   final Session session;
-  final StoreTotals totals;
+
+  /// Null when the rollup read failed. The screen drops the line rather than
+  /// showing a figure it does not have.
+  final StoreTotals? totals;
 }

@@ -145,6 +145,14 @@ class _DishIconDialog extends StatelessWidget {
           child: Wrap(
             spacing: 4,
             runSpacing: 4,
+            // Centred, not start-aligned. A 48pt button divides into the
+            // dialog's width with 40-odd points left over, and a `Wrap`
+            // defaults to piling all of that on the right — which is what
+            // shunted the whole grid towards the left edge and left a bare
+            // column of dialog beside it. The short final row centres for the
+            // same reason.
+            alignment: WrapAlignment.center,
+            runAlignment: WrapAlignment.center,
             children: [
               for (final choice in kDishIcons)
                 Tooltip(

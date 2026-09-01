@@ -56,6 +56,16 @@ class StoreRepository {
       _update(
           storeId, {'categories': categories.map((c) => c.toMap()).toList()});
 
+  Future<void> updatePaymentMethods(
+          String storeId, List<StorePaymentMethod> methods) =>
+      _update(
+          storeId, {'paymentMethods': methods.map((m) => m.toMap()).toList()});
+
+  Future<void> updateDeliveryPlatforms(
+          String storeId, List<DeliveryPlatform> platforms) =>
+      _update(storeId,
+          {'deliveryPlatforms': platforms.map((p) => p.toMap()).toList()});
+
   Future<void> _update(String storeId, Map<String, dynamic> data) =>
       _stores.doc(storeId).update({
         ...data,

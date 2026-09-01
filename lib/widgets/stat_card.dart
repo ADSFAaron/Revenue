@@ -50,6 +50,8 @@ class StatCard extends StatelessWidget {
                   Flexible(
                     child: Text(
                       title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
@@ -57,25 +59,32 @@ class StatCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Flexible(
-                    child: FittedBox(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        value,
-                        style: theme.textTheme.headlineSmall,
-                      ),
-                    ),
-                  ),
-                  if (trailing != null) ...[
-                    const SizedBox(width: 8),
-                    trailing!,
-                  ],
-                ],
+              const SizedBox(height: 14),
+              // The figure gets the tile's full width, and the change pill sits
+              // under it rather than beside it.
+              //
+              // Sharing one line with the pill left the number perhaps 80pt to
+              // work with, and a plain `FittedBox` — whose default fit is
+              // `contain`, which scales *up* as readily as down — then sized
+              // every number to whatever that tile's leftovers happened to be.
+              // "4" was blown up to twice the height of "NT$1,050" next to it,
+              // and neither started at the same x as the tile below. Full
+              // width plus `scaleDown` means the type size is the theme's on
+              // every tile that fits — which is all of them, nearly always —
+              // so the row of figures reads as a row.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  style: theme.textTheme.headlineSmall,
+                ),
               ),
+              if (trailing != null) ...[
+                const SizedBox(height: 6),
+                trailing!,
+              ],
             ],
           ),
         ),

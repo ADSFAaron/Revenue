@@ -136,16 +136,32 @@ class StatsPeriod {
       case StatsGranularity.day:
         if (_isSameDay(start, today)) return 'Today';
         if (_isSameDay(start, _addDays(today, -1))) return 'Yesterday';
-        return DateFormat.yMMMMd().format(start);
+        return dateLabel;
       case StatsGranularity.week:
-        if (contains(today)) return 'This week';
+        return contains(today) ? 'This week' : dateLabel;
+      case StatsGranularity.month:
+        return contains(today) ? 'This month' : dateLabel;
+    }
+  }
+
+  /// The same period as dates, whatever [label] chose to call it: 'Fri, 29 Aug
+  /// 2026', '24 – 30 Aug 2026', 'August 2026'.
+  ///
+  /// The header shows this underneath a relative label, because "Today" alone
+  /// is unreadable at one in the morning. A trading day runs to the store's
+  /// cutoff hour, so between midnight and 04:00 "Today" is still yesterday's
+  /// date — correct, and indistinguishable from the app having lost a day.
+  String get dateLabel {
+    switch (granularity) {
+      case StatsGranularity.day:
+        return DateFormat.yMMMEd().format(start);
+      case StatsGranularity.week:
         final sameMonth = start.month == end.month && start.year == end.year;
         final from = sameMonth
             ? DateFormat.d().format(start)
             : DateFormat.MMMd().format(start);
         return '$from – ${DateFormat.yMMMd().format(end)}';
       case StatsGranularity.month:
-        if (contains(today)) return 'This month';
         return DateFormat.yMMMM().format(start);
     }
   }

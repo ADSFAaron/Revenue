@@ -34,7 +34,7 @@ class OrderDraft {
     this.channel = OrderChannel.dineIn,
     this.guestCount = 1,
     this.deliveryPlatformId,
-    this.paymentMethod = PaymentMethod.cash,
+    this.paymentMethodId = kDefaultPaymentMethodId,
     this.discountAmount = 0,
     this.discountReason,
   });
@@ -44,7 +44,9 @@ class OrderDraft {
   final OrderChannel channel;
   final int guestCount;
   final String? deliveryPlatformId;
-  final PaymentMethod paymentMethod;
+
+  /// A [StorePaymentMethod.id]; the till fills it from the store's own list.
+  final String paymentMethodId;
   final int discountAmount;
   final String? discountReason;
 
@@ -101,20 +103,26 @@ class OrderDraft {
         ? (store.platformById(deliveryPlatformId)?.commissionRate ?? 0)
         : 0.0;
 
+    final businessDate = store.businessDateOf(placedAt);
+
     return Order(
       id: id,
       orderNo: orderNo,
-      businessDate: store.businessDateOf(placedAt),
+      businessDate: businessDate,
       placedAt: placedAt,
       hourOfDay: placedAt.hour,
-      weekday: placedAt.weekday,
+      // The trading day's weekday, not the calendar's. An order rung up at
+      // 01:00 on a Sunday belongs to Saturday's trading day, and filing it
+      // under Sunday would put it in a different column from the rest of the
+      // same night's takings — which is exactly what the heatmap reads.
+      weekday: parseBusinessDate(businessDate).weekday,
       channel: channel,
       guestCount: guestCount,
       deliveryPlatformId:
           channel == OrderChannel.delivery ? deliveryPlatformId : null,
       commissionRate: commissionRate,
       commissionAmount: totals.commissionAmount,
-      paymentMethod: paymentMethod,
+      paymentMethodId: paymentMethodId,
       items: items,
       subtotal: totals.subtotal,
       discountAmount: totals.discountAmount,
@@ -133,7 +141,7 @@ class OrderDraft {
         channel: order.channel,
         guestCount: order.guestCount,
         deliveryPlatformId: order.deliveryPlatformId,
-        paymentMethod: order.paymentMethod,
+        paymentMethodId: order.paymentMethodId,
         discountAmount: order.discountAmount,
         discountReason: order.discountReason,
       );
@@ -145,7 +153,7 @@ class OrderDraft {
     int? guestCount,
     String? deliveryPlatformId,
     bool clearDeliveryPlatform = false,
-    PaymentMethod? paymentMethod,
+    String? paymentMethodId,
     int? discountAmount,
     String? discountReason,
   }) =>
@@ -157,7 +165,7 @@ class OrderDraft {
         deliveryPlatformId: clearDeliveryPlatform
             ? null
             : (deliveryPlatformId ?? this.deliveryPlatformId),
-        paymentMethod: paymentMethod ?? this.paymentMethod,
+        paymentMethodId: paymentMethodId ?? this.paymentMethodId,
         discountAmount: discountAmount ?? this.discountAmount,
         discountReason: discountReason ?? this.discountReason,
       );

@@ -1,10 +1,28 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.adsf.revenue">
 
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_INTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      No storage permissions, and none are coming.
+
+      The workbook export writes into the app's own external directory
+      (lib/export/workbook_saver_io.dart), which has needed no permission since
+      Android 10. The statement importer that is still to be written will go
+      through the system file picker, which hands over the one file the person
+      chose and needs no permission either. So neither the feature that exists
+      nor the feature that is planned wants READ_EXTERNAL_STORAGE or
+      WRITE_EXTERNAL_STORAGE — they would only add a "Files and media" line to
+      the Play listing and a question to the Data safety form.
+
+      What was here before: READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE,
+      android:requestLegacyExternalStorage (ignored since API 30), and
+      READ_INTERNAL_STORAGE — which is not an Android permission at all. There
+      has never been a permission for an app's own internal storage, because
+      an app has never needed one to read it. Nothing in lib/ ever requested
+      any of the four.
+    -->
 
     <!--
       Declared because the menu importer drives the camera itself rather than
@@ -14,9 +32,88 @@
     -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!--
+      camera_android_camerax brings both of these in through manifest merging,
+      and both are wrong for this app.
+
+      RECORD_AUDIO is there because CameraX can record video with sound. This
+      app takes still photographs of a menu and has no audio path at all, but
+      the merged manifest is what Play reads, so without this removal the
+      listing advertises microphone access that nothing uses — and the Data
+      safety form has to account for it.
+
+      WRITE_EXTERNAL_STORAGE (maxSdkVersion 28) is the same story from the
+      other end: nothing writes to shared storage, on any API level.
+
+      READ_EXTERNAL_STORAGE has to be named too, and it is the one that is easy
+      to miss. Nobody declares it — the manifest merger *invents* it. Removing
+      the WRITE permission above is not enough, because the merger adds the
+      READ permission on its own as soon as any library in the graph asks to
+      write, on the reasoning that an app which can write shared storage
+      presumably reads it. The build log says so in as many words:
+
+        uses-permission#android.permission.READ_EXTERNAL_STORAGE
+        IMPLIED ... reason: io.flutter.plugins.camerax requested
+        WRITE_EXTERNAL_STORAGE
+
+      Verified against the merged manifest rather than reasoned about: the
+      first attempt removed RECORD_AUDIO and WRITE_EXTERNAL_STORAGE, and
+      READ_EXTERNAL_STORAGE was still in the release build afterwards.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"
+        tools:node="remove" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove" />
+
     <!-- The camera is a convenience, not a requirement: Choose image works on
          a device without one, so this must not narrow who can install. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!--
+      And this is the one that actually decided it, which the line above did
+      not. camera_android_camerax merges in `android.hardware.camera.any` with
+      no `android:required`, and an omitted `required` means **true** — so the
+      merged manifest asked Play to hide the app from every device without a
+      camera, which is the opposite of what the line above intends. Two
+      different feature names: declaring `android.hardware.camera` optional
+      says nothing about `android.hardware.camera.any`.
+
+      tools:replace rather than a second plain declaration, because the merger
+      keeps the stricter value on a conflict unless told which one wins.
+    -->
+    <uses-feature android:name="android.hardware.camera.any"
+        android:required="false"
+        tools:replace="android:required" />
+
+    <!--
+      Package visibility, for url_launcher only.
+
+      Since Android 11 an app cannot see what else is installed unless it says
+      what it is looking for. url_launcher resolves a link by asking
+      `intent.resolveActivity(packageManager)` first, and under that filtering
+      the call returns null for a browser it is not allowed to see — so
+      `Source code` (Store → Account & app) and the Play-listing fallback in
+      lib/settings/app_update.dart both failed silently on every Android 11
+      and later device. Not "no browser installed": no permission to notice
+      one.
+
+      This is deliberately narrow. It asks to see apps that open https links
+      and the Play Store, and nothing else.
+
+      It is also why the note below about ACTION_IMAGE_CAPTURE is still true
+      and not a contradiction: there the missing app is genuinely missing, and
+      being allowed to look for it would not conjure one. Here the browser
+      exists and only the looking was blocked.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <package android:name="com.android.vending" />
+    </queries>
 
     <!--
       No <queries> for ACTION_IMAGE_CAPTURE, deliberately. Package visibility
@@ -30,9 +127,28 @@
         android:label="Revenue"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon"
-        android:requestLegacyExternalStorage="true"
-        android:extractNativeLibs="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         >
+        <!--
+          Auto Backup off, because of the offline queue.
+
+          The only thing this app keeps on the device is SharedPreferences: the
+          theme choice, and `pendingOrders.v1` — orders rung up with no
+          connection that have not reached Firestore yet
+          (lib/database/pending_order_queue.dart). Backing that up means Google
+          restores a queue of unsent orders onto a *different* device, which
+          then sends them: the same takings booked twice, in a shop's books,
+          with nothing on screen to explain it. A theme preference is not worth
+          that risk, and it costs a tap to set again.
+
+          android:extractNativeLibs is also gone from here. It was "true",
+          which forces the legacy packaging AGP 8 otherwise avoids: the .so
+          files get copied out of the APK at install time instead of being
+          mapped from it, so the install is roughly the size of the libraries
+          again for no benefit.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

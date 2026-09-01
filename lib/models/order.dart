@@ -19,20 +19,43 @@ enum OrderChannel {
       .firstWhere((c) => c.id == id, orElse: () => OrderChannel.dineIn);
 }
 
-enum PaymentMethod {
-  cash('cash', 'Cash', Icons.money_rounded),
-  creditCard('credit_card', 'Credit Card', Icons.credit_card_rounded),
-  linePay('line_pay', 'Line Pay', Icons.contactless_rounded),
-  other('other', 'Other', Icons.more_horiz_rounded);
+/// The id of the payment method a store has no configuration for yet, and the
+/// one a brand new draft starts on.
+///
+/// The methods themselves live on the store document as [StorePaymentMethod] —
+/// an order carries only the id, so renaming "Line Pay" to "LINE Pay" relabels
+/// the history instead of splitting it. There is deliberately no
+/// `PaymentMethod.fromId` here any more: mapping an unknown id onto `cash` is
+/// how a deleted method used to turn a month of card takings into cash.
+const String kDefaultPaymentMethodId = 'cash';
 
-  const PaymentMethod(this.id, this.label, this.icon);
+/// How long after ringing an order up a member of staff may still correct it
+/// themselves.
+///
+/// The mistake this exists for is the ordinary one: the wrong dish tapped, the
+/// wrong quantity, a void that should have been an edit — noticed within
+/// seconds, while the customer is still standing there. Making that a manager's
+/// errand costs more than it protects.
+///
+/// What it protects against is the other kind: a cash order voided at the end
+/// of the shift, after the money has been taken. That needs a manager, and it
+/// leaves an audit entry either way.
+///
+/// **Mirrored in `firestore.rules`** — the same five minutes is enforced
+/// server-side against `createdAt`, because a rule the client alone applies is
+/// not a rule. Change both together.
+const Duration kStaffCorrectionWindow = Duration(minutes: 5);
 
-  final String id;
-  final String label;
-  final IconData icon;
-
-  static PaymentMethod fromId(String? id) => PaymentMethod.values
-      .firstWhere((p) => p.id == id, orElse: () => PaymentMethod.cash);
+/// Whether [order] is still inside the window a non-manager may change it in.
+///
+/// A null `createdAt` is treated as outside it: the field is a server
+/// timestamp, so it is null only for an order that has not reached the server,
+/// and an order that has not reached the server cannot be edited on it either.
+bool withinCorrectionWindow(Order order, {DateTime? now}) {
+  final createdAt = order.createdAt;
+  if (createdAt == null) return false;
+  final elapsed = (now ?? DateTime.now()).difference(createdAt);
+  return !elapsed.isNegative && elapsed < kStaffCorrectionWindow;
 }
 
 enum OrderStatus {
@@ -126,7 +149,7 @@ class Order {
     this.deliveryPlatformId,
     this.commissionRate = 0,
     this.commissionAmount = 0,
-    this.paymentMethod = PaymentMethod.cash,
+    this.paymentMethodId = kDefaultPaymentMethodId,
     this.items = const [],
     this.subtotal = 0,
     this.discountAmount = 0,
@@ -161,7 +184,11 @@ class Order {
   final String? deliveryPlatformId;
   final double commissionRate;
   final int commissionAmount;
-  final PaymentMethod paymentMethod;
+
+  /// A [StorePaymentMethod.id]. Resolve it through the store to get a label
+  /// and an icon: `store.paymentMethodById(order.paymentMethodId)`.
+  final String paymentMethodId;
+
   final List<OrderLine> items;
 
   final int subtotal;
@@ -206,7 +233,9 @@ class Order {
       deliveryPlatformId: data['deliveryPlatformId'] as String?,
       commissionRate: (data['commissionRate'] as num?)?.toDouble() ?? 0,
       commissionAmount: (data['commissionAmount'] as num?)?.toInt() ?? 0,
-      paymentMethod: PaymentMethod.fromId(data['paymentMethod'] as String?),
+      // Still `paymentMethod` in Firestore — the field always held the id.
+      paymentMethodId:
+          data['paymentMethod'] as String? ?? kDefaultPaymentMethodId,
       items: ((data['items'] as List?) ?? const [])
           .map((i) => OrderLine.fromMap((i as Map).cast<String, dynamic>()))
           .toList(),
@@ -237,7 +266,7 @@ class Order {
         'deliveryPlatformId': deliveryPlatformId,
         'commissionRate': commissionRate,
         'commissionAmount': commissionAmount,
-        'paymentMethod': paymentMethod.id,
+        'paymentMethod': paymentMethodId,
         'items': items.map((i) => i.toMap()).toList(),
         'itemIds': itemIds,
         'subtotal': subtotal,

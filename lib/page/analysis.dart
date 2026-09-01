@@ -8,9 +8,11 @@ import '../database/repositories.dart';
 import '../models/daily_stats.dart';
 import '../models/store.dart';
 import '../settings/store_settings_edit_menu.dart';
+import '../settings/user_manual.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/text_scale.dart';
 
 /// How far back the reports look.
 ///
@@ -98,6 +100,20 @@ class _AnalysisPageState extends State<AnalysisPage>
       appBar: AppBar(
         title: const Text('Insights'),
         actions: [
+          // The one screen whose numbers need a glossary. A person looking
+          // at "Plowhorse" has no way to know it is a verdict about this menu
+          // rather than an absolute one, and nothing on the card can say so
+          // without becoming an essay.
+          IconButton(
+            tooltip: 'What these mean',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    const UserManual(initialTopic: ManualTopic.insights),
+              ),
+            ),
+          ),
           // A custom `child` on a PopupMenuButton gets no ripple and no
           // tooltip, so this read as a caption rather than a control. The
           // check mark on the current window also says which one is active
@@ -195,7 +211,8 @@ class _AnalysisPageState extends State<AnalysisPage>
 
         final total = DailyStats.sum(days);
         final matrix = MenuEngineering.from(total);
-        final demand = DemandProfile.from(days);
+        final demand =
+            DemandProfile.from(days, dayCutoffHour: _store.dayCutoffHour);
 
         return TabBarView(
           controller: _tabController,
@@ -642,10 +659,10 @@ class _BusyTimesTab extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  SizedBox(width: 44 * _heatScale(context)),
+                  SizedBox(width: _heat(context, 44)),
                   for (final hour in hours)
                     SizedBox(
-                      width: 34 * _heatScale(context),
+                      width: _heat(context, 34),
                       child: Text(
                         hour.toString().padLeft(2, '0'),
                         style: Theme.of(context).textTheme.labelSmall,
@@ -658,7 +675,7 @@ class _BusyTimesTab extends StatelessWidget {
                 Row(
                   children: [
                     SizedBox(
-                      width: 44 * _heatScale(context),
+                      width: _heat(context, 44),
                       child: Text(DemandProfile.weekdayName(weekday),
                           style: Theme.of(context).textTheme.labelSmall),
                     ),
@@ -691,8 +708,10 @@ class _BusyTimesTab extends StatelessWidget {
 ///
 /// Fixed 32pt cells clipped their own numbers as soon as somebody turned the
 /// system font up — which in a kitchen is the normal setting, not the odd one.
-double _heatScale(BuildContext context) =>
-    MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.6);
+/// Capped, because a grid twenty-four hours wide runs off the side of a phone
+/// before its numerals become the problem.
+double _heat(BuildContext context, double size) =>
+    scaledForText(context, size, cap: 1.6);
 
 class _HeatCell extends StatelessWidget {
   const _HeatCell({
@@ -711,14 +730,15 @@ class _HeatCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final orders = cell?.averageOrders ?? 0;
     final intensity = busiest == 0 ? 0.0 : (orders / busiest).clamp(0.0, 1.0);
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
 
     return Tooltip(
       message: '${DemandProfile.weekdayName(weekday)} ${_hourLabel(hour)}\n'
           '${orders.toStringAsFixed(1)} orders on average',
       child: Container(
-        width: 32 * _heatScale(context),
-        height: 32 * _heatScale(context),
+        width: _heat(context, 32),
+        height: _heat(context, 32),
         margin: const EdgeInsets.all(1),
         decoration: BoxDecoration(
           // Lerping from the surface colour means an empty hour reads as
@@ -730,8 +750,10 @@ class _HeatCell extends StatelessWidget {
         child: Center(
           child: Text(
             orders < 0.05 ? '' : orders.toStringAsFixed(0),
-            style: TextStyle(
-              fontSize: 11,
+            // The same label size as the axis it sits under, taken from the
+            // text theme rather than written as an 11 here, so the system
+            // font setting moves the cells and their headers together.
+            style: theme.textTheme.labelSmall?.copyWith(
               color: intensity > 0.55 ? scheme.onPrimary : scheme.onSurface,
             ),
           ),

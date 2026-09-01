@@ -10,6 +10,7 @@ import '../export/workbook_saver.dart';
 import '../models/daily_stats.dart';
 import '../models/stats_period.dart';
 import '../models/store.dart';
+import '../settings/user_manual.dart';
 import '../widgets/charts.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
@@ -187,6 +188,15 @@ class _StatisticsPageState extends State<StatisticsPage>
       appBar: AppBar(
         title: const Text('Reports'),
         actions: [
+          IconButton(
+            tooltip: 'How these figures are worked out',
+            icon: const Icon(Icons.help_outline_rounded),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const UserManual(initialTopic: ManualTopic.money),
+              ),
+            ),
+          ),
           // Was three taps and two scrolls down: an unlabelled "+" card at the
           // foot of the page opened a sheet, ticking Export there closed the
           // sheet, and the export card then appeared back at the foot. The
@@ -288,62 +298,112 @@ class _StatisticsPageState extends State<StatisticsPage>
     );
   }
 
+  /// True between midnight and the store's cutoff hour, when the trading day on
+  /// screen still carries yesterday's date.
+  ///
+  /// This is the window in which a correct app looks broken: at 01:00 the
+  /// phone says the 30th, "Today" holds the 29th's takings, and the only thing
+  /// that explains the difference is a setting three screens away.
+  bool get _beforeCutoff {
+    final store = _session!.store;
+    return store.dayCutoffHour > 0 &&
+        store.currentBusinessDate != formatBusinessDate(DateTime.now());
+  }
+
   Widget _buildHeaderRow(StatsPeriod period) {
     // Nothing has been rung up in the future, so there is nothing to page
     // forward into once the period on screen contains today.
     final atPresent = period.contains(_today);
+    final theme = Theme.of(context);
+    final cutoffHour = _session!.store.dayCutoffHour.toString().padLeft(2, '0');
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: PageBody(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Column(
           children: [
-            IconButton.filledTonal(
-              onPressed: () => _step(-1),
-              tooltip: 'Previous',
-              icon: const Icon(Icons.arrow_back),
-            ),
-            Flexible(
-              // Paging back a month and then wanting to be back at today meant
-              // thirty taps on the forward arrow. The label itself is the
-              // obvious place to put the way home.
-              child: Tooltip(
-                message: atPresent ? '' : 'Back to today',
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: atPresent ? null : _jumpToPresent,
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            period.label(_today),
-                            style: Theme.of(context).textTheme.titleLarge,
-                            textAlign: TextAlign.center,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton.filledTonal(
+                  onPressed: () => _step(-1),
+                  tooltip: 'Previous',
+                  icon: const Icon(Icons.arrow_back),
+                ),
+                Flexible(
+                  // Paging back a month and then wanting to be back at today meant
+                  // thirty taps on the forward arrow. The label itself is the
+                  // obvious place to put the way home.
+                  child: Tooltip(
+                    message: atPresent ? '' : 'Back to today',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: atPresent ? null : _jumpToPresent,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    period.label(_today),
+                                    style: theme.textTheme.titleLarge,
+                                    textAlign: TextAlign.center,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (!atPresent) ...[
+                                  const SizedBox(width: 6),
+                                  Icon(Icons.today_outlined,
+                                      size: 18,
+                                      color: theme.colorScheme.primary),
+                                ],
+                              ],
+                            ),
+                            // 'Today' says which day it is not. A trading day that
+                            // runs to 04:00 carries the previous date for four
+                            // hours of every night, and the figures under a bare
+                            // 'Today' then read as the wrong day's.
+                            if (period.label(_today) != period.dateLabel)
+                              Text(
+                                period.dateLabel,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant),
+                                textAlign: TextAlign.center,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                          ],
                         ),
-                        if (!atPresent) ...[
-                          const SizedBox(width: 6),
-                          Icon(Icons.today_outlined,
-                              size: 18,
-                              color: Theme.of(context).colorScheme.primary),
-                        ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
+                IconButton.filledTonal(
+                  onPressed: atPresent ? null : () => _step(1),
+                  tooltip: 'Next',
+                  icon: const Icon(Icons.arrow_forward),
+                ),
+              ],
+            ),
+            // Only shown in the small hours, and only on the day view, which
+            // is the one place the cutoff can be mistaken for a lost day.
+            if (atPresent &&
+                period.granularity == StatsGranularity.day &&
+                _beforeCutoff)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Past midnight, so this trading day is still open — it runs '
+                  'to $cutoffHour:00, and anything rung up now counts here.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
               ),
-            ),
-            IconButton.filledTonal(
-              onPressed: atPresent ? null : () => _step(1),
-              tooltip: 'Next',
-              icon: const Icon(Icons.arrow_forward),
-            ),
           ],
         ),
       ),
@@ -441,7 +501,7 @@ class _StatisticsPageState extends State<StatisticsPage>
       return _buildCartesianChart(
         store,
         'Revenue by hour',
-        _hourlyData(report.total),
+        _hourlyData(store, report.total),
       );
     }
 
@@ -462,18 +522,31 @@ class _StatisticsPageState extends State<StatisticsPage>
     return _buildCartesianChart(store, 'Revenue by day', data);
   }
 
-  /// Hours from the first sale of the day to the last, gaps included, so a
-  /// lunchtime peak and a quiet mid-afternoon keep their real shape.
-  List<ChartPoint> _hourlyData(DailyStats total) {
-    final hours = total.byHour.keys.map(int.tryParse).whereType<int>().toList()
-      ..sort();
-    if (hours.isEmpty) return const [];
+  /// Hours from the first sale of the trading day to the last, gaps included,
+  /// so a lunchtime peak and a quiet mid-afternoon keep their real shape.
+  ///
+  /// Walked in *trading-day* order rather than 0-23. With a 04:00 cutoff, an
+  /// order rung up at 01:00 belongs to the day that started the previous
+  /// morning — sorting by the clock printed it as the first column of that
+  /// day, before the shop had opened, and a chart that puts the night's last
+  /// sale before lunch is not a timeline.
+  List<ChartPoint> _hourlyData(Store store, DailyStats total) {
+    final sold = total.byHour.keys.map(int.tryParse).whereType<int>().toSet();
+    if (sold.isEmpty) return const [];
+
+    // 04, 05, … 23, 00, 01, 02, 03 for a store that rolls over at four. A
+    // cutoff of zero gives plain 0-23, which is what a daytime shop wants.
+    final tradingDay = [
+      for (var i = 0; i < 24; i++) (store.dayCutoffHour + i) % 24,
+    ];
+    final first = tradingDay.indexWhere(sold.contains);
+    final last = tradingDay.lastIndexWhere(sold.contains);
 
     return [
-      for (var hour = hours.first; hour <= hours.last; hour++)
+      for (var i = first; i <= last; i++)
         ChartPoint(
-          label: '${hour.toString().padLeft(2, '0')}:00',
-          value: total.byHour['$hour']?.revenue ?? 0,
+          label: '${tradingDay[i].toString().padLeft(2, '0')}:00',
+          value: total.byHour['${tradingDay[i]}']?.revenue ?? 0,
         ),
     ];
   }

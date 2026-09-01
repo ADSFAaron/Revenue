@@ -22,9 +22,10 @@
 
 import { getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall, CallableRequest } from "firebase-functions/v2/https";
+import { reserveMenuImport } from "./quota.js";
 import { defineSecret } from "firebase-functions/params";
 
-import { MAX_INSTANCES, REGION } from "./config.js";
+import { CALLABLE_OPTIONS } from "./config.js";
 import { Attempt, LadderFailure, runLadder } from "./model_ladder.js";
 
 /**
@@ -263,8 +264,7 @@ type Report = (update: Record<string, unknown>) => Promise<void>;
 
 export const importMenuFromPhotos = onCall(
   {
-    region: REGION,
-    maxInstances: MAX_INSTANCES,
+    ...CALLABLE_OPTIONS,
     timeoutSeconds: TIMEOUT_SECONDS,
     // Four photos held as base64 in memory, plus the response. The 256MiB
     // default is enough until it is not, and the failure mode is an opaque
@@ -279,9 +279,13 @@ export const importMenuFromPhotos = onCall(
     };
 
     const uid = requireUid(request);
-    await requireMenuEditor(uid);
+    const storeId = await requireMenuEditor(uid);
 
     const photos = readPhotos(request.data?.photos);
+    // After the photos are validated and before any model is reached: a
+    // request that was never going to be sent should not spend an allowance,
+    // and one that is about to be sent must not escape counting.
+    await reserveMenuImport(storeId);
     // "received", not "sending" — the app has already said it is sending, and
     // this frame is what lets it tick that step off. The gap between the two is
     // the upload, which on a shop's connection is the part worth showing.
@@ -620,16 +624,33 @@ function requireUid(request: CallableRequest): string {
  *
  * The role is read from `users/{uid}` rather than taken from the request. A
  * client that could name its own role would not be a check.
+ *
+ * Note what this does *not* do. Registration makes you the owner of a new
+ * store, so a stranger is an owner as soon as they want to be — this check
+ * protects a shop from its own staff, not the project from the internet. That
+ * is what the counters in quota.ts are for.
  */
-async function requireMenuEditor(uid: string): Promise<void> {
+async function requireMenuEditor(uid: string): Promise<string> {
   const doc = await getFirestore().collection("users").doc(uid).get();
-  const role = doc.data()?.role;
+  const data = doc.data();
+  const role = data?.role;
   if (role !== "owner" && role !== "manager") {
     throw new HttpsError(
       "permission-denied",
       "Only an owner or a manager can import a menu."
     );
   }
+  // Returned rather than read again: the usage counter is per store, and this
+  // is the only place the store is established from something the caller
+  // cannot choose.
+  const storeId = data?.storeId;
+  if (typeof storeId !== "string" || !storeId) {
+    throw new HttpsError(
+      "failed-precondition",
+      "This account is not linked to a store."
+    );
+  }
+  return storeId;
 }
 
 function readPhotos(value: unknown): { mimeType: string; data: string }[] {

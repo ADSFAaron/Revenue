@@ -144,7 +144,7 @@ class _ProviderButton extends StatelessWidget {
     return OutlinedButton.icon(
       onPressed: onPressed,
       icon: icon,
-      label: Text(label, style: const TextStyle(fontSize: 16)),
+      label: Text(label, style: Theme.of(context).textTheme.titleMedium),
       style: OutlinedButton.styleFrom(
         foregroundColor: Colors.black87,
         minimumSize: const Size.fromHeight(52),

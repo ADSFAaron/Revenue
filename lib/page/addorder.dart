@@ -7,9 +7,13 @@ import '../models/menu_item.dart';
 import '../models/order.dart';
 import '../models/order_draft.dart';
 import '../models/store.dart';
+import '../settings/store_payment_methods.dart';
 import '../settings/store_settings_edit_menu.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
+import '../widgets/payment_icons.dart';
+import '../widgets/pending_orders.dart';
+import '../widgets/text_scale.dart';
 
 /// A row on the order screen: an active menu item, or a retired one that an
 /// order being edited still contains.
@@ -21,6 +25,7 @@ class _MenuRow {
     required this.cost,
     required this.icon,
     this.categoryId,
+    this.aliases = const [],
     this.retired = false,
   });
 
@@ -30,6 +35,11 @@ class _MenuRow {
   final int cost;
   final IconData icon;
   final String? categoryId;
+
+  /// What the kitchen calls it. The search box matches these as well as the
+  /// printed name — a shop whose slips say 牛麵 should be able to type 牛麵.
+  final List<String> aliases;
+
   final bool retired;
 
   factory _MenuRow.fromMenuItem(MenuItem item) => _MenuRow(
@@ -39,6 +49,7 @@ class _MenuRow {
         cost: item.cost,
         icon: item.iconData,
         categoryId: item.categoryId,
+        aliases: item.aliases,
       );
 
   /// Built from the frozen copy on the order, so a retired dish still shows the
@@ -74,11 +85,31 @@ class _AddOrderState extends State<AddOrder> {
   /// itemId -> quantity.
   final Map<String, int> _quantities = {};
 
-  late DateTime _placedAt;
+  /// Held here rather than left to the tile, which is inside the scrolling
+  /// menu list: a tile that keeps its own expansion state is disposed when it
+  /// scrolls off the top and comes back collapsed, folding away the channel
+  /// and payment somebody had just opened.
+  final ExpansibleController _optionsController = ExpansibleController();
+
+  /// Set only when somebody picks a time by hand. Null means "whenever this
+  /// order is actually rung up".
+  ///
+  /// This used to be a plain `DateTime` filled in from `DateTime.now()` in
+  /// `initState` and again after each submit — so the till, which stays open
+  /// on this screen between customers, stamped every order with the time the
+  /// *previous* one was saved. An hour's gap meant an hour-wrong timestamp: the
+  /// wrong bucket in Revenue by hour, and across 04:00 the wrong trading day
+  /// altogether.
+  DateTime? _placedAtOverride;
+
   OrderChannel _channel = OrderChannel.dineIn;
   String? _deliveryPlatformId;
   int _guestCount = 1;
-  PaymentMethod _paymentMethod = PaymentMethod.cash;
+
+  /// A [StorePaymentMethod.id]. Starts on the store's first method once the
+  /// store has loaded, unless an order being edited says otherwise.
+  String _paymentMethodId = kDefaultPaymentMethodId;
+  bool _paymentMethodChosen = false;
   bool _submitting = false;
 
   /// Free-text filter over dish names. A shop with sixty dishes across six
@@ -98,16 +129,21 @@ class _AddOrderState extends State<AddOrder> {
 
   bool get _isEdit => widget.existing != null;
 
+  /// The time this order will carry: the one that was chosen, or now.
+  DateTime get _placedAt => _placedAtOverride ?? DateTime.now();
+
   @override
   void initState() {
     super.initState();
     final existing = widget.existing;
-    _placedAt = existing?.placedAt ?? DateTime.now();
+    // An order being edited keeps the time it was rung up at.
+    _placedAtOverride = widget.existing?.placedAt;
     if (existing != null) {
       _channel = existing.channel;
       _deliveryPlatformId = existing.deliveryPlatformId;
       _guestCount = existing.guestCount;
-      _paymentMethod = existing.paymentMethod;
+      _paymentMethodId = existing.paymentMethodId;
+      _paymentMethodChosen = true;
       for (final line in existing.items) {
         _quantities[line.itemId] = line.qty;
       }
@@ -154,6 +190,11 @@ class _AddOrderState extends State<AddOrder> {
       setState(() {
         _store = store;
         _menu = menu;
+        // Whatever this shop put first, rather than a hard-coded 'cash' — a
+        // card-only cafe should not have to change the payment on every order.
+        if (!_paymentMethodChosen) {
+          _paymentMethodId = store.defaultPaymentMethodId;
+        }
       });
     } catch (e) {
       if (mounted) setState(() => _loadError = e);
@@ -193,7 +234,7 @@ class _AddOrderState extends State<AddOrder> {
       channel: _channel,
       guestCount: _guestCount,
       deliveryPlatformId: _deliveryPlatformId,
-      paymentMethod: _paymentMethod,
+      paymentMethodId: _paymentMethodId,
     );
   }
 
@@ -216,7 +257,7 @@ class _AddOrderState extends State<AddOrder> {
     if (time == null || !mounted) return;
 
     setState(() {
-      _placedAt =
+      _placedAtOverride =
           DateTime(date.year, date.month, date.day, time.hour, time.minute);
     });
   }
@@ -260,7 +301,9 @@ class _AddOrderState extends State<AddOrder> {
       _snack('Order #$orderNo added');
       setState(() {
         _quantities.clear();
-        _placedAt = DateTime.now();
+        // Back to "now" rather than to this instant: the next order is stamped
+        // when it is rung up, not when this one was.
+        _placedAtOverride = null;
         _guestCount = 1;
       });
     } catch (e) {
@@ -268,10 +311,47 @@ class _AddOrderState extends State<AddOrder> {
       // that failed to save is an order somebody still has to ring up, and
       // making them tap it in again is the worst possible response to a
       // dropped connection.
-      _snack(describeFailure(e).message, isError: true);
+      final failure = describeFailure(e);
+      // A new order with no connection is not a failure the person at the till
+      // can do anything about, and "try again later" is not an answer with a
+      // customer standing there. It goes on the device instead, keeping the
+      // time it was rung up at, and is sent when there is a connection.
+      //
+      // Only new orders. An edit has to be applied against the order as it
+      // stands on the server — which is exactly what cannot be read offline —
+      // so it stays a failure and says so.
+      if (!_isEdit && failure.failure == DataFailure.offline) {
+        await _queueOffline(store, draft);
+        return;
+      }
+      _snack(
+        failure.failure == DataFailure.offline
+            // The generic wording ("check your network and try again") reads
+            // like the edit may have gone through. It has not.
+            ? 'No connection, so this change could not be saved. Nothing has '
+                'been altered — try again once you are back online.'
+            : failure.message,
+        isError: true,
+      );
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  /// Puts an order that could not be sent on the device's queue, and clears
+  /// the till for the next customer.
+  Future<void> _queueOffline(Store store, OrderDraft draft) async {
+    await pendingOrders.add(store.id, draft);
+    if (!mounted) return;
+    setState(() {
+      _quantities.clear();
+      _placedAtOverride = null;
+      _guestCount = 1;
+    });
+    final waiting = pendingOrders.length;
+    _snack('Saved on this device — $waiting '
+        '${waiting == 1 ? 'order is' : 'orders are'} waiting to be sent. '
+        'It keeps the time it was rung up at.');
   }
 
   void _snack(String message, {bool isError = false}) {
@@ -282,6 +362,7 @@ class _AddOrderState extends State<AddOrder> {
   @override
   void dispose() {
     _searchController.dispose();
+    _optionsController.dispose();
     super.dispose();
   }
 
@@ -352,49 +433,107 @@ class _AddOrderState extends State<AddOrder> {
     final draft = _buildDraft();
     final totals = draft.price(store);
 
+    // A tablet or a desktop window has room to keep dine-in / takeout /
+    // delivery, the guest count and the payment permanently on screen. Folding
+    // them into a collapsed tile — the right answer on a phone, where the menu
+    // needs the whole screen — turns a one-tap setting into three on the one
+    // layout that has space to spare, and leaves a third of a 1200pt window as
+    // margin while it does it.
+    final wide = MediaQuery.sizeOf(context).width >= _twoPaneWidth;
+
     return Column(
       children: [
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            children: [
-              // Collapsed by default. Date, channel, guests and payment used
-              // to fill the whole first screen, so ringing up an order — the
-              // thing this page is for — started with a scroll past four
-              // settings that are right nearly every time. The header carries
-              // their current values, so nothing is hidden, only folded.
-              _buildOptionsTile(store),
-              if (rows.isNotEmpty) _buildSearchField(),
-              if (rows.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    children: [
-                      const Text(
-                        'No dishes on the menu yet.',
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      // Naming the screen and leaving someone to find it is
-                      // most of the way to helping.
-                      FilledButton.icon(
-                        onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => StoreEditMenu(widget.storeId),
-                          ),
-                        ),
-                        icon: const Icon(Icons.restaurant_menu),
-                        label: const Text('Edit the menu'),
-                      ),
-                    ],
-                  ),
+          child: wide
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: _buildMenuList(store, rows)),
+                    const VerticalDivider(width: 1),
+                    SizedBox(
+                      // The panel is a column of labelled controls, so it
+                      // takes its width from the text in it rather than from
+                      // a number that was measured at one font size.
+                      width: scaledForText(context, 360, cap: 1.5),
+                      child: _buildOptionsPanel(store),
+                    ),
+                  ],
                 )
-              else
-                ..._buildMenuSections(store, rows),
-            ],
-          ),
+              : _buildMenuList(store, rows, options: true),
         ),
         _buildSummary(store, totals),
+      ],
+    );
+  }
+
+  /// Past this the order settings get a column of their own.
+  static const double _twoPaneWidth = 840;
+
+  /// The dishes, with the collapsed settings tile above them on a phone.
+  Widget _buildMenuList(
+    Store store,
+    List<_MenuRow> rows, {
+    bool options = false,
+  }) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      children: [
+        // Collapsed by default. Date, channel, guests and payment used
+        // to fill the whole first screen, so ringing up an order — the
+        // thing this page is for — started with a scroll past four
+        // settings that are right nearly every time. The header carries
+        // their current values, so nothing is hidden, only folded.
+        if (options) _buildOptionsTile(store),
+        if (rows.isNotEmpty) _buildSearchField(),
+        if (rows.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              children: [
+                const Text(
+                  'No dishes on the menu yet.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                // Naming the screen and leaving someone to find it is
+                // most of the way to helping.
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => StoreEditMenu(widget.storeId),
+                    ),
+                  ),
+                  icon: const Icon(Icons.restaurant_menu),
+                  label: const Text('Edit the menu'),
+                ),
+              ],
+            ),
+          )
+        else
+          ..._buildMenuSections(store, rows),
+      ],
+    );
+  }
+
+  /// The same four settings as [_buildOptionsTile], open and staying open.
+  Widget _buildOptionsPanel(Store store) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 16, 16, 16),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+          child: Text(
+            'Order details',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+        _buildDateTile(store),
+        _buildChannelTile(store),
+        if (_channel == OrderChannel.delivery &&
+            store.deliveryPlatforms.isNotEmpty)
+          _buildPlatformTile(store),
+        _buildGuestCountTile(),
+        _buildPaymentTile(store),
       ],
     );
   }
@@ -433,7 +572,7 @@ class _AddOrderState extends State<AddOrder> {
       if (platform != null) parts.add(platform.name);
     }
     parts.add('$_guestCount ${_guestCount == 1 ? 'guest' : 'guests'}');
-    parts.add(_paymentMethod.label);
+    parts.add(store.paymentMethodById(_paymentMethodId).name);
     parts.add(DateFormat('MMM d, HH:mm').format(_placedAt));
     return parts.join('  ·  ');
   }
@@ -442,6 +581,7 @@ class _AddOrderState extends State<AddOrder> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ExpansionTile(
+        controller: _optionsController,
         shape: const Border(),
         collapsedShape: const Border(),
         leading: const Icon(Icons.tune_rounded),
@@ -458,7 +598,7 @@ class _AddOrderState extends State<AddOrder> {
               store.deliveryPlatforms.isNotEmpty)
             _buildPlatformTile(store),
           _buildGuestCountTile(),
-          _buildPaymentTile(),
+          _buildPaymentTile(store),
           const SizedBox(height: 8),
         ],
       ),
@@ -475,7 +615,11 @@ class _AddOrderState extends State<AddOrder> {
   List<Widget> _buildMenuSections(Store store, List<_MenuRow> rows) {
     if (_query.isNotEmpty) {
       final needle = _query.toLowerCase();
-      rows = rows.where((r) => r.name.toLowerCase().contains(needle)).toList();
+      rows = rows
+          .where((r) =>
+              r.name.toLowerCase().contains(needle) ||
+              r.aliases.any((a) => a.toLowerCase().contains(needle)))
+          .toList();
       if (rows.isEmpty) {
         return [
           Padding(
@@ -557,17 +701,27 @@ class _AddOrderState extends State<AddOrder> {
   }
 
   Widget _buildDateTile(Store store) {
-    final businessDate = store.businessDateOf(_placedAt);
-    final calendarDate = DateFormat('yyyy-MM-dd').format(_placedAt);
-    return ListTile(
-      leading: const Icon(Icons.calendar_today),
-      title: Text(DateFormat('yyyy/MM/dd  HH:mm').format(_placedAt)),
+    final placedAt = _placedAt;
+    final businessDate = store.businessDateOf(placedAt);
+    final calendarDate = DateFormat('yyyy-MM-dd').format(placedAt);
+    final notes = <String>[
       // An order rung up after midnight belongs to the previous trading day.
       // Say so rather than let the owner wonder why it is on yesterday's sheet.
-      subtitle: businessDate == calendarDate
-          ? null
-          : Text('Counts towards trading day $businessDate'),
-      trailing: const Icon(Icons.edit_outlined),
+      if (businessDate != calendarDate)
+        'Counts towards trading day $businessDate',
+      if (_placedAtOverride == null) 'Stamped when the order is added',
+    ];
+    return ListTile(
+      leading: const Icon(Icons.calendar_today),
+      title: Text(DateFormat('yyyy/MM/dd  HH:mm').format(placedAt)),
+      subtitle: notes.isEmpty ? null : Text(notes.join(' · ')),
+      trailing: _placedAtOverride == null
+          ? const Icon(Icons.edit_outlined)
+          : IconButton(
+              tooltip: 'Back to the time it is added',
+              icon: const Icon(Icons.restore_rounded),
+              onPressed: () => setState(() => _placedAtOverride = null),
+            ),
       onTap: _selectDateTime,
     );
   }
@@ -576,6 +730,10 @@ class _AddOrderState extends State<AddOrder> {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: SegmentedButton<OrderChannel>(
+        // The channel's own icon says which segment is which; the tick Material
+        // adds on top only costs width, and width is what the side column has
+        // least of.
+        showSelectedIcon: false,
         segments: OrderChannel.values
             .map((c) => ButtonSegment(
                   value: c,
@@ -634,32 +792,62 @@ class _AddOrderState extends State<AddOrder> {
     );
   }
 
-  Widget _buildPaymentTile() {
+  /// The methods come from the store, not from a fixed enum, so a shop that
+  /// takes 街口支付 or runs monthly accounts can say so — and the payment
+  /// breakdown in Reports then means something.
+  Widget _buildPaymentTile(Store store) {
+    final current = store.paymentMethodById(_paymentMethodId);
     return ListTile(
-      leading: Icon(_paymentMethod.icon),
-      title: Text('Payment: ${_paymentMethod.label}'),
+      leading: Icon(paymentIconData(current.iconKey)),
+      title: Text('Payment: ${current.name}'),
       trailing: const Icon(Icons.arrow_forward_rounded),
       onTap: () => showModalBottomSheet<void>(
         showDragHandle: true,
         context: context,
-        builder: (context) => SafeArea(
+        builder: (sheetContext) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: PaymentMethod.values
-                .map((method) => ListTile(
-                      leading: Icon(method.icon),
-                      title: Text(method.label),
-                      selected: method == _paymentMethod,
-                      onTap: () {
-                        setState(() => _paymentMethod = method);
-                        Navigator.pop(context);
-                      },
-                    ))
-                .toList(),
+            children: [
+              for (final method in store.paymentMethods)
+                ListTile(
+                  leading: Icon(paymentIconData(method.iconKey)),
+                  title: Text(method.name),
+                  selected: method.id == current.id,
+                  onTap: () {
+                    setState(() {
+                      _paymentMethodId = method.id;
+                      _paymentMethodChosen = true;
+                    });
+                    Navigator.pop(sheetContext);
+                  },
+                ),
+              const Divider(height: 1),
+              // The list is a shop setting, and the moment somebody notices it
+              // is missing something is while they are ringing an order up.
+              ListTile(
+                leading: const Icon(Icons.tune_rounded),
+                title: const Text('Edit payment methods'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _editPaymentMethods();
+                },
+              ),
+            ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _editPaymentMethods() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StorePaymentMethods(widget.storeId),
+      ),
+    );
+    // The store is held as a snapshot here, so a method added on that screen
+    // would otherwise not appear until this page was left and re-entered.
+    await _load();
   }
 
   String _priceLabel(int price) => moneyFormat(_store).format(price);
@@ -709,42 +897,51 @@ class _AddOrderState extends State<AddOrder> {
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          InkWell(
-            onTap: () => _addOne(row),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    row.icon,
-                    size: 28,
-                    color: selected
-                        ? scheme.onPrimaryContainer
-                        : scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: Text(
-                      row.retired ? '${row.name} (retired)' : row.name,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: selected
-                            ? scheme.onPrimaryContainer
-                            : scheme.onSurface,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    _priceLabel(row.price),
-                    style: theme.textTheme.bodySmall?.copyWith(
+          // `Positioned.fill`, not a bare child: a `Stack` hands its
+          // non-positioned children *loose* constraints, so the InkWell shrank
+          // to the width of the widest thing in the Column. On a dish named
+          // 白飯 that was about a third of the tile, and the other two thirds —
+          // still card, still looking exactly like a button — did nothing when
+          // tapped. Filling the stack makes the whole tile the target the
+          // comment below has always claimed it is.
+          Positioned.fill(
+            child: InkWell(
+              onTap: () => _addOne(row),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      row.icon,
+                      size: 28,
                       color: selected
                           ? scheme.onPrimaryContainer
                           : scheme.onSurfaceVariant,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: Text(
+                        row.retired ? '${row.name} (retired)' : row.name,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: selected
+                              ? scheme.onPrimaryContainer
+                              : scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      _priceLabel(row.price),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: selected
+                            ? scheme.onPrimaryContainer
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -910,76 +1107,153 @@ class _AddOrderState extends State<AddOrder> {
       color: scheme.surfaceContainerHigh,
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(taxLabel, style: fine),
-              if (totals.commissionAmount > 0)
-                Text(
-                    'Platform commission '
-                    '${money.format(totals.commissionAmount)}',
-                    style: fine),
-              const SizedBox(height: 8),
-              Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // The shell's offline banner sits behind this route, and this is
+            // the one screen where the answer differs by what you are doing:
+            // a new order is queued on the device, an edit cannot be. Saying
+            // which before the button is pressed beats saying it afterwards.
+            _OfflineStrip(isEdit: _isEdit),
+            PendingOrdersBar(currency: store.currency),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // In grid mode the chosen dishes are scattered across the
-                  // tiles, so the bill itself needs somewhere to live.
-                  if (_quantities.isNotEmpty)
-                    TextButton.icon(
-                      onPressed: _showBasket,
-                      icon: const Icon(Icons.receipt_long_outlined, size: 18),
-                      label: Text(
-                        '${_quantities.length} '
-                        '${_quantities.length == 1 ? 'dish' : 'dishes'}',
+                  Text(taxLabel, style: fine),
+                  if (totals.commissionAmount > 0)
+                    Text(
+                        'Platform commission '
+                        '${money.format(totals.commissionAmount)}',
+                        style: fine),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      // In grid mode the chosen dishes are scattered across
+                      // the tiles, so the bill itself needs somewhere to live.
+                      if (_quantities.isNotEmpty)
+                        TextButton.icon(
+                          onPressed: _showBasket,
+                          icon:
+                              const Icon(Icons.receipt_long_outlined, size: 18),
+                          label: Text(
+                            '${_quantities.length} '
+                            '${_quantities.length == 1 ? 'dish' : 'dishes'}',
+                          ),
+                        )
+                      else
+                        Text('Total', style: theme.textTheme.titleMedium),
+                      const SizedBox(width: 8),
+                      // One flexible child, not two.
+                      //
+                      // This was `Flexible(FittedBox(…))` followed by `Spacer()`,
+                      // and both of those are flex-1: the leftover width was split
+                      // down the middle between the price and a gap, so the price
+                      // and the button moved as the total got longer or shorter
+                      // rather than staying put. At NT$0 — the shortest string
+                      // there is — everything sat at its most lopsided.
+                      //
+                      // `scaleDown` rather than the default `contain`, so a long
+                      // total is allowed to shrink but a short one is never blown
+                      // up to fill the space it happens to have been given.
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(money.format(totals.total),
+                                style: theme.textTheme.headlineSmall),
+                          ),
+                        ),
                       ),
-                    )
-                  else
-                    Text('Total', style: theme.textTheme.titleMedium),
-                  const SizedBox(width: 8),
-                  // One flexible child, not two.
-                  //
-                  // This was `Flexible(FittedBox(…))` followed by `Spacer()`,
-                  // and both of those are flex-1: the leftover width was split
-                  // down the middle between the price and a gap, so the price
-                  // and the button moved as the total got longer or shorter
-                  // rather than staying put. At NT$0 — the shortest string
-                  // there is — everything sat at its most lopsided.
-                  //
-                  // `scaleDown` rather than the default `contain`, so a long
-                  // total is allowed to shrink but a short one is never blown
-                  // up to fill the space it happens to have been given.
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(money.format(totals.total),
-                            style: theme.textTheme.headlineSmall),
+                      const SizedBox(width: 12),
+                      FilledButton.icon(
+                        onPressed: _submitting ? null : _submit,
+                        icon: _submitting
+                            ? const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.check_rounded),
+                        label: Text(_isEdit ? 'Save changes' : 'Add order'),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  FilledButton.icon(
-                    onPressed: _submitting ? null : _submit,
-                    icon: _submitting
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.check_rounded),
-                    label: Text(_isEdit ? 'Save changes' : 'Add order'),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+/// The one line the till needs when the connection goes: what still works.
+///
+/// The menu, the prices and the basket are all local, and since the offline
+/// queue arrived so is the saving: `_queueOffline` puts a new order on the
+/// device with the time it was rung up at, and `PendingOrderQueue` sends it
+/// when the connection returns.
+///
+/// This text used to say the opposite — "keep taking the order, but it cannot
+/// be saved" — which was true before the queue and was never updated when it
+/// shipped. It was the one screen where the app told somebody a feature it has
+/// does not exist, and it contradicted the store listing, which describes
+/// offline ordering as a headline feature.
+///
+/// An **edit** still cannot be saved offline, and that part was and remains
+/// true: an edit has to be applied against the order as it stands on the
+/// server, which is exactly what cannot be read with no connection. Hence
+/// [isEdit] — the two cases need opposite answers, and one line for both was
+/// wrong for whichever it was not written for.
+class _OfflineStrip extends StatelessWidget {
+  const _OfflineStrip({required this.isEdit});
+
+  final bool isEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: connectionStatus,
+      builder: (context, offline, _) {
+        if (!offline) return const SizedBox.shrink();
+        final scheme = Theme.of(context).colorScheme;
+        return Material(
+          color: scheme.tertiaryContainer,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Icon(Icons.cloud_off_rounded,
+                    size: 18, color: scheme.onTertiaryContainer),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isEdit
+                        ? 'Offline — this order cannot be changed until the '
+                            'connection is back. An edit has to be applied to '
+                            'the order as it stands on the server.'
+                        : 'Offline — carry on. The order is kept on this '
+                            'device and sent when the connection is back, '
+                            'keeping the time it was rung up at. Prices are '
+                            'the last ones this device saw.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: scheme.onTertiaryContainer),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

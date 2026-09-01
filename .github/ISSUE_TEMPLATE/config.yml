@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/ADSFAaron/Revenue/security/advisories/new
+    about: Report privately. Please do not open a public issue for these.
+  - name: How the app works
+    url: https://github.com/ADSFAaron/Revenue#readme
+    about: Setup, Firebase configuration, the data model and troubleshooting.

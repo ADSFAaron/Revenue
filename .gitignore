@@ -66,3 +66,12 @@ android/app/google-services.json
 # Agent skills fetched from upstream per skills-lock.json — the lock file is
 # committed, the fetched content is not (same split as pubspec.lock/.dart_tool).
 .agents/
+
+# Demo-data seeding. Kept out of the public repo: these carry a default login
+# for a store that lives on the real Firebase project, and they are operator
+# tooling rather than part of the app.
+tool/seed_demo.js
+tool/demo_store.js
+tool/.seed-backup.json
+
+node_modules/

@@ -65,10 +65,12 @@ class RegisterPage extends StatelessWidget {
                           context,
                           MaterialPageRoute(builder: (_) => const LoginPage()),
                         ),
-                        child: const Text(
+                        child: Text(
                           'Login',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 18),
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                       ),
                     ],
@@ -564,11 +566,10 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
             errorText: _codeError,
             textCapitalization: TextCapitalization.characters,
             textInputAction: TextInputAction.done,
-            style: const TextStyle(
-              fontSize: 26,
-              letterSpacing: 8,
-              fontWeight: FontWeight.w600,
-            ),
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  letterSpacing: 8,
+                  fontWeight: FontWeight.w600,
+                ),
             textAlign: TextAlign.center,
             inputFormatters: [
               // Order matters: strip the separators first, then cap. A limiter
@@ -962,11 +963,10 @@ class _Title extends StatelessWidget {
   Widget build(BuildContext context) => Text(
         text,
         textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontSize: 28,
-          fontWeight: FontWeight.bold,
-          color: Colors.black,
-        ),
+        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: Colors.black,
+            ),
       );
 }
 
@@ -979,7 +979,10 @@ class _Subtitle extends StatelessWidget {
   Widget build(BuildContext context) => Text(
         text,
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 15, color: Colors.grey[700], height: 1.4),
+        style: Theme.of(context)
+            .textTheme
+            .bodyLarge
+            ?.copyWith(color: Colors.grey[700], height: 1.4),
       );
 }
 
@@ -992,7 +995,10 @@ class _Note extends StatelessWidget {
   Widget build(BuildContext context) => Text(
         text,
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 12, color: Colors.grey[600], height: 1.4),
+        style: Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(color: Colors.grey[600], height: 1.4),
       );
 }
 
@@ -1042,6 +1048,7 @@ class _PathCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
@@ -1062,14 +1069,14 @@ class _PathCard extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w700),
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     description,
-                    style: TextStyle(
-                        fontSize: 13, color: Colors.grey[700], height: 1.4),
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: Colors.grey[700], height: 1.4),
                   ),
                 ],
               ),
@@ -1091,6 +1098,7 @@ class _JoiningBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1108,16 +1116,18 @@ class _JoiningBanner extends StatelessWidget {
               children: [
                 Text(
                   'You are joining',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[800]),
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: Colors.grey[800]),
                 ),
                 Text(
                   invite.storeName.isEmpty ? 'this store' : invite.storeName,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w700),
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 Text(
                   'as ${invite.role.label.toLowerCase()}',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[800]),
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: Colors.grey[800]),
                 ),
               ],
             ),
@@ -1139,6 +1149,7 @@ class _SignedInBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final name =
         result.displayName.isNotEmpty ? result.displayName : result.email;
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1156,13 +1167,14 @@ class _SignedInBanner extends StatelessWidget {
               children: [
                 Text(
                   name,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w700),
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 if (result.email.isNotEmpty && result.email != name)
                   Text(
                     result.email,
-                    style: TextStyle(fontSize: 13, color: Colors.grey[800]),
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(color: Colors.grey[800]),
                   ),
               ],
             ),
@@ -1213,8 +1225,10 @@ class _LabelledField extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
-              fontSize: 15, fontWeight: FontWeight.w700, color: Colors.black87),
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: Colors.black87,
+              ),
         ),
         const SizedBox(height: 5),
         TextField(
@@ -1282,8 +1296,10 @@ class _PrimaryButton extends StatelessWidget {
               )
             : Text(
                 label,
-                style:
-                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w600),
               ),
       ),
     );

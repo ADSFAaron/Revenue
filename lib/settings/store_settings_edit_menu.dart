@@ -57,11 +57,34 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
   final nameController = TextEditingController();
   final priceController = TextEditingController();
   final costController = TextEditingController();
+  final aliasController = TextEditingController();
+
+  /// Whether this account may change the menu.
+  ///
+  /// The menu is the one screen in here an assistant has the most reason to
+  /// open and the least business editing: they need to know what a dish costs
+  /// the customer and which category it is in, and a mistyped price here
+  /// rewrites what every future order charges. So the list, the search and the
+  /// costed/retired filters stay; adding, editing, retiring, reordering and
+  /// importing go.
+  bool _isManager = false;
 
   @override
   void initState() {
     super.initState();
     _loadCategories();
+    _loadRole();
+  }
+
+  /// A failed lookup leaves this false, which is the safe way round — the page
+  /// renders read-only rather than offering an edit the rules would refuse.
+  Future<void> _loadRole() async {
+    try {
+      final session = await loadSession();
+      if (mounted) setState(() => _isManager = session.user.role.canManage);
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
   }
 
   @override
@@ -69,6 +92,7 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
     nameController.dispose();
     priceController.dispose();
     costController.dispose();
+    aliasController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -115,7 +139,7 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Edit Menu'),
+        title: Text(_isManager ? 'Edit Menu' : 'Menu'),
         // One icon out front and the rest behind a menu with words on it.
         //
         // Three bare glyphs in an app bar is three things to guess at, and a
@@ -126,11 +150,12 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
         // retired dish are occasional, and occasional actions are better
         // spelled out than abbreviated.
         actions: [
-          IconButton(
-            tooltip: 'Import from a photo',
-            icon: const Icon(Icons.document_scanner_outlined),
-            onPressed: _importFromPhoto,
-          ),
+          if (_isManager)
+            IconButton(
+              tooltip: 'Import from a photo',
+              icon: const Icon(Icons.document_scanner_outlined),
+              onPressed: _importFromPhoto,
+            ),
           PopupMenuButton<_MenuAction>(
             tooltip: 'More',
             onSelected: (action) => switch (action) {
@@ -139,14 +164,17 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
                 setState(() => _showRetired = !_showRetired),
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: _MenuAction.categories,
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(Icons.category_outlined),
-                  title: Text('Menu categories'),
+              // Showing retired dishes is a filter on this list and stays open
+              // to everyone; arranging categories is an edit and does not.
+              if (_isManager)
+                const PopupMenuItem(
+                  value: _MenuAction.categories,
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(Icons.category_outlined),
+                    title: Text('Menu categories'),
+                  ),
                 ),
-              ),
               PopupMenuItem(
                 value: _MenuAction.toggleRetired,
                 child: ListTile(
@@ -225,7 +253,8 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
           // Dragging inside a filtered view would write an order derived
           // from a subset back over the whole menu, so while a filter is on
           // the list is a plain one.
-          final filtered = _query.isNotEmpty || _onlyUncosted;
+          // The same is true of a menu nobody on this account may reorder.
+          final filtered = _query.isNotEmpty || _onlyUncosted || !_isManager;
           final list = ReadingWidth(
             builder: (context, insets) => filtered
                 ? ListView.builder(
@@ -267,10 +296,12 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openDialog(),
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: _isManager
+          ? FloatingActionButton(
+              onPressed: () => _openDialog(),
+              child: const Icon(Icons.add),
+            )
+          : null,
     );
   }
 
@@ -364,8 +395,9 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
         mainAxisSize: MainAxisSize.min,
         spacing: 12,
         children: [
-          Icon(Icons.drag_indicator,
-              color: Theme.of(context).colorScheme.onSurfaceVariant),
+          if (_isManager)
+            Icon(Icons.drag_indicator,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
           Icon(item.iconData),
         ],
       ),
@@ -376,27 +408,29 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
             : const TextStyle(decoration: TextDecoration.lineThrough),
       ),
       subtitle: Text(subtitle.toString()),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            onPressed: () => _openDialog(existing: item),
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          if (item.isActive)
-            IconButton(
-              tooltip: 'Retire dish',
-              onPressed: () => _retireItem(item),
-              icon: const Icon(Icons.delete_outlined),
+      trailing: _isManager
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  onPressed: () => _openDialog(existing: item),
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+                if (item.isActive)
+                  IconButton(
+                    tooltip: 'Retire dish',
+                    onPressed: () => _retireItem(item),
+                    icon: const Icon(Icons.delete_outlined),
+                  )
+                else
+                  IconButton(
+                    tooltip: 'Put back on the menu',
+                    onPressed: () => _restoreItem(item),
+                    icon: const Icon(Icons.restore_from_trash_outlined),
+                  ),
+              ],
             )
-          else
-            IconButton(
-              tooltip: 'Put back on the menu',
-              onPressed: () => _restoreItem(item),
-              icon: const Icon(Icons.restore_from_trash_outlined),
-            ),
-        ],
-      ),
+          : null,
     );
   }
 
@@ -450,12 +484,13 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
 
   Future<void> _openDialog({MenuItem? existing}) async {
     final isEdit = existing != null;
-    // Reset rather than recreate — the same three controllers serve every
-    // dish, so each opening has to clear what the last one left behind.
+    // Reset rather than recreate — the same controllers serve every dish, so
+    // each opening has to clear what the last one left behind.
     nameController.text = existing?.name ?? '';
     priceController.text = isEdit ? existing.price.toString() : '';
     costController.text =
         isEdit && existing.cost > 0 ? existing.cost.toString() : '';
+    aliasController.text = existing?.aliases.join('、') ?? '';
     var iconCodePoint = existing?.icon ?? MenuItem.defaultIconCodePoint;
     var categoryId = existing?.categoryId ??
         (_categories.isNotEmpty ? _categories.first.id : null);
@@ -544,6 +579,17 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
                   inputFormatters: <TextInputFormatter>[
                     FilteringTextInputFormatter.digitsOnly
                   ],
+                  textInputAction: TextInputAction.next,
+                ),
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Also called',
+                    hintText: '牛麵, 大牛',
+                    helperText: 'Optional — what the slips and the kitchen '
+                        'call it. The till searches these too.',
+                    helperMaxLines: 2,
+                  ),
+                  controller: aliasController,
                   textInputAction: TextInputAction.done,
                 ),
                 if (_categories.isEmpty)
@@ -601,6 +647,14 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
 
     final price = int.parse(priceController.text);
     final cost = int.tryParse(costController.text) ?? 0;
+    // Comma, ideographic comma, enumeration comma or space — whichever the
+    // keyboard produced. Asking somebody to use one particular separator is
+    // asking them to notice which one they typed.
+    final aliases = aliasController.text
+        .split(RegExp(r'[,，、\s]+'))
+        .map((a) => a.trim())
+        .where((a) => a.isNotEmpty)
+        .toList();
 
     // The confirmation must depend on the write having happened. Unguarded,
     // a rejected write threw past this method and the screen said nothing at
@@ -617,6 +671,7 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
             cost: cost,
             icon: iconCodePoint,
             categoryId: categoryId,
+            aliases: aliases,
           ),
           previous: existing,
           by: currentActor(),
@@ -631,19 +686,45 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
             cost: cost,
             icon: iconCodePoint,
             categoryId: categoryId,
+            aliases: aliases,
             sortOrder: DateTime.now().millisecondsSinceEpoch ~/ 1000,
           ),
         );
       }
-      _snack(isEdit ? 'Dish updated' : 'Dish added');
+      // A price change only reaches another till when that till is online:
+      // every device reads the menu through Firestore's offline cache, and one
+      // that has been offline since before the change keeps ringing up the old
+      // price — which `OrderLine` then freezes onto the order for good. There
+      // is no way to reconcile that after the fact, so the one useful thing is
+      // to say it at the moment the price changes.
+      final repriced = isEdit && existing.price != price;
+      _snack(isEdit ? 'Dish updated' : 'Dish added',
+          note: repriced
+              ? 'Other devices pick up the new price once they are online. A '
+                  'till that stays offline keeps selling at the old one.'
+              : null);
     } catch (e) {
       if (mounted) showFailure(context, e);
     }
   }
 
-  void _snack(String message) {
+  void _snack(String message, {String? note}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: note == null
+          ? Text(message)
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(message),
+                const SizedBox(height: 4),
+                Text(note, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+      duration: note == null
+          ? const Duration(seconds: 4)
+          : const Duration(seconds: 7),
+    ));
   }
 }

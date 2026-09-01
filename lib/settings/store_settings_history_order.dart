@@ -10,6 +10,7 @@ import 'store_setting_history_order_detail.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
 import '../widgets/page_body.dart';
+import '../widgets/payment_icons.dart';
 import '../widgets/empty_state.dart';
 
 /// Order history, newest first, grouped by trading day.
@@ -49,15 +50,19 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
   /// till actually wants, and voided orders in particular are the ones they
   /// come here to find.
   OrderChannel? _channel;
-  PaymentMethod? _payment;
+
+  /// A [StorePaymentMethod.id], filtered client-side like the rest.
+  String? _paymentId;
   bool _onlyVoided = false;
 
-  bool get _filtering => _channel != null || _payment != null || _onlyVoided;
+  bool get _filtering => _channel != null || _paymentId != null || _onlyVoided;
 
   List<Order> get _visible => _orders.where((order) {
         if (_onlyVoided && !order.isVoided) return false;
         if (_channel != null && order.channel != _channel) return false;
-        if (_payment != null && order.paymentMethod != _payment) return false;
+        if (_paymentId != null && order.paymentMethodId != _paymentId) {
+          return false;
+        }
         return true;
       }).toList();
 
@@ -140,7 +145,7 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
             TextButton(
               onPressed: () => setState(() {
                 _channel = null;
-                _payment = null;
+                _paymentId = null;
                 _onlyVoided = false;
               }),
               child: const Text('Clear'),
@@ -186,12 +191,16 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
   }
 
   /// One scrolling row of filter chips.
+  ///
+  /// Sized by its chips rather than pinned to `height: 56`. A chip grows with
+  /// the system font, and a fixed-height row around it clipped the labels off
+  /// at the large end of the accessibility slider — a horizontal `ListView`
+  /// needs a bounded height, but a scroll view around a `Row` does not.
   Widget _buildFilterBar() {
-    return SizedBox(
-      height: 56,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: Row(
         children: [
           FilterChip(
             label: const Text('Voided'),
@@ -210,12 +219,18 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
             ),
             const SizedBox(width: 8),
           ],
-          for (final method in PaymentMethod.values) ...[
+          // The shop's own methods, not a fixed enum — and the defaults until
+          // the store lands, so the bar does not jump about as it loads.
+          for (final method
+              in _store?.paymentMethods ?? kDefaultPaymentMethods) ...[
             FilterChip(
-              label: Text(method.label),
-              avatar: _payment == method ? null : Icon(method.icon, size: 18),
-              selected: _payment == method,
-              onSelected: (on) => setState(() => _payment = on ? method : null),
+              label: Text(method.name),
+              avatar: _paymentId == method.id
+                  ? null
+                  : Icon(paymentIconData(method.iconKey), size: 18),
+              selected: _paymentId == method.id,
+              onSelected: (on) =>
+                  setState(() => _paymentId = on ? method.id : null),
             ),
             const SizedBox(width: 8),
           ],
@@ -274,6 +289,13 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
     );
   }
 
+  /// Resolved against the shop's own list, falling back to the built-in names
+  /// while the store loads and for a method that has since been deleted.
+  String _paymentName(Order order) => resolvePaymentMethod(
+        _store?.paymentMethods ?? kDefaultPaymentMethods,
+        order.paymentMethodId,
+      ).name;
+
   Widget _buildOrderCard(Order order) {
     final scheme = Theme.of(context).colorScheme;
     return Card(
@@ -293,7 +315,7 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
         ),
         subtitle: Text(
           '${DateFormat.Hm().format(order.placedAt)}  ·  '
-          '${order.channel.label}  ·  ${order.paymentMethod.label}',
+          '${order.channel.label}  ·  ${_paymentName(order)}',
         ),
         trailing: Text(
           _money.format(order.total),

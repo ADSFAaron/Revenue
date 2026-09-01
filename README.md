@@ -69,11 +69,14 @@
         <li><a href="#what-is-asked-of-the-model-and-what-is-not">What is asked of the model, and what is not</a></li>
         <li><a href="#nothing-is-written-until-somebody-says-yes">Nothing is written until somebody says yes</a></li>
         <li><a href="#writing">Writing</a></li>
+        <li><a href="#what-it-is-allowed-to-cost">What it is allowed to cost</a></li>
       </ul>
     </li>
+    <li><a href="#5-app-check">App Check</a></li>
     <li><a href="#troubleshooting">Troubleshooting</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#found-a-security-hole">Security</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
   </ol>
@@ -148,7 +151,13 @@ flutter pub get
 
 ### 2. Firebase setup (required)
 
-This project talks to the Firebase project **`revenueapp-b8849`**. Two files are needed
+> **`<PROJECT_ID>`, `<ANDROID_APP_ID>` and the rest are placeholders.** The real
+> values for the hosted deployment are not in this repository — they live in
+> `docs/deployment.local.md`, which is git-ignored. If you are running your own
+> Firebase project, substitute your own throughout; `flutterfire configure`
+> writes most of them for you.
+
+This project talks to your own Firebase project. Two files are needed
 and **neither is committed** — you generate both with the official FlutterFire CLI.
 
 <table>
@@ -175,7 +184,7 @@ while every API call returns 401 — so re-authenticate rather than trusting tha
 
 ```sh
 firebase login --reauth
-firebase projects:list   # revenueapp-b8849 must appear
+firebase projects:list   # <PROJECT_ID> must appear
 ```
 
 **c. Install the FlutterFire CLI — version 1.4.1 or newer.**
@@ -191,11 +200,11 @@ dart pub global activate flutterfire_cli
 **d. Generate the config.**
 
 ```sh
-flutterfire configure --project=revenueapp-b8849 --platforms=android,web
+flutterfire configure --project=<PROJECT_ID> --platforms=android,web
 ```
 
 This writes `lib/firebase_options.dart` and refreshes `android/app/google-services.json`.
-You need access to the `revenueapp-b8849` Firebase project for this to work.
+You need access to the `<PROJECT_ID>` Firebase project for this to work.
 
 ### 3. Deploy the Firestore rules and indexes
 
@@ -213,7 +222,7 @@ a `FAILED_PRECONDITION` error containing a link to create the missing index.
 > the default project) is committed too.
 
 ```sh
-firebase deploy --only firestore:rules,firestore:indexes --project revenueapp-b8849
+firebase deploy --only firestore:rules,firestore:indexes --project <PROJECT_ID>
 ```
 
 Re-run this whenever either file changes. Index builds are asynchronous; the console shows
@@ -237,7 +246,7 @@ credential the app must not be trusted to hold.
 ```sh
 npm --prefix functions install
 firebase functions:secrets:set GEMINI_API_KEY   # paste a key from aistudio.google.com/apikey
-firebase deploy --only functions --project revenueapp-b8849
+firebase deploy --only functions --project <PROJECT_ID>
 ```
 
 Skip the whole step and the app still works; the passkey button and the menu importer each
@@ -292,10 +301,78 @@ Then enable the challenge TTL policy, once:
 
 ```sh
 gcloud firestore fields ttls update expiresAt \
-  --collection-group=passkeyChallenges --enable-ttl --project revenueapp-b8849
+  --collection-group=passkeyChallenges --enable-ttl --project <PROJECT_ID>
 ```
 
-### 5. Run the app
+### 5. App Check
+
+`main.dart` activates App Check before the first Firestore read. Without it
+configured on the project side nothing breaks — activation failure is caught
+and logged — but the protection is not there either.
+
+**What it is for.** The security rules decide what a signed-in *account* may
+do. Nothing else decides whether the caller is this app at all, and since
+registration takes seconds and this project has no email verification, "holds a
+valid account" is not a barrier. App Check is the other half: Play Integrity has
+Google vouch for the installation, so a script holding a working login gets no
+token. It matters most for the menu import, the one call here that spends real
+money per invocation.
+
+**Register one Android app and one web app — not the others.**
+
+| Register | Provider |
+| --- | --- |
+| `com.adsf.revenue` — appId `<ANDROID_APP_ID>` | Play Integrity |
+| The web app — appId `<WEB_APP_ID>` | reCAPTCHA Enterprise |
+
+The project also carries several apps left over from earlier iterations
+(`com.example.adsf.revenue`, `com.adsf.revenueStatistics`, and some unfinished
+iOS entries). **They do not need deleting.** App Check is an allow-list: only a
+registered app can obtain a token, so once enforcement is on, everything you did
+not register is refused by that fact alone. Deleting a Firebase app is
+irreversible and takes its config with it, so check the Play Console for a live
+listing before removing any of them.
+
+**Enable monitoring first, enforcement later.** The console shows the split
+between verified and unverified requests. Enforce only once verified traffic is
+effectively all of it — switching it on early locks out every copy of the app
+that has not been updated yet.
+
+**Local development.** Debug builds use the debug provider, which mints a token
+against a local secret rather than attesting anything. The token is printed to
+the log on first run:
+
+```
+D/com.google.firebase.appcheck: Enter this debug secret into the allow list…
+```
+
+Paste it into **App Check → the Android app → ⋮ → Manage debug tokens**. It is
+per machine and per install, so a new laptop or a wiped emulator needs a new
+one.
+
+**Web needs a site key**, which is per project and not a secret, but is not
+something this repository should guess. Web activation is skipped when it is
+absent:
+
+```bash
+flutter build web --dart-define=APP_CHECK_RECAPTCHA_KEY=6Lc...
+```
+
+> **Play Integrity attests apps that came from Google Play.** A sideloaded APK,
+> or a release build made on a machine with no `android/key.properties` (which
+> falls back to the debug keys), cannot be attested — use the debug provider for
+> those. Once the app is on Play, Play App Signing re-signs it, and the SHA-256
+> to register in Firebase and in
+> [assetlinks.json](web/well-known/assetlinks.json) is Google's, taken from the
+> Play Console. See [Building a release build](#building-a-release-build).
+>
+> App Check is **enforced** on every callable (`CALLABLE_OPTIONS` in
+> [functions/src/config.ts](functions/src/config.ts)), so this is not optional
+> configuration any more: a build that cannot produce a token is a build whose
+> function calls are refused. Register a debug token per machine, and pass
+> `--dart-define=APP_CHECK_RECAPTCHA_KEY=…` to every web build.
+
+### 6. Run the app
 
 Web is the development and demo surface — it needs no device or emulator, so it is the
 fastest way to see a change. Android and iOS are what actually ship:
@@ -399,7 +476,7 @@ flutter build web --no-tree-shake-icons
 firebase deploy --only hosting
 ```
 
-This publishes to `https://revenueapp-b8849.web.app` (and `.firebaseapp.com`). Both are in
+This publishes to `https://<PROJECT_ID>.web.app` (and `.firebaseapp.com`). Both are in
 Firebase Auth's authorised-domains list automatically, so sign-in works with no extra setup.
 Any **custom** domain has to be added manually under Authentication → Settings → Authorized
 domains, or every sign-in fails with `auth/unauthorized-domain`.
@@ -439,28 +516,51 @@ gzip. That is once per deployed version; revalidation keeps every later visit at
 
 ## Building a release build
 
-Release builds currently sign with the **debug** keystore, so `flutter build apk --release`
-works out of the box but produces an artifact you cannot ship to the Play Store.
+The release build signs with the upload keystore when one is configured and with the
+debug keys when one is not, so `flutter build apk --release` works out of the box on a
+fresh clone and a machine that has a key produces a shippable artifact without editing
+any file. There is nothing to switch over.
 
-To sign properly, create `android/key.properties` (git-ignored, never commit it):
+Create the keystore, once, and keep it somewhere it cannot be lost — **Play ties the app
+to it permanently, and there is no way to re-key an app whose upload key is gone except
+asking Google to reset it**:
+
+```sh
+keytool -genkey -v -keystore ~/revenue-upload.jks \
+  -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+```
+
+Then `android/key.properties` (git-ignored, never commit it):
 
 ```properties
 storePassword=<password>
 keyPassword=<password>
-keyAlias=<alias>
+keyAlias=upload
 storeFile=<absolute path to your .jks file>
 ```
 
-Then in `android/app/build.gradle`, swap the `release` build type over:
+`android/app/build.gradle` picks it up by the file's existence:
 
 ```groovy
-buildTypes {
-    release {
-        // signingConfig signingConfigs.debug
-        signingConfig = signingConfigs.release
-    }
-}
+signingConfig keystorePropertiesFile.exists()
+    ? signingConfigs.release
+    : signingConfigs.debug
 ```
+
+> ⚠️ **Changing the signing key changes three other files, and they must agree.**
+> The SHA-256 of the signing certificate appears in three encodings, and a build where
+> they disagree fails only in the places that are hardest to test — Google sign-in and
+> passkeys, in production, on somebody else's phone:
+>
+> 1. `functions/src/config.ts` → `EXPECTED_ORIGINS` (base64url, no padding)
+> 2. `web/well-known/assetlinks.json` → `sha256_cert_fingerprints` (colon-separated hex)
+> 3. The Firebase console → the Android app's SHA-1, for Google sign-in
+>
+> And with **Play App Signing** — which is mandatory for new apps — the certificate that
+> matters is **Google's**, not your upload key. Take it from Play Console → Release →
+> Setup → App signing after the first upload, and register that. Registering the upload
+> key instead is the mistake that looks fine in every local build and breaks the moment
+> the app is installed from Play.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -469,9 +569,10 @@ buildTypes {
 | Platform | Status |
 | --- | --- |
 | Web | **Working — the current development and deployment target.** Builds, renders and initialises Firebase with no console errors; deployed via Firebase Hosting. Google sign-in and passkeys both work here with no extra client setup |
-| Android | Compiles (`flutter build apk`). Not run on a device by me — none was available. Google sign-in needed its signing SHA-1 registered before Play Services would issue an ID token; that is done, see below |
+| Android | **Working, and the target for release.** Builds and runs; Google sign-in has its signing SHA-1 registered (see below), passkeys work against the Digital Asset Links file, and Play in-app updates are wired into Store → Account & app → Version. Signs with the upload keystore when `android/key.properties` is present — see [Building a release build](#building-a-release-build) |
 | iOS | **Not configured.** The app is registered in Firebase and `ios/Runner/GoogleService-Info.plist` exists, but `firebase_options.dart` still throws `UnsupportedError` for iOS. See below. |
-| Windows / macOS / Linux | Not configured |
+| Windows | Compiles; the plugin registrant is generated and checked in. Not a supported target — the Play update flow and App Check are Android-only, and the Version row falls back to plain text there |
+| macOS / Linux | Not configured |
 
 ### Android: Google sign-in and `DEVELOPER_ERROR`
 
@@ -500,10 +601,10 @@ Diagnosing this without guessing, next time:
 cd android && ./gradlew signingReport        # or keytool -list -v -keystore …
 
 # What does the project think is registered?
-firebase apps:android:sha:list <appId> --project revenueapp-b8849
+firebase apps:android:sha:list <appId> --project <PROJECT_ID>
 
 # Empty oauth_client here is the smoking gun.
-firebase apps:sdkconfig ANDROID <appId> --project revenueapp-b8849
+firebase apps:sdkconfig ANDROID <appId> --project <PROJECT_ID>
 ```
 
 Registering a fingerprint is `firebase apps:android:sha:create <appId> <SHA>`, and
@@ -512,16 +613,15 @@ appears in it once the fingerprint exists. `android/app/google-services.json` is
 git-ignored, so a fresh clone needs its own copy:
 
 ```sh
-firebase apps:sdkconfig ANDROID 1:984830610429:android:338f678898416549ce2794 \
-  --project revenueapp-b8849 --out android/app/google-services.json
+firebase apps:sdkconfig ANDROID <ANDROID_APP_ID> \
+  --project <PROJECT_ID> --out android/app/google-services.json
 ```
 
-> ⚠️ **Release builds currently sign with the debug keystore**
-> (`signingConfig signingConfigs.debug`), so the registered fingerprint is the debug one:
-> SHA-1 `A3:A4:85:4D:EC:5D:52:E8:41:31:78:BF:21:DC:11:AA:05:FB:11:63`. A real release
-> keystore means registering its fingerprint too — and Play App Signing re-signs uploads,
-> so the fingerprint Play reports has to be registered as well or sign-in breaks only in
-> production.
+> ⚠️ **The registered fingerprint is still the debug one**, SHA-1 `<DEBUG_SHA1>`, because
+> no `android/key.properties` exists yet and the build falls back to the debug keys. An
+> upload keystore means registering its fingerprint too — and Play App Signing re-signs
+> uploads, so the fingerprint Play reports has to be registered as well or sign-in breaks
+> only in production.
 
 Passkeys on Android need neither of those — they need
 [`/.well-known/assetlinks.json`](web/well-known/assetlinks.json) published, which
@@ -535,7 +635,7 @@ uses the latter to add `GoogleService-Info.plist` to the Xcode build phase, and 
 
 ```sh
 gem install xcodeproj cocoapods
-flutterfire configure --project=revenueapp-b8849 --platforms=android,ios,web
+flutterfire configure --project=<PROJECT_ID> --platforms=android,ios,web
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -548,25 +648,36 @@ lib/
 ├── theme.dart                # Material theme (light/dark colour schemes)
 ├── login.dart / register.dart
 ├── sign_in_options.dart      # Google and passkey buttons, shared by both of those
-├── home.dart                 # Bottom-nav shell hosting the four pages below
+├── home.dart                 # Bottom-nav shell hosting the four tabs below
 ├── page/
-│   ├── overview.dart         # Landing page: today's revenue and order count
-│   ├── transaction.dart      # Today's summary + last transactions
-│   ├── statistics.dart       # Charts, target gauge, Day/Week/Month, period paging
-│   ├── analysis.dart         # Menu engineering, heatmap, basket analysis, prep list
-│   ├── store.dart            # Store card, lifetime totals, settings entry points
-│   └── addorder.dart         # Order entry
-├── settings/                 # App, user, store, staff, invites, menu, order history
+│   ├── transaction.dart      # "Today" — the day so far, last orders, setup checklist
+│   ├── analysis.dart         # "Insights" — menu engineering, heatmap, basket analysis
+│   ├── statistics.dart       # "Reports" — charts, target gauge, Day/Week/Month, export
+│   ├── store.dart            # "Store" — store card, then Setup / Records / You
+│   └── addorder.dart         # Order entry (pushed, not a tab)
+├── settings/                 # Everything behind the Store tab
+│   ├── store_settings.dart           # Name, trading day, tax, targets, staff, menu
+│   ├── store_settings_edit_menu.dart # Dishes, prices, costs; photo import lives here
+│   ├── store_settings_history_order.dart / store_setting_history_order_detail.dart
+│   ├── store_import_orders.dart      # Reads a delivery platform's statement in
+│   ├── store_settings_audit_log.dart # Change history (managers only)
+│   ├── account_settings.dart         # Profile, sign-in, appearance, version, log out
+│   ├── app_update.dart               # Play in-app updates; the Version row's brain
+│   └── user_manual.dart              # "How this works" — the in-app manual
+├── widgets/                  # Shared UI: SettingTile, EmptyState, ErrorView, charts,
+│                             #   money formatting, offline/pending-order bars
 ├── models/                   # AppUser, Store, MenuItem, Order, Invite, DailyStats, …
-├── analysis/                 # The pure functions the analysis page renders
+├── analysis/                 # The pure functions the Insights page renders
 ├── export/                   # Excel workbook building and saving
 ├── database/                 # Repository layer — the only code that talks to Firebase
 └── animation/                # Shared page transitions
 
-functions/                    # The two jobs that need a credential the app must not hold
+functions/                    # The jobs that need a credential the app must not hold
 ├── src/config.ts             # RP ID, region, allowed origins, instance cap
 ├── src/passkeys.ts           # The six callables that make up the two ceremonies
-└── src/menu_import.ts        # Reads a menu off a photo. Recognises only — writes nothing
+├── src/menu_import.ts        # Reads a menu off a photo. Recognises only — writes nothing
+├── src/model_ladder.ts       # Which model that import tries, and in what order
+└── src/account.ts            # Account deletion, including closing a store
 
 web/well-known/assetlinks.json  # Digital Asset Links, so Android passkeys work
 firestore.rules               # Security rules
@@ -1064,7 +1175,7 @@ and the server resolves that credential id to a uid. So the endpoint is unauthen
 still leaks nothing — it cannot be asked whether a given email has an account, because it is
 never told an email.
 
-**Platform association files.** The RP ID is `revenueapp-b8849.web.app`, and Hosting serves
+**Platform association files.** The RP ID is `<PROJECT_ID>.web.app`, and Hosting serves
 the file that proves the Android app belongs to it:
 
 * `/.well-known/assetlinks.json` — Android ✅ published, in [web/well-known/](web/well-known/)
@@ -1086,10 +1197,12 @@ the file that proves the Android app belongs to it:
 > `Content-Type: application/json`, which Apple requires and Hosting cannot infer from a
 > file with no extension.
 
-> ⚠️ **The published fingerprint is the debug keystore's**, because
-> [android/app/build.gradle](android/app/build.gradle) still signs release builds with it
-> (`signingConfig signingConfigs.debug`). The moment a real release keystore appears, two
-> files need its SHA-256 or Android passkeys break with `domain-not-associated`:
+> ⚠️ **The published fingerprint is the debug keystore's**, because no
+> `android/key.properties` exists yet and
+> [android/app/build.gradle](android/app/build.gradle) falls back to the debug keys
+> without one. The moment an upload keystore appears — and again once Play App Signing
+> reports Google's certificate — two files need that SHA-256 or Android passkeys break
+> with `domain-not-associated`:
 > `web/well-known/assetlinks.json` wants it as colon-separated hex, and `EXPECTED_ORIGINS`
 > in [functions/src/config.ts](functions/src/config.ts) wants the same bytes base64url-
 > encoded. They are two spellings of one value and must never disagree.
@@ -1116,7 +1229,7 @@ is stored as a timestamp specifically so a TTL policy can sweep those up; run th
 
 ```sh
 gcloud firestore fields ttls update expiresAt \
-  --collection-group=passkeyChallenges --enable-ttl --project revenueapp-b8849
+  --collection-group=passkeyChallenges --enable-ttl --project <PROJECT_ID>
 ```
 
 It is only housekeeping. Expiry is enforced by comparing against `expiresAt` in the
@@ -1374,7 +1487,7 @@ On a device that really has no camera, *Choose image* still works.
 Not a bug — the callables genuinely are not there. Check with:
 
 ```sh
-firebase functions:list --project revenueapp-b8849
+firebase functions:list --project <PROJECT_ID>
 ```
 
 "No functions found" means [step 4](#4-deploy-the-cloud-functions-optional) has not been
@@ -1528,9 +1641,21 @@ Design in [Registration and onboarding](#registration-and-onboarding).
 * [x] Import a menu from a photo — see [Importing a menu from a photo](#importing-a-menu-from-a-photo)
 * [ ] Apple sign-in (blocked on iOS configuration)
 
+**Phase 5 — shipping** ✅
+
+* [x] Offline order queue; orders survive a dropped connection and drain on return
+* [x] Payment methods and delivery-platform commission, both reflected in the reports
+* [x] Import orders from a delivery platform's statement
+* [x] Role-aware settings — manager-only rows are read-only rather than failing on save
+* [x] An in-app manual explaining where every figure comes from
+* [x] Google Play in-app updates
+* [x] A daily ceiling on menu-import spend (`functions/src/quota.ts`)
+* [x] App Check wired into startup — see [§5](#5-app-check)
+* [x] AGPL-3.0, a security policy and contribution guidelines
+
 **Not tied to a phase**
 
-* [ ] Dark mode apply
+* [x] Dark mode apply
 * [ ] Language change / international language support
 * [ ] Material You theme apply
 * [ ] Notification to "add transaction" at a set time
@@ -1540,19 +1665,77 @@ See the [open issues](https://github.com/ADSFAaron/Revenue/issues) for a full li
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+### What it is allowed to cost
+
+This is the only call in the project with a per-invocation price. One import can
+reach the model up to six times — three models, two attempts each — carrying up
+to four photographs. Everything else here (a Firestore write, a function
+invocation) needs millions of repetitions before it is worth a coffee.
+
+`requireMenuEditor` in [menu_import.ts](functions/src/menu_import.ts) already
+refuses anyone who is not an owner or manager of the store, and that check is
+worth having — but it is **not a perimeter**. Registration makes you the owner
+of a brand-new store, and there is no email verification, so a stranger is an
+owner about four seconds after deciding to be one. The role check protects a
+shop from its own staff. It does not protect the project from the internet.
+
+[quota.ts](functions/src/quota.ts) is what does. Two counters, both checked and
+incremented in one transaction before any model is reached:
+
+| Counter | Document | Default |
+| --- | --- | --- |
+| Per store | `stores/{storeId}/usage/menuImport` | 5 a day |
+| Per project | `usage/menuImport` | 200 a day |
+
+Both are needed. A per-store limit multiplied by the number of stores is not a
+limit, because stores are free to create; the project counter is the one that
+actually decides the worst case on a month's bill. It logs a warning past 80%,
+while there is still a day to react in.
+
+Neither is refunded on failure — a failed import has usually been through
+several model attempts by then, and refunding would make failure the cheapest
+way to spend the budget. The day rolls over by comparing a stored `day` field
+rather than by a scheduled cleanup, so there is no cron job to deploy, pay for,
+or discover has been silently failing for a month.
+
+Both documents sit outside anything a client may touch: `firestore.rules` ends
+in a deny-all and no rule matches those paths, so the only writer is the
+function, running as admin.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 <!-- CONTRIBUTING -->
 ## Contributing
 
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+Contributions are welcome. **[CONTRIBUTING.md](CONTRIBUTING.md) is the one to
+read first** — it covers the ground rules this codebase actually enforces (no
+widget touches Firebase; the security rules *are* the security model; an
+unknown number is shown as unknown) and, importantly, what the AGPL means for
+your pull request.
 
-If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
-Don't forget to give the project a star! Thanks again!
+For anything larger than a fix, open an issue before writing code. Most design
+questions here are decided by constraints that are not visible from outside.
 
 1. Fork the Project
 2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
 3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the Branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+Everything has to pass `flutter analyze` and `flutter test`, and
+`flutter build apk --debug` too if you touched a plugin or anything under
+`android/`.
+
+### Found a security hole?
+
+Do not open an issue. See **[SECURITY.md](SECURITY.md)** — report it privately
+through the repository's Security tab. That document also lists the things that
+look like vulnerabilities here and are not, so you can check before spending
+time on one.
+
+### What changed between versions
+
+See **[CHANGELOG.md](CHANGELOG.md)**.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -1565,7 +1748,36 @@ Don't forget to give the project a star! Thanks again!
 <!-- LICENSE -->
 ## License
 
-Distributed under the MIT License. See `LICENSE.txt` for more information.
+Distributed under the **GNU Affero General Public License v3.0**. The full text
+is in [`LICENSE`](LICENSE).
+
+In plain terms:
+
+* You may read, run, modify and redistribute this code, and you may run it for
+  your own shop, commercially, without owing anybody anything.
+* If you modify it and let other people use your modified version **over a
+  network** — a hosted till, a SaaS build of this app — you must publish your
+  modified source under the same licence. That network clause is what the AGPL
+  adds over the ordinary GPL, and it is the reason this project uses it.
+* The copyright stays with the project's authors, so the authors remain free to
+  offer the same code under a separate commercial licence to anyone who would
+  rather not be bound by the AGPL.
+
+The app links to this repository from **Account & app › Source code**, which is
+how somebody using the software over a network gets to its source.
+
+> **Note on the previous wording.** This section used to read "Distributed under
+> the MIT License. See `LICENSE.txt`" — boilerplate left over from the README
+> template. No `LICENSE.txt` was ever committed, so until now the repository was
+> public with no licence at all, which under default copyright means all rights
+> reserved. The AGPL-3.0 above is the licence that applies.
+
+### Contributing under this licence
+
+Contributions come in under the AGPL-3.0 on the same terms as the rest of the
+project (inbound = outbound). There is no contributor licence agreement today;
+one would be needed before any commercial relicensing that included outside
+contributions.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

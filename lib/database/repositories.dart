@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:flutter/foundation.dart';
 
 export 'connection_status.dart' show ConnectionStatus, connectionStatus;
+export 'pending_order_queue.dart' show PendingOrderQueue;
 
 import '../models/app_user.dart';
 import '../models/audit_log.dart';
@@ -13,6 +16,7 @@ import 'invite_repository.dart';
 import 'menu_import_repository.dart';
 import 'menu_repository.dart';
 import 'order_repository.dart';
+import 'pending_order_queue.dart';
 import 'passkey_repository.dart';
 import 'stats_repository.dart';
 import 'store_repository.dart';
@@ -50,6 +54,53 @@ void configureFirestore() {
   );
 }
 
+/// Attests that a request came from a genuine build of this app.
+///
+/// The rules decide what a *signed-in account* may do. Nothing until now
+/// decided whether the caller was this app at all — and since anybody can
+/// register in seconds with no email verification, "a valid account" is not a
+/// meaningful barrier. App Check is the missing half: Play Integrity has
+/// Google vouch for the installation, and a script holding a valid login gets
+/// no token at all.
+///
+/// It matters most for the menu import, which is the one call in this project
+/// that spends real money per invocation. `functions/src/quota.ts` caps how
+/// much can be spent in a day; this decides who gets to spend it.
+///
+/// **Debug builds use the debug provider**, which mints a token for a local
+/// secret rather than attesting anything. That secret has to be pasted into
+/// the Firebase console once per machine (App Check → the Android app →
+/// Manage debug tokens); the token is printed to the log on first run. Without
+/// this branch, every `flutter run` would be refused by its own backend as
+/// soon as enforcement is switched on.
+///
+/// **Web needs a reCAPTCHA Enterprise site key**, which is per-project and not
+/// a secret, but is also not something this repository should guess. Pass it
+/// at build time and web activation is skipped when it is absent:
+///
+/// ```
+/// flutter build web --dart-define=APP_CHECK_RECAPTCHA_KEY=6Lc...
+/// ```
+///
+/// Failure here is swallowed on purpose. App Check activation talks to the
+/// network, and a till that cannot reach Google at launch must still open —
+/// the enforcement decision lives on the server, where a missing token is
+/// refused per request rather than at startup.
+Future<void> configureAppCheck() async {
+  const recaptchaKey = String.fromEnvironment('APP_CHECK_RECAPTCHA_KEY');
+  if (kIsWeb && recaptchaKey.isEmpty) return;
+  try {
+    await FirebaseAppCheck.instance.activate(
+      androidProvider:
+          kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
+      webProvider:
+          recaptchaKey.isEmpty ? null : ReCaptchaEnterpriseProvider(recaptchaKey),
+    );
+  } catch (e) {
+    debugPrint('App Check activation failed: $e');
+  }
+}
+
 final authRepository = AuthRepository();
 final userRepository = UserRepository(auth: authRepository);
 final storeRepository = StoreRepository();
@@ -61,6 +112,13 @@ final statsRepository = StatsRepository();
 final inviteRepository = InviteRepository();
 final feedbackRepository = FeedbackRepository();
 final auditLogRepository = AuditLogRepository();
+
+/// Orders rung up with no connection, waiting on this device. Device-local and
+/// never synced — see [PendingOrderQueue].
+final pendingOrders = PendingOrderQueue(
+  orders: orderRepository,
+  stores: storeRepository,
+);
 
 Actor? _lastKnownActor;
 

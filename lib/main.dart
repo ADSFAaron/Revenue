@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -26,7 +27,15 @@ Future<void> main() async {
   // engine attaches, which is long before Firebase has answered, so what the
   // person actually watches is a blank surface-coloured window. The package
   // was configured but this half of it was never called.
-  FlutterNativeSplash.preserve(widgetsBinding: binding);
+  //
+  // Never on web. `web: false` in pubspec.yaml means no splash was generated
+  // for it — see the note there — but the package's web plugin is registered
+  // regardless, and its `remove()` calls a `removeSplashFromWeb()` that only
+  // the generator writes into index.html. That call throws a PlatformException
+  // out of a post-frame callback on every single web launch, past a try/catch
+  // that cannot see it because the throw is asynchronous. The #loading overlay
+  // in web/index.html does this job there, and the bootstrap removes it.
+  if (!kIsWeb) FlutterNativeSplash.preserve(widgetsBinding: binding);
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -36,6 +45,10 @@ Future<void> main() async {
   // blank. A kitchen's wifi is the case this app should assume, not the one it
   // should be surprised by.
   configureFirestore();
+  // After initializeApp and before the first read. Awaited rather than fired
+  // and forgotten: a request that goes out before activation carries no token,
+  // and with enforcement on that is a refusal on the first screen.
+  await configureAppCheck();
 
   // Read before the first frame, so the app does not open light and then blink
   // to dark a moment later.
@@ -44,7 +57,7 @@ Future<void> main() async {
   // Lets Flutter paint. Holding it any longer would mean holding it across the
   // auth stream, and a slow network has no upper bound — better a spinner on
   // the app's own surface than a splash that will not go away.
-  FlutterNativeSplash.remove();
+  if (!kIsWeb) FlutterNativeSplash.remove();
 }
 
 class MyApp extends StatelessWidget {
@@ -224,24 +237,24 @@ class WelcomeScreen extends StatelessWidget {
       children: <Widget>[
         FadeAnimation(
           0,
-          const Text(
+          Text(
             'Welcome',
-            style: TextStyle(
-              fontSize: 30,
-              fontWeight: FontWeight.bold,
-            ),
+            style: Theme.of(context)
+                .textTheme
+                .headlineMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
           ),
         ),
         const SizedBox(height: 10),
         FadeAnimation(
           100,
-          const Text(
+          Text(
             'Please login to continue',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 15,
-              color: Colors.grey,
-            ),
+            style: Theme.of(context)
+                .textTheme
+                .bodyLarge
+                ?.copyWith(color: Colors.grey),
           ),
         ),
         const SizedBox(height: 20),
@@ -263,6 +276,7 @@ class WelcomeScreen extends StatelessWidget {
         FadeAnimation(
           750,
           _buildButton(
+            context,
             text: 'Login',
             onPressed: () {
               Navigator.push(
@@ -276,6 +290,7 @@ class WelcomeScreen extends StatelessWidget {
         FadeAnimation(
           1000,
           _buildButton(
+            context,
             text: 'Register',
             color: Colors.yellow,
             textColor: Colors.black,
@@ -291,7 +306,8 @@ class WelcomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildButton({
+  Widget _buildButton(
+    BuildContext context, {
     required String text,
     required VoidCallback onPressed,
     Color color = Colors.transparent,
@@ -309,7 +325,10 @@ class WelcomeScreen extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+        style: Theme.of(context)
+            .textTheme
+            .titleLarge
+            ?.copyWith(fontWeight: FontWeight.w600),
       ),
     );
   }

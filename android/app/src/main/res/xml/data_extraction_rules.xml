@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nothing on this device may be copied to another one.
+
+  `android:allowBackup="false"` in the manifest turns off Google's cloud
+  backup, and on Android 11 and earlier that is the whole story. From Android
+  12 it is not: device-to-device transfer is governed by *this* file instead
+  and ignores allowBackup entirely, so without these two blocks a new phone
+  set up from the old one would still receive everything.
+
+  What must not travel is `pendingOrders.v1` — orders rung up with no
+  connection, held in SharedPreferences until they reach Firestore
+  (lib/database/pending_order_queue.dart). Two devices holding the same queue
+  both send it, and the shop's takings are booked twice with nothing on screen
+  saying why. The theme preference is the only other thing here and is not
+  worth an exception.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>

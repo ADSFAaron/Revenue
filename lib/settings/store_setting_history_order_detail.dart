@@ -8,6 +8,7 @@ import '../page/addorder.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
 import '../widgets/page_body.dart';
+import '../widgets/payment_icons.dart';
 
 /// One order, with the option to edit it or void it.
 ///
@@ -31,6 +32,10 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
 
   late Order _order = widget.order;
   Store? _store;
+
+  /// Managers may change any order at any time; everyone else has
+  /// [kStaffCorrectionWindow] from the moment it was rung up.
+  bool _isManager = false;
   bool _busy = false;
 
   /// True when anything was changed, so the list behind can refresh.
@@ -62,12 +67,25 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
   /// disabled button explicable.
   Future<void> _loadStore() async {
     try {
-      final store = await storeRepository.fetch(widget.storeID);
-      if (mounted) setState(() => _store = store);
+      // The session rather than the store alone: the buttons below also need
+      // to know whether this is a manager.
+      final session = await loadSession();
+      if (mounted) {
+        setState(() {
+          _store = session.store;
+          _isManager = session.user.role.canManage;
+        });
+      }
     } catch (e) {
       if (mounted) showFailure(context, e);
     }
   }
+
+  /// Whether this account may still change this order.
+  ///
+  /// Recomputed on every build rather than latched, so the window closing
+  /// while the screen is open takes the buttons with it.
+  bool get _mayChange => _isManager || withinCorrectionWindow(_order);
 
   @override
   Widget build(BuildContext context) {
@@ -96,8 +114,8 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
                   _buildFact('Trading day', order.businessDate),
                   _buildFact('Channel', _channelLabel(order)),
                   _buildFact('Guests', '${order.guestCount}'),
-                  _buildFact('Payment method', order.paymentMethod.label,
-                      icon: order.paymentMethod.icon),
+                  _buildFact('Payment method', _paymentLabel(order),
+                      icon: _paymentIcon(order)),
                   if (order.commissionAmount > 0)
                     _buildFact('Platform commission',
                         _money.format(order.commissionAmount)),
@@ -115,6 +133,16 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
       ),
     );
   }
+
+  /// Resolved through the store, so a renamed method reads as its new name and
+  /// a deleted one still reads as itself rather than as "Cash".
+  StorePaymentMethod _paymentMethod(Order order) => resolvePaymentMethod(
+      _store?.paymentMethods ?? kDefaultPaymentMethods, order.paymentMethodId);
+
+  String _paymentLabel(Order order) => _paymentMethod(order).name;
+
+  IconData _paymentIcon(Order order) =>
+      paymentIconData(_paymentMethod(order).iconKey);
 
   String _channelLabel(Order order) {
     final platform = _store?.platformById(order.deliveryPlatformId);
@@ -241,21 +269,57 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
       );
     }
 
-    return Row(
-      spacing: 10,
+    final mayChange = _mayChange;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ElevatedButton.icon(
-          onPressed: _busy ? null : _editOrder,
-          icon: const Icon(Icons.edit_outlined),
-          label: const Text('Edit'),
+        Row(
+          spacing: 10,
+          children: [
+            ElevatedButton.icon(
+              onPressed: _busy || !mayChange ? null : _editOrder,
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('Edit'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _busy || !mayChange ? null : _confirmVoid,
+              icon: const Icon(Icons.block_outlined),
+              label: const Text('Void'),
+            ),
+          ],
         ),
-        OutlinedButton.icon(
-          onPressed: _busy ? null : _confirmVoid,
-          icon: const Icon(Icons.block_outlined),
-          label: const Text('Void'),
+        const SizedBox(height: 8),
+        // Says which of the two states this is, because a pair of dead buttons
+        // with no explanation is indistinguishable from a broken screen.
+        Text(
+          _changeWindowNote(),
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
       ],
     );
+  }
+
+  String _changeWindowNote() {
+    if (_isManager) return 'You can change any order, at any time.';
+
+    final createdAt = _order.createdAt;
+    if (createdAt == null) {
+      return 'This order has not finished saving, so it cannot be changed yet.';
+    }
+    final left = kStaffCorrectionWindow - DateTime.now().difference(createdAt);
+    if (left.isNegative || left == Duration.zero) {
+      return 'Orders can be corrected for '
+          '${kStaffCorrectionWindow.inMinutes} minutes after they are rung up. '
+          'This one is older, so it takes a manager.';
+    }
+    final minutes = left.inMinutes;
+    final remaining = minutes >= 1
+        ? '$minutes ${minutes == 1 ? 'minute' : 'minutes'}'
+        : '${left.inSeconds} seconds';
+    return 'Yours to correct for another $remaining.';
   }
 
   Future<void> _editOrder() async {

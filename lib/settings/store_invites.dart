@@ -310,12 +310,14 @@ class _IssuedCard extends StatelessWidget {
             SelectableText(
               invite.display,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 42,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 6,
-                color: scheme.onPrimaryContainer,
-              ),
+              // The code is the whole point of the card, so it takes the
+              // largest step on the type scale rather than a number picked
+              // here — which is also what lets it grow with the system font.
+              style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 6,
+                    color: scheme.onPrimaryContainer,
+                  ),
             ),
             const SizedBox(height: 12),
             Text(
@@ -369,13 +371,12 @@ class _InviteTile extends StatelessWidget {
       ),
       title: Text(
         invite.display,
-        style: TextStyle(
-          fontSize: 20,
-          letterSpacing: 3,
-          fontWeight: FontWeight.w600,
-          decoration: spent ? TextDecoration.lineThrough : null,
-          color: spent ? Theme.of(context).disabledColor : null,
-        ),
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              letterSpacing: 3,
+              fontWeight: FontWeight.w600,
+              decoration: spent ? TextDecoration.lineThrough : null,
+              color: spent ? Theme.of(context).disabledColor : null,
+            ),
       ),
       subtitle: Text(_status(invite, now)),
       trailing: Row(

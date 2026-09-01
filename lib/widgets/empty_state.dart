@@ -29,7 +29,11 @@ class EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Center(
-      child: Padding(
+      // Scrolls rather than overflows. An empty state is handed whatever the
+      // page has left over, which on a short pane — a landscape phone, a
+      // large system font, both at once — is less than its icon, its
+      // sentence and its way out add up to.
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -42,7 +46,7 @@ class EmptyState extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               body,
-              style: theme.textTheme.bodySmall
+              style: theme.textTheme.bodyMedium
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),

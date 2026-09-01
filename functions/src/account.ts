@@ -25,16 +25,45 @@ import { getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 
-import { MAX_INSTANCES, REGION } from "./config.js";
+import { CALLABLE_OPTIONS } from "./config.js";
 
-const options = { region: REGION, maxInstances: MAX_INSTANCES };
+const options = CALLABLE_OPTIONS;
 
 const db = () => getFirestore();
+
+/**
+ * How recently the caller must have proved who they are.
+ *
+ * `user.delete()` on a client demands `requires-recent-login` and this function
+ * deliberately bypasses it — the Admin SDK is outside that check, which is what
+ * lets the deletion finish without asking somebody to sign in again in the
+ * middle of it. Bypassing the re-authentication was not meant to bypass the
+ * *reason* for it: a session token lives a long time on a device that sits on a
+ * counter all day, and this one call takes the store, every order in it, and
+ * every colleague's login with it.
+ *
+ * Five minutes is the same window Firebase itself uses for recent login, and it
+ * is comfortably longer than reading a confirmation dialog and typing a store
+ * name into it.
+ */
+const RECENT_LOGIN_SECONDS = 5 * 60;
 
 export const deleteAccount = onCall(options, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) {
     throw new HttpsError("unauthenticated", "Sign in first.");
+  }
+
+  // `auth_time` is when this session last actually authenticated, not when the
+  // token was minted — a refresh does not move it, which is exactly the
+  // property needed here.
+  const authTime = request.auth?.token?.auth_time;
+  if (typeof authTime !== "number" ||
+      Date.now() / 1000 - authTime > RECENT_LOGIN_SECONDS) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Please sign in again before deleting your account.",
+    );
   }
 
   const userRef = db().collection("users").doc(uid);

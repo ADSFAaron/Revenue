@@ -1,6 +1,8 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import 'text_scale.dart';
+
 /// One labelled value on a chart.
 class ChartPoint {
   const ChartPoint({required this.label, required this.value});
@@ -77,10 +79,17 @@ class ColumnChart extends StatelessWidget {
     final maxY = highest <= 0 ? 1.0 : highest * 1.18;
     final every = (points.length / _maxAxisLabels).ceil().clamp(1, 999);
 
+    // fl_chart reserves the axis gutters as plain numbers and clips whatever
+    // does not fit, so a phone on a large system font lost the bottom row of
+    // dates entirely. The plot keeps its own height; the extra the labels need
+    // is added to the box rather than taken out of the columns.
+    final leftGutter = scaledForText(context, 44, cap: 2.0);
+    final bottomGutter = scaledForText(context, 28, cap: 2.0);
+
     return _ChartFrame(
       title: title,
       child: SizedBox(
-        height: height,
+        height: height + bottomGutter - 28,
         child: BarChart(
           BarChartData(
             maxY: maxY,
@@ -103,7 +112,7 @@ class ColumnChart extends StatelessWidget {
               leftTitles: AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: true,
-                  reservedSize: 44,
+                  reservedSize: leftGutter,
                   getTitlesWidget: (value, meta) =>
                       value == meta.max || value < 0
                           ? const SizedBox.shrink()
@@ -117,7 +126,7 @@ class ColumnChart extends StatelessWidget {
               bottomTitles: AxisTitles(
                 sideTitles: SideTitles(
                   showTitles: true,
-                  reservedSize: 28,
+                  reservedSize: bottomGutter,
                   getTitlesWidget: (value, meta) {
                     final index = value.round();
                     if (index < 0 || index >= points.length) {
@@ -167,7 +176,11 @@ class ColumnChart extends StatelessWidget {
                             points[i].value != 0,
                         text: format(points[i].value),
                         style: small,
-                        offset: const Offset(0, -10),
+                        // Positive dy lifts the label clear of the tip:
+                        // fl_chart draws it at `tip - dy - textHeight`. This
+                        // was -10, which pushed it *down* by ten and printed
+                        // the takings across the top of their own column.
+                        offset: const Offset(0, 6),
                       ),
                     ),
                   ],
@@ -218,48 +231,86 @@ class RankedBars extends StatelessWidget {
 
     return _ChartFrame(
       title: title,
-      child: Column(
-        children: [
-          for (final point in points)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 120,
-                    child: Text(
-                      point.label,
-                      textAlign: TextAlign.right,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: point.value / highest,
-                        minHeight: 18,
-                        backgroundColor: scheme.surfaceContainerHighest,
-                        color: scheme.primary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 44,
-                    child: Text(
-                      format(point.value),
-                      style: theme.textTheme.labelMedium
-                          ?.copyWith(color: scheme.onSurfaceVariant),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final labelWidth = scaledForText(context, 120, cap: 1.5);
+          // At a large system font the name column eats the row it is meant
+          // to label, and the bar between it and the figure is squeezed to
+          // nothing. Past that point the name goes on its own line and the
+          // bar gets the width back, which is the same answer as a narrow
+          // window — it just arrives through the font size instead.
+          final stacked = labelWidth > constraints.maxWidth * 0.4;
+
+          Widget bar(ChartPoint point) => ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: point.value / highest,
+                  minHeight: 18,
+                  backgroundColor: scheme.surfaceContainerHighest,
+                  color: scheme.primary,
+                ),
+              );
+
+          Widget figure(ChartPoint point) => Text(
+                format(point.value),
+                style: theme.textTheme.labelMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              );
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final point in points)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: stacked
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(point.label,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Expanded(child: bar(point)),
+                                const SizedBox(width: 8),
+                                figure(point),
+                              ],
+                            ),
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            SizedBox(
+                              width: labelWidth,
+                              child: Text(
+                                point.label,
+                                textAlign: TextAlign.right,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(child: bar(point)),
+                            const SizedBox(width: 8),
+                            ConstrainedBox(
+                              // A minimum rather than a width: the figures
+                              // line up in the ordinary case, and a longer
+                              // one takes the room it needs instead of
+                              // wrapping inside 44pt.
+                              constraints:
+                                  const BoxConstraints(minWidth: 44),
+                              child: figure(point),
+                            ),
+                          ],
+                        ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

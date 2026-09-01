@@ -104,6 +104,13 @@ class _SetupChecklistState extends State<SetupChecklist> {
   Widget build(BuildContext context) {
     final session = widget.session;
 
+    // Setting a shop up is a manager's job, and every row here leads to a
+    // screen that is read-only for anybody else: the menu, the dish costs, the
+    // daily target. Showing an assistant a progress bar over three things they
+    // cannot do turns the first card on the first screen into a list of other
+    // people's homework. It also saves them the two reads behind it.
+    if (!session.user.role.canManage) return const SizedBox.shrink();
+
     return FutureBuilder<(List<MenuItem>, List<AppUser>)>(
       future: _future,
       builder: (context, snapshot) {

@@ -64,6 +64,7 @@ class DemandProfile {
     required this.cells,
     required this.observationsByWeekday,
     required this.itemsByWeekday,
+    required this.dayCutoffHour,
   });
 
   /// Keyed by (weekday, hour). Squares with no trade are simply absent.
@@ -79,6 +80,10 @@ class DemandProfile {
   final Map<int, int> observationsByWeekday;
 
   final Map<int, List<ItemForecast>> itemsByWeekday;
+
+  /// The hour the store's trading day rolls over, which is what puts the hours
+  /// in order. See [activeHours].
+  final int dayCutoffHour;
 
   bool get isEmpty => cells.isEmpty;
 
@@ -99,9 +104,20 @@ class DemandProfile {
   /// Hours that saw any trade, across the whole range — the span the heatmap
   /// needs to draw. A shop open noon to nine should not be given a grid of
   /// twenty-four columns, twelve of which are always empty.
+  ///
+  /// In *trading-day* order, not clock order: a shop whose day rolls over at
+  /// 04:00 runs 04, 05, … 23, 00, 01, 02, 03. Sorting 0-23 put the 01:00 sales
+  /// — which happen at the end of that trading day, after the late diners —
+  /// at the front of the heatmap, before the shop had opened. It also made the
+  /// overnight closure look like a quiet stretch *inside* the day, which is
+  /// the one thing `_quietestStretch` in headline.dart exists not to report.
   List<int> get activeHours {
-    final hours = cells.keys.map((key) => key.$2).toSet().toList()..sort();
-    return hours;
+    final present = cells.keys.map((key) => key.$2).toSet();
+    return [
+      for (var i = 0; i < 24; i++)
+        if (present.contains((dayCutoffHour + i) % 24))
+          (dayCutoffHour + i) % 24,
+    ];
   }
 
   List<int> get activeWeekdays {
@@ -123,7 +139,14 @@ class DemandProfile {
       itemsByWeekday[weekday] ?? const [];
 
   /// Builds the profile from a range of daily rollups.
-  factory DemandProfile.from(Iterable<DailyStats> days) {
+  ///
+  /// [dayCutoffHour] is the store's, and only orders the hours — it never
+  /// moves a figure between days, because the rollups are already keyed by the
+  /// business date the cutoff produced.
+  factory DemandProfile.from(
+    Iterable<DailyStats> days, {
+    int dayCutoffHour = 0,
+  }) {
     // Sums first, divided through by the observation counts at the end.
     final orderSums = <(int, int), double>{};
     final revenueSums = <(int, int), double>{};
@@ -189,6 +212,7 @@ class DemandProfile {
       cells: cells,
       observationsByWeekday: observations,
       itemsByWeekday: itemsByWeekday,
+      dayCutoffHour: dayCutoffHour,
     );
   }
 

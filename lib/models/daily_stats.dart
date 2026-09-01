@@ -116,7 +116,7 @@ class DailyStats {
   /// Keyed by [OrderChannel.id].
   final Map<String, StatBucket> byChannel;
 
-  /// Keyed by [PaymentMethod.id].
+  /// Keyed by [StorePaymentMethod.id].
   final Map<String, StatBucket> byPayment;
 
   final Map<String, ItemStat> byItem;

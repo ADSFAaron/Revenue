@@ -41,10 +41,30 @@ class _StoreCategoriesState extends State<StoreCategories> {
   /// starts, while the TextField is still mounted and still reading it.
   final _nameController = TextEditingController();
 
+  /// Whether this account may change any of this.
+  ///
+  /// Categories are part of the menu, and the menu is a manager's to
+  /// change. The list stays readable so an assistant can see how the menu
+  /// is grouped.
+  bool _isManager = false;
+
   @override
   void initState() {
     super.initState();
     _load();
+    _loadRole();
+  }
+
+  /// Resolved once on the way in. A failed lookup leaves this false, which is
+  /// the safe way round: the page renders read-only rather than offering an
+  /// edit the rules would refuse anyway.
+  Future<void> _loadRole() async {
+    try {
+      final session = await loadSession();
+      if (mounted) setState(() => _isManager = session.user.role.canManage);
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
   }
 
   @override
@@ -96,10 +116,12 @@ class _StoreCategoriesState extends State<StoreCategories> {
               )
             : null,
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _loading ? null : () => _openDialog(),
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: _isManager
+          ? FloatingActionButton(
+              onPressed: _loading ? null : () => _openDialog(),
+              child: const Icon(Icons.add),
+            )
+          : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _categories.isEmpty
@@ -112,6 +134,9 @@ class _StoreCategoriesState extends State<StoreCategories> {
                 )
               : ReadingWidth(
                   builder: (context, insets) => ReorderableListView.builder(
+                    // Otherwise a long press still starts a drag that ends in
+                    // a refused write.
+                    buildDefaultDragHandles: _isManager,
                     padding: insets + const EdgeInsets.fromLTRB(16, 8, 0, 88),
                     itemCount: _categories.length,
                     itemBuilder: (context, index) => _tile(_categories[index]),
@@ -129,27 +154,31 @@ class _StoreCategoriesState extends State<StoreCategories> {
     final count = _usage[category.id] ?? 0;
     return ListTile(
       key: ValueKey(category.id),
-      leading: Icon(Icons.drag_indicator,
-          color: Theme.of(context).colorScheme.onSurfaceVariant),
+      leading: _isManager
+          ? Icon(Icons.drag_indicator,
+              color: Theme.of(context).colorScheme.onSurfaceVariant)
+          : const Icon(Icons.category_outlined),
       title: Text(category.name),
       subtitle: Text(count == 0
           ? 'No dishes'
           : '$count ${count == 1 ? 'dish' : 'dishes'}'),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: 'Rename',
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => _openDialog(existing: category),
-          ),
-          IconButton(
-            tooltip: 'Delete',
-            icon: const Icon(Icons.delete_outlined),
-            onPressed: () => _delete(category),
-          ),
-        ],
-      ),
+      trailing: _isManager
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'Rename',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: () => _openDialog(existing: category),
+                ),
+                IconButton(
+                  tooltip: 'Delete',
+                  icon: const Icon(Icons.delete_outlined),
+                  onPressed: () => _delete(category),
+                ),
+              ],
+            )
+          : null,
     );
   }
 

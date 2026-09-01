@@ -16,6 +16,7 @@ class MenuItem {
     this.sortOrder = 0,
     this.price = 0,
     this.cost = 0,
+    this.aliases = const [],
     this.isActive = true,
     this.createdAt,
     this.updatedAt,
@@ -51,6 +52,17 @@ class MenuItem {
   /// engineering report treats as unknown rather than as free.
   final int cost;
 
+  /// What the kitchen actually calls it: 牛麵, 乾意, 大乾.
+  ///
+  /// A menu says 「牛肉麵 (大)」 and every slip in the shop says 「牛麵大」. The
+  /// till's search box only ever matched the printed name, so the shorthand
+  /// everybody uses found nothing and the dish had to be hunted for by eye.
+  ///
+  /// It is also the piece that any photo-of-a-slip recognition will stand on:
+  /// a model given the menu as its vocabulary can only match what the menu
+  /// says, and what the menu says is not what is written on the paper.
+  final List<String> aliases;
+
   /// Soft delete. Retiring a dish must never orphan the orders that contain it,
   /// so items are deactivated instead of removed.
   final bool isActive;
@@ -68,6 +80,11 @@ class MenuItem {
       sortOrder: (data['sortOrder'] as num?)?.toInt() ?? 0,
       price: (data['price'] as num?)?.toInt() ?? 0,
       cost: (data['cost'] as num?)?.toInt() ?? 0,
+      aliases: ((data['aliases'] as List?) ?? const [])
+          .whereType<String>()
+          .map((a) => a.trim())
+          .where((a) => a.isNotEmpty)
+          .toList(),
       isActive: data['isActive'] as bool? ?? true,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
@@ -81,6 +98,7 @@ class MenuItem {
         'sortOrder': sortOrder,
         'price': price,
         'cost': cost,
+        'aliases': aliases,
         'isActive': isActive,
       };
 
@@ -108,6 +126,7 @@ class MenuItem {
     int? sortOrder,
     int? price,
     int? cost,
+    List<String>? aliases,
     bool? isActive,
   }) =>
       MenuItem(
@@ -118,8 +137,25 @@ class MenuItem {
         sortOrder: sortOrder ?? this.sortOrder,
         price: price ?? this.price,
         cost: cost ?? this.cost,
+        aliases: aliases ?? this.aliases,
         isActive: isActive ?? this.isActive,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );
+
+  /// Whether [query] names this dish — by its printed name or by anything the
+  /// shop calls it.
+  ///
+  /// Lives on the model rather than in the search box so that every caller
+  /// matches identically: the till's filter today, and whatever reads a
+  /// photographed order slip later.
+  bool matches(String query) {
+    final needle = query.trim().toLowerCase();
+    if (needle.isEmpty) return true;
+    if (name.toLowerCase().contains(needle)) return true;
+    for (final alias in aliases) {
+      if (alias.toLowerCase().contains(needle)) return true;
+    }
+    return false;
+  }
 }

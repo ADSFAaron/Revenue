@@ -38,17 +38,23 @@ import type {
 } from "@simplewebauthn/server";
 
 import {
+  CALLABLE_OPTIONS,
   CHALLENGES,
   CHALLENGE_TTL_MS,
   CREDENTIALS,
   EXPECTED_ORIGINS,
-  MAX_INSTANCES,
-  REGION,
   RP_ID,
   RP_NAME,
 } from "./config.js";
 
-const options = { region: REGION, maxInstances: MAX_INSTANCES };
+/**
+ * App Check enforced, including on the two authentication calls that take no
+ * signed-in user. Those are the ones that most need it: `beginPasskey-
+ * Authentication` mints a challenge for anybody who asks, and before
+ * enforcement that was an unauthenticated write to `passkeyChallenges` that
+ * any script could run in a loop.
+ */
+const options = CALLABLE_OPTIONS;
 
 /** What a stored credential looks like in `passkeyCredentials/{credentialId}`. */
 interface StoredCredential {

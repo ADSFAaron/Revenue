@@ -120,15 +120,30 @@ service cloud.firestore {
     // under `stores/`, because it is validated by a person who does not belong
     // to any store yet and so cannot be given a path under one.
     match /invites/{code} {
-      // Deliberately open, and the one rule in this file that does not require
-      // sign-in. Registration validates the code on its *first* screen, before
-      // an account exists, so that a mistyped code is caught there instead of
-      // after a whole form has been filled in. Reading a code by its exact id
-      // is the only thing this allows: there are 31^6 ≈ 887 million codes, a
-      // handful are live at a time, and each expires in 30 minutes, so
-      // guessing one is not a practical attack. App Check is the proper
-      // mitigation if that ever stops being true.
-      allow get: if true;
+      // Signed in, which it did not used to be.
+      //
+      // This was `allow get: if true` — the one rule in the file that let an
+      // unauthenticated caller read anything. The reasoning was sound as far
+      // as it went: registration has to check a code on its first screen,
+      // before an account exists, and guessing one of 31^6 codes inside a
+      // 30-minute window is not a practical attack.
+      //
+      // What that reasoning left out is what a *known* code reveals. Anyone
+      // holding one — a member of staff who left, whoever the code was
+      // mistakenly read out to, anybody who saw it over a shoulder — could
+      // read `storeId`, `storeName`, `role` and `createdBy` back out of it
+      // without an account, and `storeId` is the id every other rule in this
+      // file is keyed on.
+      //
+      // The first screen still works. It goes through the `checkInvite`
+      // callable in functions/src/invites.ts instead, which is the same
+      // question asked of a server that can enforce App Check — the mitigation
+      // the old comment named but nothing implemented — and which answers with
+      // the store's name and the role only. `storeId` never leaves the server.
+      //
+      // `redeem()` is unaffected: the account exists by the time it runs, and
+      // its transaction reads the code as a signed-in caller.
+      allow get: if signedIn();
 
       // Listing is a different matter — that is how you would enumerate other
       // stores' codes. Managers, own store only.
@@ -179,26 +194,134 @@ service cloud.firestore {
 
       // Orders are append-only. Voiding is an update that flips `status`;
       // deletion is never allowed, so a voided order stays auditable.
+      //
+      // Who may change one, and when:
+      //
+      //  * A manager, at any time.
+      //  * Anyone else, for five minutes after the order was rung up. That is
+      //    the window for the ordinary mistake — wrong dish, wrong quantity,
+      //    noticed while the customer is still at the counter — which is not
+      //    worth fetching a manager for and is not worth the shift-long
+      //    workaround that fetching a manager produces.
+      //
+      // After that it takes a manager, because the other kind of edit is a
+      // cash order voided at the end of the shift once the money is in a
+      // pocket. Both leave an audit entry regardless.
+      //
+      // `createdAt` is a server timestamp written by the same transaction that
+      // creates the order, so the clock here is the server's — a device with a
+      // wound-back clock buys itself nothing. An order whose `createdAt` has
+      // not resolved yet is not correctable by staff at all; the field is
+      // absent only before the write reaches the server, and a write that has
+      // not reached the server cannot be edited on it either.
+      //
+      // The same five minutes lives in `kStaffCorrectionWindow`
+      // (lib/models/order.dart), which greys out the buttons. Change both.
       match /orders/{orderId} {
         allow read: if memberOf(storeId);
-        allow create: if memberOf(storeId);
-        allow update: if memberOf(storeId);
+        allow create: if memberOf(storeId) && stampedByTheServer();
+        allow update: if (managerOf(storeId) ||
+            (memberOf(storeId) && withinCorrectionWindow())) &&
+          keepsItsOwnClock();
         allow delete: if false;
       }
 
+      // `createdAt` has to be the server's clock, and this is what makes that
+      // true rather than customary.
+      //
+      // The paragraph above says the five-minute window is measured against a
+      // server timestamp, so a device with a wound-back clock buys itself
+      // nothing. That was only ever true of the app: `submit()` in
+      // lib/database/order_repository.dart writes
+      // `FieldValue.serverTimestamp()`, and nothing here checked. A client
+      // that skipped the app and wrote its own `createdAt` a year into the
+      // future got `request.time < createdAt + 5m` evaluating true for a year
+      // — an unbounded licence to rewrite its own orders without a manager,
+      // which is exactly the thing the window is drawn around.
+      //
+      // `request.time` is the value a resolved `serverTimestamp()` carries, so
+      // the honest client already satisfies this and needed no change.
+      function stampedByTheServer() {
+        return request.resource.data.createdAt == request.time;
+      }
+
+      // And an update may not move it afterwards, which would be the same
+      // attack one step later. `replace()` and `voidOrder()` both use
+      // `tx.update`, so neither sends `createdAt` at all and both are
+      // unaffected; a full `set` that dropped the field would now be refused,
+      // which is correct — an order with no creation time is an order with no
+      // correction window and no place in a day's books.
+      //
+      // `createdBy` is pinned for the same reason: an edit may change what was
+      // sold, never who rang it up.
+      function keepsItsOwnClock() {
+        return request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.createdBy == resource.data.createdBy;
+      }
+
+      function withinCorrectionWindow() {
+        return resource.data.createdAt is timestamp &&
+          request.time < resource.data.createdAt + duration.value(5, 'm');
+      }
+
       // Order-number counters and the rollup tables are maintained by the
-      // client transaction that writes the order.
+      // client transaction that writes the order, which is what makes both of
+      // these awkward: the writer is the till, so the rules cannot simply say
+      // "server only". What they can do is refuse the writes that are never
+      // part of ringing up a sale, and both of these used to allow every one
+      // of them under a bare `allow read, write: if memberOf(storeId)`.
+      //
+      // See the note at the end of this file for what is left over.
+
+      // The day's next order number. One field, and it only ever goes up.
+      //
+      // Winding it back is how the same order number gets issued twice, and
+      // two orders sharing a number is precisely the state a paper trail
+      // cannot be reconciled from. Deleting the document does the same thing
+      // more thoroughly: the next read finds nothing and starts again at 1.
       match /counters/{businessDate} {
-        allow read, write: if memberOf(storeId);
+        allow read: if memberOf(storeId);
+        allow create: if memberOf(storeId) &&
+          request.resource.data.keys().hasOnly(['nextOrderNo']) &&
+          request.resource.data.nextOrderNo is int;
+        allow update: if memberOf(storeId) &&
+          request.resource.data.keys().hasOnly(['nextOrderNo']) &&
+          request.resource.data.nextOrderNo is int &&
+          request.resource.data.nextOrderNo > resource.data.nextOrderNo;
+        allow delete: if false;
       }
 
-      match /dailyStats/{businessDate} {
-        allow read, write: if memberOf(storeId);
+      // The day's rollup. Every figure in it is an increment applied by the
+      // same transaction that writes the order (`_applyStats`), so the totals
+      // cannot be validated here — a rule sees the result, not the delta.
+      //
+      // What it can insist on is that the document is about the day it is
+      // filed under, and that a day's takings are never removed. A store that
+      // wants a figure changed changes the orders behind it.
+      match /dailyStats/{date} {
+        allow read: if memberOf(storeId);
+        allow write: if memberOf(storeId) &&
+          request.resource.data.businessDate == date;
+        allow delete: if false;
       }
 
+      // Append-only, and now signed.
+      //
+      // `byUid` was previously whatever the client put there, on the one
+      // collection whose entire purpose is to say who did something. Anyone
+      // able to write a log could write somebody else's name onto their own
+      // void. Pinning it to `request.auth.uid` costs the app nothing — every
+      // call site already passes `currentActor()` — and it is the difference
+      // between a record and an assertion.
+      //
+      // `at` is pinned to the server clock for the same reason `createdAt` is
+      // on orders: a log that can be back-dated can be hidden in the middle of
+      // a list nobody scrolls.
       match /auditLogs/{logId} {
         allow read: if managerOf(storeId);
-        allow create: if memberOf(storeId);
+        allow create: if memberOf(storeId) &&
+          request.resource.data.byUid == request.auth.uid &&
+          request.resource.data.at == request.time;
         allow update, delete: if false;
       }
     }
@@ -233,11 +356,56 @@ service cloud.firestore {
 
     // In-app feedback: write-only from the app, readable only from the console.
     // One document per submission, so nothing here can be edited after the fact.
+    //
+    // The shape is checked because `allow create: if signedIn()` on its own
+    // accepted any document of any size under any field names — one account is
+    // enough to write a megabyte per call for as long as it likes, and the
+    // bill for that lands on the project rather than on whoever wrote it.
+    // Firestore's own ceiling is a 1 MiB document, which is not a limit on
+    // anything, it is the size of the hole.
+    //
+    // 4000 characters is far more than anybody types into a feedback box and
+    // far less than a payload worth sending. `uid` is pinned so a report
+    // cannot be filed under somebody else's name, and `timestamp` to the
+    // server clock so the console list is in the order things actually
+    // happened.
     match /feedback/{feedbackId} {
       allow read: if false;
-      allow create: if signedIn();
+      allow create: if signedIn() &&
+        request.resource.data.keys().hasOnly(
+          ['storeId', 'feedback', 'version', 'build', 'uid', 'timestamp']) &&
+        request.resource.data.feedback is string &&
+        request.resource.data.feedback.size() > 0 &&
+        request.resource.data.feedback.size() <= 4000 &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.timestamp == request.time;
       allow update, delete: if false;
     }
+
+    // ---------------------------------------------------------------------
+    // What these rules still do not cover
+    // ---------------------------------------------------------------------
+    //
+    // `dailyStats` is derived data written by the till. Every figure in it
+    // arrives as a `FieldValue.increment` from the same transaction that
+    // writes the order, and a rule sees only the value that results, never the
+    // delta — so a member of staff who writes to Firestore directly, rather
+    // than through the app, can still move a day's revenue without touching
+    // an order. The rules above stop the day being deleted and stop it being
+    // filed under the wrong date; they cannot make the arithmetic honest.
+    //
+    // The fix is not a rule. It is to stop the client computing the rollup at
+    // all: a Firestore trigger on `orders` recomputes `dailyStats` server-side
+    // and the collection becomes read-only to every client. That is a real
+    // change — `_applyStats` moves out of lib/database/order_repository.dart,
+    // the existing days need a backfill, and the offline queue's writes stop
+    // being atomic with their rollup — so it is written down here rather than
+    // half-done.
+    //
+    // Until then the honest description is: orders are the books and cannot be
+    // forged; `dailyStats` is a cache of them and can be. Anything that
+    // matters should be recomputed from `orders`, which
+    // lib/export/statistics_workbook.dart already does.
 
     match /{document=**} {
       allow read, write: if false;

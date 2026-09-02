@@ -8,8 +8,9 @@
     "source": "functions",
     "codebase": "default",
     "runtime": "nodejs22",
+    "//predeploy": "Calls the TypeScript compiler directly instead of `npm --prefix \"$RESOURCE_DIR\" run build`, which is what `firebase init` writes. Under npm 11 on Node 26 that form fails inside the Firebase CLI with `Cannot read properties of undefined (reading 'stdin')` and takes the whole deploy with it before a byte is uploaded. The compile itself is fine — the log shows `> tsc` completing, and npm only falls over afterwards, in its own lifecycle wrapper, reaching for a stdin the CLI never gave it. Running the same command by hand in a terminal works, which is what makes it baffling. So npm is cut out of the path: `tsc` is the thing that needs to run, and this runs it. `npm run build` is still there for people, and still does the same job.",
     "predeploy": [
-      "npm --prefix \"$RESOURCE_DIR\" run build"
+      "cd \"$RESOURCE_DIR\" && ./node_modules/.bin/tsc"
     ],
     "ignore": [
       "node_modules",
@@ -19,14 +20,19 @@
   },
   "hosting": {
     "public": "build/web",
+    "//ignore": "`**/.*` used to be here and was the whole reason the association files lived in a non-dotted directory behind a rewrite: it drops every dotted path before upload, so a real .well-known/ never reached Hosting. That workaround does not survive contact with Firebase's own behaviour — see //predeploy below — so the glob is replaced by the two things it was actually there to exclude.",
     "ignore": [
       "firebase.json",
-      "**/.*",
+      "**/.DS_Store",
       "**/node_modules/**"
+    ],
+    "//predeploy": "Copies the association files into a real `.well-known/` directory, and it is not tidiness — it is the only thing that makes them reachable.\n\nFirebase Hosting SERVES ITS OWN /.well-known/assetlinks.json, generated from the Android apps registered on the project, and it wins over any rewrite. What that generated file said here was worse than nothing: it named `com.example.adsf.revenue` — a leftover app nobody ships — with a fingerprint belonging to neither the debug nor the upload keystore, and it carried only `delegate_permission/common.handle_all_urls`. Passkeys need `delegate_permission/common.get_login_creds`, which was absent, so Android passkeys could not have worked no matter how correct web/well-known/assetlinks.json was.\n\nA real static file at the requested path takes precedence over the generated one. `flutter build web` rebuilds build/web from scratch, so this runs on every deploy rather than being done once by hand.",
+    "predeploy": [
+      "mkdir -p \"$PROJECT_DIR/build/web/.well-known\" && cp \"$PROJECT_DIR\"/web/well-known/* \"$PROJECT_DIR/build/web/.well-known/\""
     ],
     "rewrites": [
       {
-        "//": "The catch-all below swallows everything, /.well-known/* included, which is why neither platform-association file was reachable. These two come first — within `rewrites`, Hosting applies the first rule whose pattern matches. The files themselves live in web/well-known/ (no leading dot) because the `ignore` glob `**/.*` drops any dotted directory before deploy, so a real web/.well-known/ would never be uploaded at all.",
+        "//": "Kept as a fallback, and no longer the mechanism. These two come first because within `rewrites` Hosting applies the first rule whose pattern matches, and the catch-all below would otherwise swallow /.well-known/* along with everything else.\n\nBut a rewrite is not what serves these files any more: Hosting generates its own /.well-known/assetlinks.json and that beats any rewrite. See //predeploy above, which copies the real files into build/web/.well-known/ so a static file wins instead. The sources still live in web/well-known/ with no leading dot, because `flutter build web` is what copies them and a dotted directory there is easy to lose track of.",
         "source": "/.well-known/assetlinks.json",
         "destination": "/well-known/assetlinks.json"
       },

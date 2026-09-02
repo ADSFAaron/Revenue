@@ -25,7 +25,7 @@ Revenue — Shop Till & Profit
 
 ---
 
-## Short description (max 80 · actual 76)
+## Short description (max 80 · actual 75)
 
 ```
 A till for small food shops. Works offline, and shows what each dish earns.
@@ -39,7 +39,76 @@ Take orders offline, photograph your menu in, and see real profit per dish.
 
 ---
 
-## Full description (max 4000 · actual 3702)
+## Full description (max 4000 · actual 2617)
+
+The version to paste. Plain sentences, one idea each, headings you can skim —
+the store page is read on a phone by somebody deciding in ten seconds.
+
+```
+Revenue is a till for small food shops. It takes the orders, and it works out what you actually earned.
+
+Put the ingredient cost against each dish, and Revenue shows the profit on every order, every day and every dish — not just the takings.
+
+
+■ Works when the Wi-Fi doesn't
+
+Kitchen Wi-Fi drops. Orders rung up while offline are held on the phone and sent as soon as the connection is back, with a bar showing how many are still waiting. When figures are not live, the screen says so instead of showing stale numbers as current.
+
+
+■ Photograph the menu instead of typing it
+
+Nobody wants to type in forty dishes. Take a photo of your menu and Revenue reads it into dishes and prices. Nothing is saved until you confirm it. Photograph a second page, or a few changed dishes, any time.
+
+
+■ See which dishes actually earn
+
+- Menu quadrants: every dish sorted into Stars, Workhorses, Puzzles and Duds, by how well it sells and how well it earns. A bestseller list cannot show you the dish that sells most while thinning the profit on every plate.
+- Ingredient cost ratio: food cost as a share of takings, with an alert when you cross your limit.
+- Busy periods: by day of the week and by hour, kept separate — Tuesday evening and Saturday evening are two different businesses.
+- Ordered together: which dishes your customers buy in the same order.
+
+
+■ Delivery platforms, commission included
+
+Import a delivery platform's statement and set its commission rate. Without that rate a delivery order books as pure revenue and your margin is wrong by whatever the platform took.
+
+
+■ Built for everyone in the shop
+
+- Three roles: owner, manager and staff. Staff take orders and check what they rang up, but cannot change prices or settings.
+- Settings staff cannot change are shown read-only, not hidden, so hand-over reconciles.
+- An order just rung up wrong can be fixed by whoever rang it, for five minutes. After that it takes a manager.
+- Every void, edit and price change is logged: who, what, when.
+
+
+■ Also
+
+- Set the hour your trading day rolls over.
+- Define your own payment methods; reports split the takings by them.
+- Tax inclusive or added on top.
+- Export reports to Excel.
+- Sign in with a fingerprint, face or screen lock (passkeys).
+- Dark mode, and text that scales.
+- A full manual inside the app, explaining where every figure comes from.
+
+
+■ Open source
+
+Revenue's source is public under the AGPL-3.0 licence. You can read it, change it, and run your own copy.
+
+Source: https://github.com/ADSFAaron/Revenue
+
+
+An internet connection is needed to create an account. Day-to-day order taking works offline.
+```
+
+---
+
+## Full description — longer alternative (3697)
+
+The original, fuller copy. Same substance, more prose. Use it if the plain
+version reads as too bare beside comparable listings.
+
 
 ```
 Revenue is a till for small food shops, and a ledger that does the arithmetic for you.
@@ -101,6 +170,33 @@ An internet connection is needed to create an account. Day-to-day order taking w
 
 ---
 
+## Release notes — "What's new" (max 500 · actual 466)
+
+Play Console asks for this per language, under the release. It is the first
+upload, so it has to introduce the app as well as announce it — and the panel on
+the store page collapses after three or four lines, so the first sentence is
+doing most of the work.
+
+```
+First release.
+
+Most till apps tell you how much you sold. Revenue answers the question after that one — whether selling it that way made you anything.
+
+- Works offline: orders wait on the phone and send themselves
+- Photograph your menu instead of typing in forty dishes
+- See which dishes sell well but earn thinly
+- Delivery commission counted, so margins are real
+- Owner, manager and staff roles; every change recorded
+- Excel export, passkey sign-in, dark mode
+```
+
+For later releases this becomes an ordinary changelog — what changed, in the
+words of somebody who uses the app rather than writes it. CHANGELOG.md is the
+developer-facing version and is not a substitute: "R8 is on for release builds"
+means nothing to a shopkeeper.
+
+---
+
 ## Required links
 
 | Field | Value |
@@ -114,11 +210,13 @@ An internet connection is needed to create an account. Day-to-day order taking w
 
 | Item | Spec | State |
 | --- | --- | --- |
-| Short description | ≤ 80 chars | ✅ 76 |
-| Full description | ≤ 4000 chars | ✅ 3702 |
+| Short description | ≤ 80 chars | ✅ 75 |
+| Full description | ≤ 4000 chars | ✅ 2617 |
 | App icon | 512×512 32-bit PNG with alpha | `play/app-icon-512.png`, from `assets/icon/AppLogoIcon.png` |
 | Feature graphic | 1024×500 PNG/JPEG, **no** alpha | `play/feature-graphic.png` |
 | Phone screenshots | 2–8, each side 320–3840px, long edge ≤ short × 2 | ✅ 6 in `play/screenshots/`, 1440×2560, ratio 1.78 |
+| 7-inch tablet screenshots | same rules, separate slot | ✅ 6 in `play/screenshots-tablet7/`, 1920×1200, ratio 1.60 |
+| 10-inch tablet screenshots | same rules, separate slot | ✅ 6 in `play/screenshots-tablet10/`, 2560×1600, ratio 1.60 |
 | Privacy policy URL | Required for every app | `web/privacy.html`, live after `firebase deploy --only hosting` |
 
 > ⚠️ This phone is 1096×2560 (1:2.34), which is **past Play's 2:1 limit — raw
@@ -147,6 +245,49 @@ re-shot without disturbing the others.
 | 04 | Import menu | Photograph the menu instead of typing it |
 | 05 | Reports → Month | Takings you can read |
 | 06 | Store Settings | The rules your shop actually runs on |
+
+### The tablet sets
+
+Play keeps a separate slot per form factor, and filling the tablet ones with the
+portrait phone panels is what "not designed for tablets" looks like on a store
+page. So the tablet panels are landscape — headline in a column beside the
+device rather than above it — which is `frame_landscape` in the same script:
+
+```sh
+python3 tool/play_screenshots.py play/captures-tablet7  play/screenshots-tablet7  tablet7
+python3 tool/play_screenshots.py play/captures-tablet10 play/screenshots-tablet10 tablet10
+```
+
+**One emulator, two geometries.** Android Studio's `Medium_Tablet` and
+`Pixel_Tablet` are the same device on paper — both 2560×1600 at 320dpi — so
+switching AVDs does not get you a 7-inch layout, it gets you the same picture
+twice. What separates the two slots is the `sw` bucket the app lays out
+against, and that is set with `wm`:
+
+| Slot | Emulator | dp | Bucket |
+| --- | --- | --- | --- |
+| 10-inch | native 2560×1600 @ 320dpi | 1280×800 | `sw800dp` |
+| 7-inch | `wm size 1920x1200` + `wm density 320` | 960×600 | `sw600dp` |
+
+Both are past `constraints.maxWidth >= 600` in [lib/home.dart](../lib/home.dart),
+so both draw the `NavigationRail` rather than the phone's bottom bar — which is
+the point of shipping tablet screenshots at all. Reset afterwards with
+`adb shell wm size reset && adb shell wm density reset`.
+
+**The emulator wins on panel 03.** On the phone this one had to be shot by hand,
+because turning the network off to raise the offline banner also kills wireless
+adb, so the tooling goes down with the network it caused. An emulator's adb runs
+over its own control socket, so `adb shell cmd connectivity airplane-mode enable`
+raises the banner with the driving still connected — the offline strip, the
+queue bar and the "Saved on this device" toast all land in one automated frame.
+
+**Rebuild before capturing.** The `app-release.apk` sitting in `build/` was from
+before the offline queue landed, and its banner still read "Orders cannot be
+rung up until the connection is back" — the opposite of what the listing
+promises. A screenshot is only worth as much as the build under it: run
+`flutter build apk --release` first and check the APK is newer than `HEAD`.
+Note that a build made since `android/key.properties` exists is signed with the
+upload key, so it will not install over a debug-signed one — uninstall first.
 
 **03 had to be taken by hand**, and is the better for it. The offline banner
 only appears once Firestore has actually lost its connection, which means

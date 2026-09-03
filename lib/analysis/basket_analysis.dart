@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../models/order.dart';
 
 /// "People who order A also order B" — one rule, with the three numbers that
@@ -12,6 +14,7 @@ class BasketRule {
     required this.antecedentCount,
     required this.support,
     required this.confidence,
+    required this.confidenceLowerBound,
     required this.lift,
   });
 
@@ -34,12 +37,27 @@ class BasketRule {
   /// the number to read out loud: "62% of beef noodle orders add a tea egg."
   final double confidence;
 
+  /// The cautious end of [confidence]: the lower bound of its 95% Wilson score
+  /// interval.
+  ///
+  /// [confidence] is a point estimate and says nothing about how much evidence
+  /// is behind it — 4 out of 5 and 400 out of 500 are both 80%. This is what
+  /// 4 out of 5 is worth once that is taken into account, and it is what the
+  /// rule has to clear to be reported at all.
+  final double confidenceLowerBound;
+
   /// Confidence divided by how often B is ordered anyway.
   ///
-  /// The one that separates a finding from a coincidence. A drink that appears
-  /// in 80% of *all* orders will show 80% confidence behind every dish on the
-  /// menu; only lift shows that it has nothing to do with the dish. Above 1
-  /// means the pair really does travel together.
+  /// Kept for display. It answers "how much more often than usual", which is
+  /// the shape of the finding, but it is not what decides whether the finding
+  /// is real — see [confidenceLowerBound] for that. A drink that appears in
+  /// 80% of *all* orders will show 80% confidence behind every dish on the
+  /// menu, and lift is what shows it has nothing to do with the dish.
+  ///
+  /// The denominator is [BasketAnalysis.basketCount] rather than
+  /// [BasketAnalysis.multiItemBasketCount]. That is a choice: in a shop where
+  /// most tickets carry a single dish it makes lift read lower than the pairing
+  /// deserves, which errs toward under-claiming.
   final double lift;
 
   String get sentence =>
@@ -77,10 +95,37 @@ class BasketAnalysis {
   bool get isEmpty => rules.isEmpty;
 
   /// Minimum orders a pair must appear in before it is reported.
+  ///
+  /// A floor under the statistics below rather than the test itself: a pair
+  /// seen three times can clear a significance test on a tiny antecedent, and
+  /// still is not something to change a menu over.
   static const int minimumTogether = 5;
 
-  /// Only pairings that occur more than chance would predict.
-  static const double minimumLift = 1.05;
+  /// z for a 95% interval.
+  static const double _z = 1.959964;
+
+  /// The lower end of the Wilson score interval for [successes] of [trials].
+  ///
+  /// This replaced a flat `lift >= 1.05` cut, which was not a test at all at
+  /// the sample sizes this report runs on. With five orders behind a pairing, a
+  /// 5% excess over chance is inside the noise — yet the page printed a
+  /// sentence from it in the same confident voice it uses for a pairing seen
+  /// five hundred times. Wilson is the standard interval for a proportion at
+  /// small n, where the textbook normal approximation misbehaves badly and can
+  /// even produce bounds below zero.
+  ///
+  /// The comparison is against the unconditional rate of B, so a rule survives
+  /// only when ordering A makes B more likely by more than the evidence's own
+  /// uncertainty.
+  static double wilsonLowerBound(int successes, int trials) {
+    if (trials <= 0) return 0;
+    final p = successes / trials;
+    const z2 = _z * _z;
+    final centre = p + z2 / (2 * trials);
+    final margin = _z *
+        math.sqrt(p * (1 - p) / trials + z2 / (4 * trials * trials));
+    return ((centre - margin) / (1 + z2 / trials)).clamp(0.0, 1.0);
+  }
 
   factory BasketAnalysis.from(
     Iterable<Order> orders, {
@@ -146,8 +191,12 @@ class BasketAnalysis {
         if (countA == 0 || countB == 0) continue;
 
         final confidence = together / countA;
-        final lift = confidence / (countB / basketCount);
-        if (lift < minimumLift) continue;
+        final baseline = countB / basketCount;
+        final lowerBound = wilsonLowerBound(together, countA);
+        // Not `confidence > baseline`: that is the claim, and this is whether
+        // the evidence supports it.
+        if (lowerBound <= baseline) continue;
+        final lift = confidence / baseline;
 
         rules.add(BasketRule(
           antecedentId: a,
@@ -158,6 +207,7 @@ class BasketAnalysis {
           antecedentCount: countA,
           support: together / basketCount,
           confidence: confidence,
+          confidenceLowerBound: lowerBound,
           lift: lift,
         ));
       }

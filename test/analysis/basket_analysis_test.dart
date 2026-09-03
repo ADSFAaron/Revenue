@@ -57,14 +57,59 @@ void main() {
       for (var i = 0; i < 6; i++) orderWith(['a', 'b']),
       for (var i = 0; i < 6; i++)
         orderWith(['a', 'b'], status: OrderStatus.voided),
-      orderWith(['c']),
+      // Enough unrelated tickets that b is not simply what this shop sells.
+      // Without them the pairing is real but unprovable at six observations,
+      // and the significance test correctly declines to report it — which
+      // would leave this test with no rule to inspect.
+      for (var i = 0; i < 20; i++) orderWith(['c']),
     ];
 
     final analysis = BasketAnalysis.from(orders);
-    expect(analysis.basketCount, 7); // 6 completed pairs + 1 single
+    expect(analysis.basketCount, 26); // 6 completed pairs + 20 singles
     expect(analysis.multiItemBasketCount, 6);
     final rule = analysis.rules.firstWhere((r) => r.antecedentId == 'a');
     expect(rule.together, 6); // the voided six did not count
+  });
+
+  test('a pairing that only just beats chance is not reported at small n', () {
+    // 4 of 5 anchovy orders also took bread — 80% against a 70% base rate, so
+    // lift is 1.14 and the flat `lift >= 1.05` cut this replaced would have
+    // printed "80% of anchovy orders also include bread" from five tickets.
+    final orders = [
+      for (var i = 0; i < 4; i++) orderWith(['anchovy', 'bread']),
+      orderWith(['anchovy', 'olives']),
+      for (var i = 0; i < 66; i++) orderWith(['bread', 'olives']),
+      for (var i = 0; i < 29; i++) orderWith(['olives']),
+    ];
+
+    final analysis = BasketAnalysis.from(orders);
+    final claim = analysis.rules
+        .where((r) => r.antecedentId == 'anchovy' && r.consequentId == 'bread');
+    expect(claim, isEmpty);
+
+    // The point estimate really is above the base rate. What is missing is the
+    // evidence, and that is the distinction the old cut could not draw.
+    expect(BasketAnalysis.wilsonLowerBound(4, 5), lessThan(0.70));
+  });
+
+  test('the same rate with real evidence behind it is reported', () {
+    // Identical 80% against the same 70% base rate, seen 400 times instead of
+    // five. This is the pair the previous test has to be distinguished from,
+    // or the fix would just be a stricter threshold.
+    final orders = [
+      for (var i = 0; i < 400; i++) orderWith(['anchovy', 'bread']),
+      for (var i = 0; i < 100; i++) orderWith(['anchovy', 'olives']),
+      for (var i = 0; i < 300; i++) orderWith(['bread', 'olives']),
+      for (var i = 0; i < 200; i++) orderWith(['olives']),
+    ];
+
+    final analysis = BasketAnalysis.from(orders);
+    final rule = analysis.rules.firstWhere(
+        (r) => r.antecedentId == 'anchovy' && r.consequentId == 'bread');
+    expect(rule.confidence, closeTo(0.80, 0.001));
+    expect(rule.confidenceLowerBound, greaterThan(0.70));
+    // The cautious end sits below the point estimate, which is the whole idea.
+    expect(rule.confidenceLowerBound, lessThan(rule.confidence));
   });
 
   test('a rare pairing is below the reporting threshold', () {

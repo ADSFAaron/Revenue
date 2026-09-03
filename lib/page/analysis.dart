@@ -1027,7 +1027,12 @@ class _PairingsTabState extends State<_PairingsTab> {
                 elevation: 0,
                 child: ListTile(
                   title: Text(rule.sentence),
-                  subtitle: Text('${rule.together} orders · '
+                  // The denominator, not just the count. "8 orders" left the
+                  // reader unable to tell 8 of 10 from 8 of 400, and those are
+                  // the same sentence above with very different weight behind
+                  // it.
+                  subtitle: Text('${rule.together} of '
+                      '${rule.antecedentCount} such orders · '
                       '${rule.lift.toStringAsFixed(1)}× more often than '
                       '${rule.consequentName} is ordered in general'),
                 ),

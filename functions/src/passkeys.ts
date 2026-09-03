@@ -33,7 +33,6 @@ import {
 } from "@simplewebauthn/server";
 import type {
   AuthenticationResponseJSON,
-  AuthenticatorTransportFuture,
   RegistrationResponseJSON,
 } from "@simplewebauthn/server";
 
@@ -67,7 +66,20 @@ interface StoredCredential {
    * rejects that for us, given the previous value.
    */
   signCount: number;
-  transports: AuthenticatorTransportFuture[];
+  /**
+   * A hint the browser uses to say "tap your phone" rather than "insert your
+   * key".
+   *
+   * Plain `string[]`, which is what @simplewebauthn 14 changed every
+   * transport-carrying interface to. It used to be a union
+   * (`AuthenticatorTransportFuture`) and the temptation on upgrading is to
+   * follow the rename to `AuthenticatorTransport` — that is the wrong move.
+   * The value originates at the client, so it was never constrained to a
+   * union the server chose, and the two consumers below only pass it back out
+   * for a browser to read. WebAuthn requires a client to ignore a transport it
+   * does not recognise, which is why widening it costs nothing here.
+   */
+  transports: string[];
   deviceName: string;
 }
 

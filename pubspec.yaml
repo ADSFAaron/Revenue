@@ -51,14 +51,7 @@ dependencies:
   flutter_launcher_icons: ^0.14.3
 
   # Use for opening app splash screen
-  #
-  # Held at 2.4.4, which is not a preference. 2.4.6 moved to `image ^4.5.4`,
-  # which needs `archive ^4`, and `excel` pins `archive ^3.6.1` — so the
-  # exporter and the splash generator cannot both be current. excel 4.0.6 is
-  # the latest and has not been published since August 2024, so this resolves
-  # when the Excel export moves off it, not before. Nothing is lost meanwhile:
-  # this package only runs by hand, via `dart run flutter_native_splash:create`.
-  flutter_native_splash: ^2.4.4
+  flutter_native_splash: ^2.4.8
 
   # Charts on the Reports page.
   #
@@ -73,8 +66,25 @@ dependencies:
   # `charts_flutter` in January 2023.
   fl_chart: ^1.1.1
 
-  # Use for output Excel file
-  excel: ^4.0.6
+  # Use for output Excel file.
+  #
+  # `excel` was here. It stopped being published in August 2024 and pins
+  # `archive ^3.6.1`, which held back archive, image, xml and
+  # flutter_native_splash — four packages behind one unmaintained constraint.
+  #
+  # excel_plus is a source-compatible fork and the swap was four import lines:
+  # every call this app makes (`createExcel`, `getDefaultSheet`, `sheets`,
+  # `delete`, `excel[name]`, `appendRow`, the three CellValue subclasses,
+  # `encode`, `save`) has the same name and signature, and `save()` on the web
+  # still triggers the browser download rather than only returning bytes,
+  # which is what workbook_saver_web.dart depends on.
+  #
+  # It is a smaller project than what it replaces — one maintainer, a fraction
+  # of the likes — and this writes a shop's financial export, so that is a real
+  # trade rather than a free win. It is taken because the surface above is
+  # shallow enough to reverse in an hour, and because an unmaintained
+  # dependency is not the safer half of the choice.
+  excel_plus: ^2.17.0
 
   # Use for locating where an exported Excel file may be written
   path_provider: ^2.1.5

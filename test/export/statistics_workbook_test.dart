@@ -1,4 +1,4 @@
-import 'package:excel/excel.dart';
+import 'package:excel_plus/excel_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:Revenue/export/statistics_workbook.dart';
 import 'package:Revenue/models/daily_stats.dart';

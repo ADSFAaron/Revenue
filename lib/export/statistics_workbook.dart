@@ -1,4 +1,4 @@
-import 'package:excel/excel.dart';
+import 'package:excel_plus/excel_plus.dart';
 
 import '../models/daily_stats.dart';
 import '../models/order.dart';

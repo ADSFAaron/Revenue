@@ -65,13 +65,21 @@ export const EXPECTED_ORIGINS = [
   // 05:A6:DB:61:…:D4:32. This is what signs a locally built release AAB, so it
   // covers a build sideloaded for testing before it reaches Play.
   "android:apk-key-hash:BabbYYihmNAgv-C110ApNuQNHMjbMwPFwrTy92jP1DI",
-  // TODO — Google's Play App Signing certificate. Play re-signs every upload,
-  // so the hash an installed-from-Play build actually presents is Google's and
-  // is none of the three above. It does not exist until the first upload has
-  // been made; take it from Play Console → Release → Setup → App signing and
-  // add it here and to web/well-known/assetlinks.json, or Android passkeys
-  // fail with `domain-not-associated` for every real user while working
-  // perfectly on this machine.
+  // Google's Play App Signing certificate, SHA-256
+  // A3:9E:3E:82:…:5F:75:75. **This is the one that matters in production**:
+  // Play re-signs every upload with its own key, so an installed-from-Play
+  // build presents this hash and none of the two above. Until it was added,
+  // Android passkeys failed with `domain-not-associated` for every real user
+  // while working perfectly on a development machine — which is exactly why
+  // it went unnoticed.
+  //
+  // Taken from Play Console → App integrity → App signing. It cannot be known
+  // before the first upload, which is why this sat as a TODO until 2026-09-03.
+  //
+  // The colon-separated form of the same hash is in
+  // web/well-known/assetlinks.json. They are two encodings of one value and
+  // must never disagree; this one is base64url, unpadded.
+  "android:apk-key-hash:o54-glPTN4TPcsWydMgbiCr3Dekqm2cXcjPwGLBfdXU",
 ];
 
 /**

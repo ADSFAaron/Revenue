@@ -91,9 +91,10 @@ Future<void> configureAppCheck() async {
   if (kIsWeb && recaptchaKey.isEmpty) return;
   try {
     await FirebaseAppCheck.instance.activate(
-      androidProvider:
-          kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
-      webProvider:
+      providerAndroid: kDebugMode
+          ? const AndroidDebugProvider()
+          : const AndroidPlayIntegrityProvider(),
+      providerWeb:
           recaptchaKey.isEmpty ? null : ReCaptchaEnterpriseProvider(recaptchaKey),
     );
   } catch (e) {

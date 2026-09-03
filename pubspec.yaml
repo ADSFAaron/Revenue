@@ -28,11 +28,11 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # Online Database for data
-  cloud_firestore: ^5.6.6
-  firebase_core: ^3.13.0
+  cloud_firestore: ^6.9.0
+  firebase_core: ^4.14.0
 
   # Firebase Authentication
-  firebase_auth: ^5.5.2
+  firebase_auth: ^6.6.1
 
   # Using for SVG Asset
   flutter_svg: ^2.0.17
@@ -95,11 +95,7 @@ dependencies:
 
   # Calling that relying party. Firebase Auth has no passkey provider, so the
   # ceremony finishes with a Cloud Function minting a custom token.
-  #
-  # Held at 5.x deliberately: cloud_functions 6.x wants firebase_core ^4, and
-  # moving to that would drag cloud_firestore and firebase_auth through a
-  # major version each. Passkeys are not worth a stack-wide migration.
-  cloud_functions: ^5.6.0
+  cloud_functions: ^6.4.0
 
   # Use for app name
   rename: ^3.0.2
@@ -134,7 +130,7 @@ dependencies:
   material_symbols_icons: ^4.2811.0
   in_app_update: ^5.0.0
   url_launcher: ^6.3.2
-  firebase_app_check: ^0.3.2+10
+  firebase_app_check: ^0.4.7
 
 dev_dependencies:
   flutter_test:

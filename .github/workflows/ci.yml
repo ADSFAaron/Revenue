@@ -1,0 +1,64 @@
+# Basic checks on every push and pull request.
+#
+# Deliberately just the two things that were already being run by hand —
+# `flutter analyze` and `flutter test` — plus a type-check of the Cloud
+# Functions, which had no automated check at all. This is not a release
+# pipeline: nothing here signs, uploads or deploys anything.
+#
+# The Flutter version is pinned rather than tracking `stable`, so a change in
+# CI's result always means a change in this repository. Bump it deliberately,
+# together with the SDK constraint in pubspec.yaml.
+name: CI
+
+on:
+  push:
+    branches: [main, v3]
+  pull_request:
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter:
+    name: analyze & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.8
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # Plain `flutter analyze`, which already exits non-zero on an info —
+      # analysis_options.yaml is what decides what counts, and the one lint
+      # this repository can never satisfy (`package_names`) is turned off
+      # there with its reason. So a red build here means something new.
+      - run: flutter analyze
+
+      - run: flutter test
+
+  functions:
+    name: functions typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - run: npm ci
+        working-directory: functions
+
+      # The same compiler the Firebase predeploy hook runs, so a deploy cannot
+      # be the first thing that discovers a type error.
+      - run: ./node_modules/.bin/tsc --noEmit
+        working-directory: functions

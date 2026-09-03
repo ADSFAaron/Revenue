@@ -25,5 +25,16 @@ linter:
     # avoid_print: false  # Uncomment to disable the `avoid_print` rule
     # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
 
+    # The package is `Revenue`, not `revenue`, and renaming it would rewrite
+    # every `package:Revenue/...` import in lib/ and test/ for a naming
+    # convention no user ever sees.
+    #
+    # It is off rather than left to report, because CI runs `flutter analyze`
+    # and that exits non-zero on an info. One permanently-failing lint would
+    # mean either a permanently red build or a `--no-fatal-infos` that stops
+    # the next info from being noticed at all — and the point of running the
+    # analyzer in CI is that the next one gets noticed.
+    package_names: false
+
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

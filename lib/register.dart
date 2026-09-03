@@ -451,8 +451,9 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
         await authRepository.deleteCurrentAccount();
         if (mounted) setState(() => _google = null);
       }
-      if (mounted)
+      if (mounted) {
         showRegistrationError(context, 'Could not create the store: $e');
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -771,8 +772,9 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
           duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
     } catch (e) {
       if (uid != null) await authRepository.deleteCurrentAccount();
-      if (mounted)
+      if (mounted) {
         showRegistrationError(context, 'Could not join the store: $e');
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }

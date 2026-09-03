@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import 'animation/FadeAnimation.dart';
+import 'animation/fade_animation.dart';
 import 'database/repositories.dart';
 import 'widgets/feedback.dart';
 import 'register.dart';

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import 'animation/FadeAnimation.dart';
+import 'animation/fade_animation.dart';
 import 'database/repositories.dart';
 import 'firebase_options.dart';
 import 'home.dart';

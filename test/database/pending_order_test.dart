@@ -31,6 +31,31 @@ void main() {
     draft: draft,
   );
 
+  test('who rang it up survives the wait, and is not guessed later', () {
+    final restored = PendingOrder.decode(
+      PendingOrder.encode([
+        PendingOrder(
+          id: 'abc123',
+          storeId: 's1',
+          queuedAt: DateTime(2026, 8, 30, 13, 46),
+          draft: draft,
+          createdBy: 'uid-morning-shift',
+        )
+      ]),
+    ).single;
+
+    // The flush sends this, rather than reading whoever happens to be signed
+    // in when the connection returns — which on a counter shared across a
+    // shift is a different person, and filing a sale under them would be a
+    // false record rather than a missing one.
+    expect(restored.createdBy, 'uid-morning-shift');
+
+    // A queue written before the field existed says nothing rather than
+    // something wrong.
+    expect(PendingOrder.fromJson(restored.toJson()..remove('createdBy'))!
+        .createdBy, isNull);
+  });
+
   test('a queued order keeps everything the till chose', () {
     final restored = PendingOrder.decode(PendingOrder.encode([pending])).single;
 

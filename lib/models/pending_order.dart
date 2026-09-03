@@ -30,6 +30,7 @@ class PendingOrder {
     required this.storeId,
     required this.queuedAt,
     required this.draft,
+    this.createdBy,
   });
 
   /// The Firestore document id this order will take. Client-generated, which
@@ -44,10 +45,30 @@ class PendingOrder {
 
   final OrderDraft draft;
 
+  /// Who rang it up, captured here rather than read at send time.
+  ///
+  /// [PendingOrderQueue.flush] used to call `submit()` without a `createdBy`
+  /// at all, so every order taken offline reached Firestore with the field
+  /// null — on precisely the path where knowing who served the customer
+  /// matters most, since a counter shared across a shift is where the question
+  /// gets asked.
+  ///
+  /// Reading the signed-in user at flush time would be worse than null rather
+  /// than better. The queue drains when the connection returns, which can be a
+  /// different person's shift; an order confidently filed under the wrong
+  /// member of staff is not a record, it is a false one. The moment that
+  /// answers "who rang this up" is the moment it was rung up, which is here.
+  ///
+  /// Null for orders queued by a build older than this field, and for a till
+  /// with nobody signed in. Both are the previous behaviour — the absence of
+  /// an answer, not a wrong one.
+  final String? createdBy;
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'storeId': storeId,
         'queuedAt': queuedAt.toIso8601String(),
+        'createdBy': createdBy,
         'placedAt': draft.placedAt.toIso8601String(),
         'channel': draft.channel.id,
         'guestCount': draft.guestCount,
@@ -80,6 +101,7 @@ class PendingOrder {
       storeId: storeId,
       queuedAt:
           DateTime.tryParse(json['queuedAt'] as String? ?? '') ?? placedAt,
+      createdBy: json['createdBy'] as String?,
       draft: OrderDraft(
         placedAt: placedAt,
         items: items,

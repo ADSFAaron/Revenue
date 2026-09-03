@@ -341,7 +341,11 @@ class _AddOrderState extends State<AddOrder> {
   /// Puts an order that could not be sent on the device's queue, and clears
   /// the till for the next customer.
   Future<void> _queueOffline(Store store, OrderDraft draft) async {
-    await pendingOrders.add(store.id, draft);
+    await pendingOrders.add(
+      store.id,
+      draft,
+      createdBy: authRepository.currentUid,
+    );
     if (!mounted) return;
     setState(() {
       _quantities.clear();

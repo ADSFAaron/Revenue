@@ -90,12 +90,21 @@ class PendingOrderQueue extends ValueNotifier<List<PendingOrder>> {
 
   /// Puts an order on the queue. The id is allocated now, on this device, so
   /// that sending it later is idempotent.
-  Future<PendingOrder> add(String storeId, OrderDraft draft) async {
+  ///
+  /// [createdBy] is taken now for the same reason the id is — see
+  /// [PendingOrder.createdBy]. Who was at the till when the order was rung up
+  /// is not a fact the flush can recover later.
+  Future<PendingOrder> add(
+    String storeId,
+    OrderDraft draft, {
+    String? createdBy,
+  }) async {
     final pending = PendingOrder(
       id: _orders.newOrderId(storeId),
       storeId: storeId,
       queuedAt: DateTime.now(),
       draft: draft,
+      createdBy: createdBy,
     );
     value = [...value, pending];
     await _save();
@@ -143,6 +152,7 @@ class PendingOrderQueue extends ValueNotifier<List<PendingOrder>> {
           await _orders.submit(
             store: store,
             draft: pending.draft,
+            createdBy: pending.createdBy,
             orderId: pending.id,
           );
           await discard(pending.id);

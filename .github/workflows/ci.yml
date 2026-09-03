@@ -62,3 +62,32 @@ jobs:
       # be the first thing that discovers a type error.
       - run: ./node_modules/.bin/tsc --noEmit
         working-directory: functions
+
+  rules:
+    name: firestore rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: test/rules/package-lock.json
+
+      # The Firestore emulator is a Java program. Pinned rather than relying on
+      # whatever the runner image happens to ship.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - run: npm ci
+        working-directory: test/rules
+
+      # Starts an emulator, runs the suite against it, shuts it down, and exits
+      # with the suite's code. firestore.rules is the one file in this project
+      # that fails silently: a mistake in it does not throw, it lets somebody
+      # read a shop's takings.
+      - run: npm run emulate
+        working-directory: test/rules

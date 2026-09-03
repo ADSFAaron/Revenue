@@ -87,6 +87,15 @@
       }
     ]
   },
+  "emulators": {
+    "//": "Only Firestore, and only for `test/rules`. The UI is off because the suite is non-interactive and `firebase emulators:exec` should not open a browser in CI; singleProjectMode stops the emulator warning about the test project id not matching the one in .firebaserc.",
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    }
+  },
   "flutter": {
     "platforms": {
       "android": {

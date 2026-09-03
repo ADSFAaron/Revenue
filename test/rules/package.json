@@ -1,0 +1,19 @@
+{
+  "name": "revenue-firestore-rules-tests",
+  "private": true,
+  "type": "module",
+  "description": "Unit tests for firestore.rules, run against the Firestore emulator.",
+  "scripts": {
+    "//test": "Assumes an emulator is already listening. Use `npm run emulate`.",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "//emulate": "The whole suite: start an emulator, run the tests, shut it down, exit with the suite's code. It calls the LOCAL firebase binary on purpose — a standalone (pkg-bundled) firebase CLI puts its own Node 20 on the child process's PATH, and that Node cannot require() vitest's ESM entry point. Same family as the npm --prefix problem documented in firebase.json.",
+    "emulate": "firebase emulators:exec --only firestore --project revenue-rules-test --config ../../firebase.json \"npx vitest run\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.0.0",
+    "firebase-tools": "^15.29.0",
+    "vitest": "^3.0.0"
+  }
+}

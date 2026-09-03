@@ -41,12 +41,19 @@ dependencies:
   simple_animations: ^5.1.0
 
   # Use for getting clock
-  intl: ^0.19.0
+  intl: ^0.20.3
 
   # Use for App Drawer
   flutter_launcher_icons: ^0.14.3
 
   # Use for opening app splash screen
+  #
+  # Held at 2.4.4, which is not a preference. 2.4.6 moved to `image ^4.5.4`,
+  # which needs `archive ^4`, and `excel` pins `archive ^3.6.1` — so the
+  # exporter and the splash generator cannot both be current. excel 4.0.6 is
+  # the latest and has not been published since August 2024, so this resolves
+  # when the Excel export moves off it, not before. Nothing is lost meanwhile:
+  # this package only runs by hand, via `dart run flutter_native_splash:create`.
   flutter_native_splash: ^2.4.4
 
   # Charts on the Reports page.
@@ -72,10 +79,11 @@ dependencies:
   grouped_list: ^6.0.0
 
   # Use for showing app info.
-  # 9.x is the floor `passkeys` pulls in through passkeys_doctor; it costs an
-  # Android Gradle Plugin bump to 8.12.1 (android/settings.gradle) and nothing
-  # else — the PackageInfo API itself is unchanged.
-  package_info_plus: ^9.0.1
+  # 9.x was the floor `passkeys` pulls in through passkeys_doctor, and it cost
+  # the Android Gradle Plugin bump to 8.12.1 in android/settings.gradle. 10.x
+  # is free on top of that: the `PackageInfo.fromPlatform()` call this app
+  # makes is unchanged across both majors.
+  package_info_plus: ^10.2.1
 
   # Remembers the light/dark choice between launches. The only thing this app
   # keeps on the device — everything else belongs to the store, not the phone.
@@ -136,7 +144,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  flutter_lints: ^5.0.0
+  flutter_lints: ^6.0.0
   change_app_package_name: ^1.5.0
 
 # App icon.

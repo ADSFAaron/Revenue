@@ -9,6 +9,19 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+# Written in by `flutter pub get` on the move to Flutter 3.47, not by hand.
+# Kept, and mirrored into analysis_options.strict.yaml so the advisory job sees
+# the same code as the gating one: none of these directories holds Dart this
+# project writes, and build/ in particular fills with generated sources that
+# would drown a real finding.
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`

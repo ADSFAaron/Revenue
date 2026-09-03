@@ -18,7 +18,11 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 3.0.0+3
 
 environment:
-  sdk: ^3.5.3
+  # Moves with the Flutter version CI pins (.github/workflows/ci.yml), which is
+  # what this is actually built and tested against — Flutter 3.47.2 ships Dart
+  # 3.13.2. Bump the two together or the workflow stops proving anything about
+  # what a developer runs locally.
+  sdk: ^3.13.2
 
 dependencies:
   flutter:

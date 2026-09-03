@@ -49,7 +49,7 @@ class StoreAuditLog extends StatelessWidget {
             builder: (context, insets) => ListView.separated(
               padding: insets,
               itemCount: logs.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, index) => _AuditTile(log: logs[index]),
             ),
           );

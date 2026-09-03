@@ -25,6 +25,15 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
+  # Same exclusions as analysis_options.yaml, which CI replaces with this file
+  # — without them the advisory job would analyze directories the gating one
+  # never sees, and report findings nobody can act on.
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+    - web/**
+    - windows/**
   language:
     # The one that matters most here. Firestore hands back
     # `Map<String, dynamic>` and every model parses out of it, so an implicit

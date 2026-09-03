@@ -262,7 +262,7 @@ class AuthRepository {
       final result = await FirebaseFunctions.instanceFor(
         region: accountFunctionsRegion,
       ).httpsCallable('deleteAccount').call<Map<String, dynamic>>({
-        if (storeName != null) 'storeName': storeName,
+        'storeName': ?storeName,
       });
       return result.data['deletedStore'] == true;
     } on FirebaseFunctionsException catch (e) {

@@ -23,11 +23,9 @@ import 'store_repository.dart';
 /// shared, so there is nothing to merge.
 class PendingOrderQueue extends ValueNotifier<List<PendingOrder>> {
   PendingOrderQueue({
-    required OrderRepository orders,
-    required StoreRepository stores,
-  })  : _orders = orders,
-        _stores = stores,
-        super(const []);
+    required this._orders,
+    required this._stores,
+  }) : super(const []);
 
   static const _key = 'pendingOrders.v1';
 

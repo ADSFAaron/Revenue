@@ -232,9 +232,9 @@ class MenuImportRepository {
           MenuImportStage.busy,
           'That reader was busy',
           detail: [
-            if (model != null) model,
+            ?model,
             if (status != null) 'HTTP $status',
-            if (upstream != null) upstream,
+            ?upstream,
           ].join(' · '),
         ),
       'parsing' => const MenuImportProgress(

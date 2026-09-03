@@ -67,6 +67,18 @@ service cloud.firestore {
     function inviteGrants(invite) {
       return invite.storeId == request.resource.data.storeId &&
         invite.role == request.resource.data.role &&
+        // The role the code carries has to be one a code may carry. `allow
+        // create` below already refuses to issue an `owner` code, so this is
+        // unreachable from a client and looks redundant — but the redemption
+        // path was trusting the creation path, and the Admin SDK does not go
+        // through the creation path at all. A single `owner` invite written by
+        // a function, or by a hand in the console, would make somebody the
+        // second owner of a store that already has one, which every other rule
+        // here and the whole of functions/src/account.ts assume cannot happen.
+        //
+        // Found by test/rules/users.test.js, which seeded exactly that document
+        // past the rules and watched it be redeemed.
+        invite.role in ['staff', 'manager'] &&
         invite.usedBy == null &&
         request.time < invite.expiresAt;
     }

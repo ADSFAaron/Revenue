@@ -20,6 +20,15 @@ const String kSourceUrl = 'https://github.com/ADSFAaron/Revenue';
 const String kPrivacyPolicyUrl =
     'https://revenueapp-b8849.web.app/privacy.html';
 
+/// The terms of use, served from the same site (web/terms.html).
+///
+/// Separate from the privacy policy because they answer different questions:
+/// that one says what happens to a shop's data, this one says who is
+/// responsible for what — in particular that the trading records belong to the
+/// shop and that it should keep its own copies, which is only an honest thing
+/// to write down because Reports → Export exists to act on it.
+const String kTermsUrl = 'https://revenueapp-b8849.web.app/terms.html';
+
 /// Where this install is in relation to what Google Play is serving.
 enum UpdateStage {
   /// Not a Play install: iOS, the web build, Windows, a debug run, or an APK

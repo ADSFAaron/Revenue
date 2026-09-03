@@ -204,6 +204,13 @@ class _AccountSettingsState extends State<AccountSettings> {
             onTap: () => _openLink(kPrivacyPolicyUrl),
           ),
           SettingTile.inline(
+            icon: Icons.gavel_outlined,
+            title: 'Terms of use',
+            subtitle: 'What the app does, and who is responsible for what',
+            trailing: const Icon(Icons.open_in_new_rounded, size: 18),
+            onTap: () => _openLink(kTermsUrl),
+          ),
+          SettingTile.inline(
             icon: Icons.feedback_outlined,
             title: 'Send feedback',
             subtitle: 'Improvement ideas, or a bug you hit',

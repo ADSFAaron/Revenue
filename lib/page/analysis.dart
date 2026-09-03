@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../analysis/basket_analysis.dart';
 import '../analysis/demand_profile.dart';
@@ -11,6 +12,7 @@ import '../settings/store_settings_edit_menu.dart';
 import '../settings/user_manual.dart';
 import '../widgets/feedback.dart';
 import '../widgets/money.dart';
+import '../widgets/quadrant_scatter.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/text_scale.dart';
 
@@ -473,12 +475,73 @@ class _MenuMatrixTab extends StatelessWidget {
       children: [
         _FoodCostBanner(matrix: matrix),
         const SizedBox(height: 16),
+        _matrixChart(context),
+        const SizedBox(height: 24),
         for (final menuClass in MenuClass.values) ...[
           _classSection(context, menuClass),
           const SizedBox(height: 16),
         ],
         if (matrix.unclassified.isNotEmpty) _unclassifiedSection(context),
       ],
+    );
+  }
+
+  /// The same four groups the lists below carry, as one picture.
+  ///
+  /// The lists say which class a dish is in; they cannot say how near it is to
+  /// leaving. A Plowhorse a rounding error under the average margin and one at
+  /// half of it are the same row in the same list and completely different
+  /// problems — the first is a price rise away from being a Star, the second is
+  /// a recipe. That distance is the whole reason to draw this.
+  Widget _matrixChart(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final money = moneyFormat(store);
+    final percent = NumberFormat.decimalPercentPattern(decimalDigits: 1);
+
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Popularity against profit',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Each dot is a dish. The lines are this menu\'s own averages, so '
+              'a dish near a line could cross it with one change.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 16),
+            QuadrantScatter(
+              xThreshold: matrix.popularityThreshold,
+              yThreshold: matrix.averageUnitMargin,
+              xAxisLabel: 'Share of units sold',
+              yAxisLabel: 'Margin each',
+              quadrantLabels: (
+                topLeft: MenuClass.puzzle.label,
+                topRight: MenuClass.star.label,
+                bottomLeft: MenuClass.dog.label,
+                bottomRight: MenuClass.plowhorse.label,
+              ),
+              formatX: percent.format,
+              formatY: (value) => money.format(value.round()),
+              points: [
+                for (final item in matrix.items)
+                  QuadrantPoint(
+                    label: item.name,
+                    x: item.qtyShare,
+                    y: item.unitMargin,
+                    color: _colorFor(item.menuClass, scheme),
+                    detail: '${item.menuClass.label} · ${item.qty} sold · '
+                        '${money.format(item.unitMargin.round())} each',
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 

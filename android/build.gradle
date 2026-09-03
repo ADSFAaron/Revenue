@@ -6,14 +6,21 @@ allprojects {
     }
 }
 
-rootProject.buildDir = '../build'
+// Gradle 9 removed the mutable `buildDir` properties this used to assign. The
+// destination is unchanged — one `build/` at the repository root, one
+// subdirectory per module — expressed through the provider API instead. Written
+// to match the Kotlin DSL that Flutter 3.47 ships as its own template, so the
+// next person comparing against a fresh `flutter create` sees the same shape.
+def newBuildDir = rootProject.layout.buildDirectory.dir("../../build").get()
+rootProject.layout.buildDirectory.value(newBuildDir)
+
 subprojects {
-    project.buildDir = "${rootProject.buildDir}/${project.name}"
+    project.layout.buildDirectory.value(newBuildDir.dir(project.name))
 }
 subprojects {
     project.evaluationDependsOn(':app')
 }
 
 tasks.register("clean", Delete) {
-    delete rootProject.buildDir
+    delete(rootProject.layout.buildDirectory)
 }

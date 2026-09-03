@@ -17,7 +17,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace 'com.adsf.revenue'
-    compileSdkVersion flutter.compileSdkVersion
+    compileSdk flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 //    ndkVersion = "27.0.12077973"
 
@@ -30,18 +30,14 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17
-    }
-
     sourceSets {
         main.java.srcDirs += 'src/main/kotlin'
     }
 
     defaultConfig {
         applicationId "com.adsf.revenue"
-        minSdkVersion 27
-        targetSdkVersion flutter.targetSdkVersion
+        minSdk 27
+        targetSdk flutter.targetSdkVersion
         versionCode flutter.versionCode
         versionName flutter.versionName
         // 32-bit x86 is gone. No phone has ever shipped it in a market this
@@ -98,6 +94,14 @@ android {
 
 
 
+}
+
+// AGP 9 removed the `android.kotlinOptions` block this used to live in. Same
+// setting, moved to the Kotlin plugin's own extension at the top level.
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
 }
 
 flutter {

@@ -47,6 +47,11 @@ app.*.map.json
 # Kotlin Gradle plugin build-session scratch, created on every Gradle run.
 /android/.kotlin/
 
+# Gradle 9 writes its problems report into the root project's default build
+# directory, which android/build.gradle then redirects for everything else — so
+# this one directory appears despite `/build/` above being the real output.
+/android/build/
+
 /android/key.properties
 lib/firebase_options.dart
 ios/Runner/GoogleService-Info.plist

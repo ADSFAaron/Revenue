@@ -125,6 +125,31 @@ class DemandProfile {
     return days;
   }
 
+  /// Occurrences of a weekday needed before its average is a pattern rather
+  /// than an anecdote. The same bar [DemandCell.isReliable] uses.
+  static const int minimumObservations = 3;
+
+  /// Trading days behind the whole profile.
+  int get tradingDays =>
+      observationsByWeekday.values.fold(0, (sum, count) => sum + count);
+
+  /// The thinnest weekday in the window. Zero when the shop has not traded.
+  ///
+  /// The profile is only as trustworthy as its weakest day: a heat map read
+  /// across a row is comparing Tuesdays with Saturdays, and if there was only
+  /// one Tuesday then that row is one day's takings drawn as if it were a
+  /// habit.
+  int get weakestObservations => observationsByWeekday.isEmpty
+      ? 0
+      : observationsByWeekday.values.reduce((a, b) => a < b ? a : b);
+
+  /// Whether every weekday the shop traded has cleared
+  /// [minimumObservations].
+  ///
+  /// The honest window for this report is therefore three full trading weeks —
+  /// a shorter one does not fail, it just cannot tell a pattern from a week.
+  bool get isReliable => weakestObservations >= minimumObservations;
+
   /// The busiest weekday-and-hour square by order count.
   DemandCell? get peak {
     DemandCell? best;

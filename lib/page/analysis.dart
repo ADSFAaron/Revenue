@@ -703,6 +703,17 @@ class _BusyTimesTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        _SampleSizeLine(
+          summary: 'Based on ${demand.tradingDays} trading '
+              '${demand.tradingDays == 1 ? 'day' : 'days'}.',
+          caution: demand.isReliable
+              ? null
+              : 'At least one weekday appears fewer than '
+                  '${DemandProfile.minimumObservations} times here. A row of '
+                  'this grid is then one day drawn as if it were a habit — '
+                  'three full trading weeks is the shortest honest window.',
+        ),
+        const SizedBox(height: 12),
         Card(
           elevation: 0,
           child: ListTile(
@@ -1027,10 +1038,17 @@ class _PairingsTabState extends State<_PairingsTab> {
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text(
-              'From ${analysis.basketCount} orders, '
-              '${analysis.multiItemBasketCount} of them with more than one dish.',
-              style: Theme.of(context).textTheme.bodySmall,
+            _SampleSizeLine(
+              summary: 'From ${analysis.basketCount} orders, '
+                  '${analysis.multiItemBasketCount} of them with more than '
+                  'one dish.',
+              caution: analysis.isThinlyEvidenced
+                  ? 'Under ${BasketAnalysis.comfortableBaskets} multi-dish '
+                      'orders, so what survives here rests on few tickets. '
+                      'Anything below is real enough to have passed the test; '
+                      'a longer window is what makes it worth rebuilding a '
+                      'menu around.'
+                  : null,
             ),
             const SizedBox(height: 12),
             for (final rule in analysis.rules.take(20))
@@ -1051,6 +1069,65 @@ class _PairingsTabState extends State<_PairingsTab> {
           ],
         );
       },
+    );
+  }
+}
+
+/// How much evidence a report is standing on, said in the report itself.
+///
+/// The guards existed already — `DemandCell.isReliable`, a minimum pair count,
+/// the costed/uncosted split — but they were silent, so every report spoke in
+/// the same voice whether it had three days behind it or ninety. This is one
+/// row, always present, so its absence cannot be mistaken for confidence.
+class _SampleSizeLine extends StatelessWidget {
+  const _SampleSizeLine({required this.summary, this.caution});
+
+  final String summary;
+
+  /// Non-null when the report is below the floor for what it is claiming.
+  final String? caution;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final thin = caution != null;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: thin ? scheme.surfaceContainerHighest : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            thin ? Icons.info_outline : Icons.event_available_outlined,
+            size: 16,
+            color: scheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(summary,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant)),
+                if (caution != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(caution!,
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: scheme.onSurface)),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

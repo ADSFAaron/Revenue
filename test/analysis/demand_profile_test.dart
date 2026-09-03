@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:Revenue/analysis/demand_profile.dart';
 import 'package:Revenue/models/daily_stats.dart';
+import 'package:Revenue/models/store.dart';
 
 /// A trading day is not a calendar day. With the default 04:00 cutoff, an order
 /// rung up at 01:00 belongs to the day that began the previous morning — it is
@@ -50,5 +51,50 @@ void main() {
       expect(profile.activeHours.toSet(), hours.toSet());
       expect(profile.cell(DateTime.saturday, 1)?.averageOrders, 1);
     }
+  });
+
+  group('how much evidence the profile has', () {
+    // 2026-08-03 is a Monday.
+    String dateAfter(int days) =>
+        formatBusinessDate(DateTime(2026, 8, 3).add(Duration(days: days)));
+
+    List<DailyStats> run(int days, {Set<int> skipWeekdays = const {}}) => [
+          for (var i = 0; i < days; i++)
+            if (!skipWeekdays.contains(
+                DateTime(2026, 8, 3).add(Duration(days: i)).weekday))
+              dayWith(dateAfter(i), const [12]),
+        ];
+
+    test('counts trading days and finds the thinnest weekday', () {
+      // Fifteen days: Monday comes round three times, most weekdays twice.
+      final profile = DemandProfile.from(run(15));
+
+      expect(profile.tradingDays, 15);
+      expect(profile.weakestObservations, 2);
+      expect(profile.isReliable, isFalse);
+    });
+
+    test('three full weeks is the point it becomes a pattern', () {
+      final profile = DemandProfile.from(run(21));
+
+      expect(profile.weakestObservations, DemandProfile.minimumObservations);
+      expect(profile.isReliable, isTrue);
+    });
+
+    test('a shop that never opens on Sunday is not held to Sundays', () {
+      // Four weeks with Sundays skipped. Sunday is simply not an active
+      // weekday, so it must not drag the profile below the bar.
+      final profile =
+          DemandProfile.from(run(28, skipWeekdays: {DateTime.sunday}));
+
+      expect(profile.activeWeekdays, isNot(contains(DateTime.sunday)));
+      expect(profile.isReliable, isTrue);
+    });
+
+    test('an empty profile is not quietly reliable', () {
+      final profile = DemandProfile.from(const []);
+      expect(profile.weakestObservations, 0);
+      expect(profile.isReliable, isFalse);
+    });
   });
 }

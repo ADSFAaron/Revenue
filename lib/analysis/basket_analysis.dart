@@ -94,6 +94,19 @@ class BasketAnalysis {
 
   bool get isEmpty => rules.isEmpty;
 
+  /// Multi-dish tickets below which this report is reading tea leaves.
+  ///
+  /// Pairings are counted over the orders that could contain one, and a pair
+  /// needs to clear a significance test against the base rate of the second
+  /// dish. Both get easier with volume; under a couple of hundred baskets the
+  /// report will usually be either empty or standing on a handful of tickets.
+  /// Not a gate — a shop with sixty baskets and one unmistakable pairing should
+  /// still see it — but the reader should know which of the two they are
+  /// looking at.
+  static const int comfortableBaskets = 200;
+
+  bool get isThinlyEvidenced => multiItemBasketCount < comfortableBaskets;
+
   /// Minimum orders a pair must appear in before it is reported.
   ///
   /// A floor under the statistics below rather than the test itself: a pair

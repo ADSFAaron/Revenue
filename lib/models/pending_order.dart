@@ -91,7 +91,7 @@ class PendingOrder {
     if (id == null || storeId == null || placedAt == null) return null;
 
     final items = ((json['items'] as List?) ?? const [])
-        .whereType<Map>()
+        .whereType<Map<dynamic, dynamic>>()
         .map((i) => OrderLine.fromMap(i.cast<String, dynamic>()))
         .toList();
     if (items.isEmpty) return null;
@@ -125,7 +125,7 @@ class PendingOrder {
       final list = jsonDecode(raw);
       if (list is! List) return const [];
       return list
-          .whereType<Map>()
+          .whereType<Map<dynamic, dynamic>>()
           .map((json) => PendingOrder.fromJson(json.cast<String, dynamic>()))
           .whereType<PendingOrder>()
           .toList();

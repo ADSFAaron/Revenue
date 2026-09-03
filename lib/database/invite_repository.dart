@@ -156,7 +156,10 @@ class InviteRepository {
       );
     }
 
-    final HttpsCallableResult result;
+    // `dynamic` rather than the type argument passed to `call` below: what
+    // comes back is re-checked a few lines down before any field is read, and
+    // an annotation claiming otherwise would make that look redundant.
+    final HttpsCallableResult<dynamic> result;
     try {
       result = await _functions
           .httpsCallable('checkInvite')

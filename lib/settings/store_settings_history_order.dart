@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:grouped_list/grouped_list.dart';
 import 'package:intl/intl.dart';
@@ -336,6 +338,9 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
         builder: (context) => StoreHistoryOrderDetail(widget.storeID, order),
       ),
     );
-    if (changed == true) _initialLoad();
+    // Deliberately not awaited: the list refreshes behind the screen the
+    // person has already returned to, and making them wait for it would be a
+    // spinner over a page they are looking at.
+    if (changed == true) unawaited(_initialLoad());
   }
 }

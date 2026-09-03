@@ -91,3 +91,29 @@ jobs:
       # read a shop's takings.
       - run: npm run emulate
         working-directory: test/rules
+
+  # Advisory only. `continue-on-error` means this can never fail a build or
+  # hold up a release — it is here to notice things, not to stop work. See the
+  # header of analysis_options.strict.yaml for what it turns on and what was
+  # measured and deliberately left off.
+  strict:
+    name: strict analysis (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.8
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # The analyzer reads analysis_options.yaml from the project root and
+      # takes no path argument, so the stricter view is applied by replacing
+      # that file. Safe here because the checkout is thrown away.
+      - run: cp analysis_options.strict.yaml analysis_options.yaml
+
+      - run: flutter analyze

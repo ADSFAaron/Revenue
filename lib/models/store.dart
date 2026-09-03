@@ -343,7 +343,7 @@ class Store {
 /// An empty list is treated as "never set", not as "this shop takes no money":
 /// the till has to offer something, and the settings screen refuses to delete
 /// the last method for the same reason.
-List<StorePaymentMethod> _paymentMethodsFrom(List? raw) {
+List<StorePaymentMethod> _paymentMethodsFrom(List<dynamic>? raw) {
   final methods = (raw ?? const [])
       .map(
           (p) => StorePaymentMethod.fromMap((p as Map).cast<String, dynamic>()))

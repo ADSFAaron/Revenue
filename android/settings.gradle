@@ -24,6 +24,11 @@ plugins {
     // START: FlutterFire Configuration
     id "com.google.gms.google-services" version "4.4.2" apply false
     // END: FlutterFire Configuration
+    // Load-bearing despite app/build.gradle no longer applying it. Five plugins
+    // still do — cloud_functions, firebase_app_check, firebase_auth,
+    // firebase_core, passkeys_android — all via `apply plugin: 'kotlin-android'`
+    // and none of them naming a version, so this block is where they get one.
+    // Remove it when they have migrated to built-in Kotlin, not before.
     id "org.jetbrains.kotlin.android" version "2.4.10" apply false
 }
 

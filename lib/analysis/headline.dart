@@ -56,20 +56,24 @@ List<Headline> headlinesFrom({
   if (foodCost != null) {
     final percent = (foodCost * 100).toStringAsFixed(1);
     final line = (MenuEngineering.foodCostWarningRate * 100).round();
+    // Says how much of the business the figure speaks for, rather than the old
+    // "covers only the dishes with costs on file" — which read the same at 95%
+    // coverage as at 20%, and at 20% the number in front of it is a sample of
+    // the menu rather than a fact about the shop.
+    final covers = _coverageSentence(matrix);
     if (matrix.foodCostIsHigh) {
       headlines.add(Headline(
         severity: HeadlineSeverity.warning,
         topic: HeadlineTopic.menu,
         title: 'Food cost is $percent%, above the $line% watch line',
-        detail: 'Usually pricing, portioning or waste. Covers only the dishes '
-            'with costs on file.',
+        detail: 'Usually pricing, portioning or waste. $covers',
       ));
     } else {
       headlines.add(Headline(
         severity: HeadlineSeverity.good,
         topic: HeadlineTopic.menu,
         title: 'Food cost is $percent%, within the usual range',
-        detail: 'Covers only the dishes with costs on file.',
+        detail: covers,
       ));
     }
   }
@@ -142,7 +146,7 @@ List<Headline> headlinesFrom({
           ? 'Nothing on the menu is costed, so none of these reports can tell '
               'you what actually makes money.'
           : 'They are left out of the matrix — with no cost on file a dish '
-              'looks like pure profit.',
+              'looks like pure profit. ${_coverageSentence(matrix)}',
     ));
   }
 
@@ -180,6 +184,17 @@ List<Headline> headlinesFrom({
 }
 
 String _dish(int count) => count == 1 ? 'dish' : 'dishes';
+
+/// How much of the shop's takings the cost figures actually describe.
+String _coverageSentence(MenuEngineering matrix) {
+  final coverage = matrix.revenueCoverage;
+  if (coverage == null) return '';
+  final percent = (coverage * 100).round();
+  if (percent >= 99) return 'Covers effectively all of your takings.';
+  return matrix.coverageIsLow
+      ? 'Covers $percent% of takings — cost the rest before trusting this.'
+      : 'Covers $percent% of takings.';
+}
 
 String _hour(int hour) => '${(hour % 24).toString().padLeft(2, '0')}:00';
 

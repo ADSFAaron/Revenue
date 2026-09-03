@@ -71,6 +71,7 @@ class MenuEngineering {
     required this.popularityThreshold,
     required this.totalRevenue,
     required this.totalCost,
+    required this.uncostedRevenue,
   });
 
   final List<MenuItemAnalysis> items;
@@ -90,6 +91,31 @@ class MenuEngineering {
 
   final int totalRevenue;
   final int totalCost;
+
+  /// Takings from the dishes in [unclassified] — the ones with no cost on file.
+  final int uncostedRevenue;
+
+  /// The share of takings this report can actually speak for, 0..1.
+  ///
+  /// Every figure derived from costs is computed over the costed half of the
+  /// menu only, which used to be expressed as the phrase "covers only the
+  /// dishes with costs on file" repeated under each of them. That is a hedge,
+  /// not a measurement: it reads identically at 95% coverage and at 20%, and at
+  /// 20% the food-cost rate beside it is close to meaningless. Null when
+  /// nothing sold at all.
+  double? get revenueCoverage {
+    final all = totalRevenue + uncostedRevenue;
+    return all == 0 ? null : totalRevenue / all;
+  }
+
+  /// Below this, the cost figures describe a minority of the business and
+  /// should be read as a sample rather than as the shop's numbers.
+  static const double coverageWarningRate = 0.70;
+
+  bool get coverageIsLow {
+    final coverage = revenueCoverage;
+    return coverage != null && coverage < coverageWarningRate;
+  }
 
   bool get isEmpty => items.isEmpty && unclassified.isEmpty;
 
@@ -126,6 +152,9 @@ class MenuEngineering {
       (item.marginRate == null ? unclassified : costed).add(item);
     }
 
+    final uncostedRevenue =
+        unclassified.fold<int>(0, (sum, item) => sum + item.revenue);
+
     if (costed.isEmpty) {
       return MenuEngineering(
         items: const [],
@@ -134,6 +163,7 @@ class MenuEngineering {
         popularityThreshold: 0,
         totalRevenue: 0,
         totalCost: 0,
+        uncostedRevenue: uncostedRevenue,
       );
     }
 
@@ -175,6 +205,7 @@ class MenuEngineering {
       popularityThreshold: popularityThreshold,
       totalRevenue: totalRevenue,
       totalCost: totalCost,
+      uncostedRevenue: uncostedRevenue,
     );
   }
 }

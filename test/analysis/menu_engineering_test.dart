@@ -83,4 +83,60 @@ void main() {
     expect(analysis.isEmpty, isTrue);
     expect(analysis.foodCostRate, isNull);
   });
+
+  group('revenue coverage', () {
+    test('is the costed share of takings, not of the dish count', () {
+      final analysis = MenuEngineering.from(statsWith([
+        // One costed dish carrying most of the money.
+        const ItemStat(
+            itemId: 'noodles',
+            name: 'Beef Noodles',
+            qty: 100,
+            revenue: 9000,
+            cost: 3000),
+        // Two uncosted dishes, more of them but a small share of takings.
+        const ItemStat(
+            itemId: 'tea', name: 'Oolong', qty: 40, revenue: 600, cost: 0),
+        const ItemStat(
+            itemId: 'egg', name: 'Tea Egg', qty: 30, revenue: 400, cost: 0),
+      ]));
+
+      // Two thirds of the menu is uncosted and yet 90% of the money is
+      // accounted for — which is the case the old "covers only the dishes with
+      // costs on file" wording could not tell from its opposite.
+      expect(analysis.unclassified, hasLength(2));
+      expect(analysis.revenueCoverage, closeTo(0.90, 0.001));
+      expect(analysis.coverageIsLow, isFalse);
+    });
+
+    test('flags a menu where the costed dishes are the minority of takings',
+        () {
+      final analysis = MenuEngineering.from(statsWith([
+        const ItemStat(
+            itemId: 'tea', name: 'Oolong', qty: 10, revenue: 1000, cost: 400),
+        const ItemStat(
+            itemId: 'set', name: 'Lunch Set', qty: 50, revenue: 9000, cost: 0),
+      ]));
+
+      expect(analysis.revenueCoverage, closeTo(0.10, 0.001));
+      expect(analysis.coverageIsLow, isTrue);
+    });
+
+    test('nothing costed is 0% covered rather than an absent number', () {
+      final analysis = MenuEngineering.from(statsWith([
+        const ItemStat(
+            itemId: 'set', name: 'Lunch Set', qty: 50, revenue: 9000, cost: 0),
+      ]));
+
+      expect(analysis.items, isEmpty);
+      expect(analysis.revenueCoverage, 0);
+      expect(analysis.coverageIsLow, isTrue);
+    });
+
+    test('an empty period has no coverage to report', () {
+      final analysis = MenuEngineering.from(statsWith(const []));
+      expect(analysis.revenueCoverage, isNull);
+      expect(analysis.coverageIsLow, isFalse);
+    });
+  });
 }

@@ -651,17 +651,28 @@ class _FoodCostBanner extends StatelessWidget {
 
     final high = matrix.foodCostIsHigh;
     final scheme = Theme.of(context).colorScheme;
+    // Coverage is its own warning. A food cost inside the usual range means
+    // very little when it was computed over a third of the menu, and the old
+    // wording ("covers only the dishes that have costs on file") said the same
+    // thing whether that third was 30% or 97%.
+    final coverage = matrix.revenueCoverage;
+    final covers = coverage == null
+        ? ''
+        : ' Covers ${(coverage * 100).round()}% of takings'
+            '${matrix.coverageIsLow ? ' — cost the rest before trusting it' : ''}.';
+    final flag = high || matrix.coverageIsLow;
+
     return _InsightCard(
-      icon: high ? Icons.warning_amber_rounded : Icons.check_circle_outline,
-      background: high ? scheme.errorContainer : scheme.surfaceContainerHighest,
-      foreground: high ? scheme.onErrorContainer : scheme.onSurface,
+      icon: flag ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+      background: flag ? scheme.errorContainer : scheme.surfaceContainerHighest,
+      foreground: flag ? scheme.onErrorContainer : scheme.onSurface,
       title: 'Food cost ${(rate * 100).toStringAsFixed(1)}%',
-      detail: high
-          ? 'Above the ${(MenuEngineering.foodCostWarningRate * 100).round()}% '
-              'watch line — usually pricing, portioning or waste. Covers only '
-              'the dishes that have costs on file.'
-          : 'Within the usual range. Covers only the dishes that have costs '
-              'on file.',
+      detail: (high
+              ? 'Above the '
+                  '${(MenuEngineering.foodCostWarningRate * 100).round()}% '
+                  'watch line — usually pricing, portioning or waste.'
+              : 'Within the usual range.') +
+          covers,
     );
   }
 }

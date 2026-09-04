@@ -206,6 +206,144 @@ def svg():
 '''
 
 
+# --- the same geometry as Flutter paths ------------------------------------
+#
+# Emitted rather than parsed at runtime so the app carries no SVG parser for
+# its own logo, and so the animation can move one ray without moving the rest.
+# Both outputs come from the constants above, which is the point: the drawing
+# and the animation cannot drift apart because there is only one set of numbers.
+
+def _dart_arc(x, y, r, large, clockwise):
+    return (f'      ..arcToPoint(const Offset({x:.1f}, {y:.1f}), '
+            f'radius: const Radius.circular({r:.1f}), '
+            f'largeArc: {str(large).lower()}, clockwise: {str(clockwise).lower()})')
+
+
+def _ray_axis(corners):
+    """Which way a ray points away from the letter, and its two end midpoints.
+
+    The wide end is the outer one — the rays broaden as they travel — so the
+    outward direction is simply the narrow end pointing at the wide one.
+    """
+    a = ((corners[0][0] + corners[1][0]) / 2, (corners[0][1] + corners[1][1]) / 2)
+    b = ((corners[2][0] + corners[3][0]) / 2, (corners[2][1] + corners[3][1]) / 2)
+    wa = math.dist(corners[0], corners[1])
+    wb = math.dist(corners[2], corners[3])
+    outer, inner = (a, b) if wa > wb else (b, a)
+    return _unit(outer[0] - inner[0], outer[1] - inner[1])
+
+
+def dart():
+    x_end = BOWL_CX + math.sqrt(BOWL_RO ** 2 - BOWL_RI ** 2)
+    y_end = BOWL_CY - BOWL_RI
+    o_end = line_circle(END_M, END_B, BOWL_CX, BOWL_CY, BOWL_RO)[1]
+    i_end = line_circle(END_M, END_B, BOWL_CX, BOWL_CY, BOWL_RI)[1]
+
+    rays = []
+    for corners, rho in RAYS:
+        n = len(corners)
+        area = sum(corners[i][0] * corners[(i + 1) % n][1]
+                   - corners[(i + 1) % n][0] * corners[i][1] for i in range(n))
+        clockwise = area <= 0
+        body = []
+        for i in range(n):
+            p, prv, nxt = corners[i], corners[(i - 1) % n], corners[(i + 1) % n]
+            u1 = _unit(prv[0] - p[0], prv[1] - p[1])
+            u2 = _unit(nxt[0] - p[0], nxt[1] - p[1])
+            half = math.acos(max(-1.0, min(1.0, u1[0] * u2[0] + u1[1] * u2[1]))) / 2
+            back = rho / math.tan(half)
+            a = (p[0] + u1[0] * back, p[1] + u1[1] * back)
+            b = (p[0] + u2[0] * back, p[1] + u2[1] * back)
+            verb = 'moveTo' if i == 0 else 'lineTo'
+            body.append(f'      ..{verb}({a[0]:.1f}, {a[1]:.1f})')
+            body.append(_dart_arc(b[0], b[1], rho, False, clockwise))
+        ux, uy = _ray_axis(corners)
+        rays.append((body, ux, uy))
+
+    ray_src = '\n'.join(
+        f"""  /// Ray {i + 1}, and the direction it travels away from the letter.
+  static final LogoRay ray{i + 1} = LogoRay(
+    path: Path()
+{chr(10).join(body)}
+      ..close(),
+    outward: const Offset({ux:.4f}, {uy:.4f}),
+  );
+"""
+        for i, (body, ux, uy) in enumerate(rays)
+    )
+
+    leg_l0, leg_r0 = LEG_ML * LEG_TOP_Y + LEG_BL, LEG_MR * LEG_TOP_Y + LEG_BR
+    leg_l1, leg_r1 = LEG_ML * BASE_Y + LEG_BL, LEG_MR * BASE_Y + LEG_BR
+
+    return f'''// GENERATED FILE — do not edit by hand.
+//
+// Written by tool/logo_svg.py from the measurements documented there, which
+// also writes assets/icon/AppLogo.svg. Re-run that script after changing the
+// mark; the two outputs share one set of numbers so they cannot disagree.
+
+import \'dart:ui\';
+
+/// One ray, with the direction it points away from the letter.
+class LogoRay {{
+  const LogoRay({{required this.path, required this.outward}});
+
+  final Path path;
+
+  /// A unit vector in the mark\'s own coordinates. The opening animation slides
+  /// each ray along this, which is what makes them read as light leaving the
+  /// letter rather than as a picture being scaled.
+  final Offset outward;
+}}
+
+/// The mark as geometry, in its own 1600x1580 coordinate space.
+class LogoGeometry {{
+  const LogoGeometry._();
+
+  /// The box the paths below are drawn in. Scale to fit, do not assume pixels.
+  static const Size viewBox = Size({CANVAS_W}, {CANVAS_H});
+
+  /// The letter, as one path. The parts overlap in area rather than meeting
+  /// along shared edges — two antialiased shapes that merely touch leave a
+  /// hairline seam between them however identical their fill.
+  static final Path letter = Path()
+    ..addPath(_top, Offset.zero)
+    ..addPath(_stem, Offset.zero)
+    ..addPath(_bowl, Offset.zero)
+    ..addPath(_leg, Offset.zero)
+    ..addOval(Rect.fromCircle(
+        center: const Offset({DOT_CX:.1f}, {DOT_CY:.1f}), radius: {DOT_R:.1f}));
+
+  static final Path _top = Path()
+    ..moveTo({STEM_X0:.1f}, {TOP_Y:.1f})
+    ..lineTo({BOWL_CX:.1f}, {TOP_Y:.1f})
+{_dart_arc(x_end, y_end, BOWL_RO, False, True)}
+    ..lineTo({STEM_X0:.1f}, {y_end:.1f})
+    ..close();
+
+  static final Path _stem = Path()
+    ..addRect(const Rect.fromLTRB(
+        {STEM_X0:.1f}, {TOP_Y:.1f}, {STEM_X1:.1f}, {BASE_Y:.1f}));
+
+  static final Path _bowl = Path()
+    ..moveTo({BOWL_CX:.1f}, {TOP_Y:.1f})
+{_dart_arc(o_end[0], o_end[1], BOWL_RO, False, True)}
+    ..lineTo({i_end[0]:.1f}, {i_end[1]:.1f})
+{_dart_arc(BOWL_CX, y_end, BOWL_RI, False, False)}
+    ..close();
+
+  static final Path _leg = Path()
+    ..moveTo({leg_l0:.1f}, {LEG_TOP_Y:.1f})
+    ..lineTo({leg_r0:.1f}, {LEG_TOP_Y:.1f})
+    ..lineTo({leg_r1:.1f}, {BASE_Y:.1f})
+    ..lineTo({leg_l1:.1f}, {BASE_Y:.1f})
+    ..close();
+
+{ray_src}
+  static final List<LogoRay> rays = [ray1, ray2, ray3, ray4];
+}}
+'''
+
+
 def verify(mask_path='assets/icon/AppLogo.png'):
     """Rasterise this geometry and score it against the real mask."""
     import importlib.util
@@ -280,3 +418,6 @@ if __name__ == '__main__':
     with open('assets/icon/AppLogo.svg', 'w') as f:
         f.write(svg())
     print('wrote assets/icon/AppLogo.svg')
+    with open('lib/widgets/logo_geometry.dart', 'w') as f:
+        f.write(dart())
+    print('wrote lib/widgets/logo_geometry.dart')

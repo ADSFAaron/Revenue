@@ -12,6 +12,7 @@ import 'login.dart';
 import 'register.dart';
 import 'settings/theme_controller.dart';
 import 'widgets/feedback.dart';
+import 'widgets/opening_sequence.dart';
 import 'widgets/page_body.dart';
 import 'widgets/pre_auth_theme.dart';
 import 'theme.dart';
@@ -79,22 +80,48 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  /// Whether the first real screen is built and worth uncovering.
+  ///
+  /// Deliberately not just "auth has answered". For somebody already signed in
+  /// that answer is followed by the session gate reading their user and store
+  /// documents, and exiting the opening at the earlier moment would spend the
+  /// animation only to hand over to a progress circle — three states where
+  /// there were two, which is worse than the spinner it replaced.
+  bool _ready = false;
+
+  void _markReady() {
+    if (_ready) return;
+    // Called from inside a builder, so it cannot set state now.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_ready) setState(() => _ready = true);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: StreamBuilder<String?>(
-        // Emits the signed-in uid, or null when signed out — `hasData` is
-        // false for null, so signing out falls through to the welcome screen.
-        stream: authRepository.uidChanges,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasData) {
-            return const _SessionGate();
-          } else if (snapshot.hasError) {
+      body: OpeningSequence(
+        ready: _ready,
+        child: StreamBuilder<String?>(
+          // Emits the signed-in uid, or null when signed out — `hasData` is
+          // false for null, so signing out falls through to the welcome screen.
+          stream: authRepository.uidChanges,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              // Nothing: the opening is on top of this, and a progress circle
+              // underneath would only ever be seen as a flash on its way out.
+              return const SizedBox.shrink();
+            } else if (snapshot.hasData) {
+              return _SessionGate(onReady: _markReady);
+            } else if (snapshot.hasError) {
             // Was `'An error occurred: ${snapshot.error}'`. This is the first
             // screen the app ever draws, and the thing being interpolated is a
             // `FirebaseAuthException` whose `toString()` opens with
@@ -102,11 +129,14 @@ class HomePage extends StatelessWidget {
             // somebody who has not even reached a login field. The session
             // gate fifty lines below already does this properly; this is the
             // one place that was still doing it by hand.
-            return ErrorView(snapshot.error!);
-          } else {
-            return const WelcomeScreen();
-          }
-        },
+              _markReady();
+              return ErrorView(snapshot.error!);
+            } else {
+              _markReady();
+              return const WelcomeScreen();
+            }
+          },
+        ),
       ),
     );
   }
@@ -121,7 +151,11 @@ class HomePage extends StatelessWidget {
 /// store" — and then stays that way, because each page resolves its session
 /// exactly once.
 class _SessionGate extends StatefulWidget {
-  const _SessionGate();
+  const _SessionGate({required this.onReady});
+
+  /// Told when the session has resolved, one way or the other, so the opening
+  /// animation knows there is something behind it worth showing.
+  final VoidCallback onReady;
 
   @override
   State<_SessionGate> createState() => _SessionGateState();
@@ -150,8 +184,11 @@ class _SessionGateState extends State<_SessionGate> {
       future: _session,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
+          // Kept, rather than blanked like the auth wait above: this builder
+          // runs again on Retry, long after the opening has gone.
           return const Center(child: CircularProgressIndicator());
         }
+        widget.onReady();
         if (snapshot.hasError) {
           // A SessionException already reads as a sentence; anything else
           // reaching here is a Firestore failure whose `toString()` starts

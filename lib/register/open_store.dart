@@ -11,6 +11,7 @@ import '../models/store.dart';
 import '../settings/store_settings_edit_menu.dart';
 import '../settings/store_settings_import_menu.dart';
 import '../sign_in_options.dart';
+import '../widgets/menu_filling.dart';
 import '../widgets/pre_auth_button.dart';
 import 'account_fields.dart';
 import 'registration_ui.dart';
@@ -200,6 +201,10 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
     title: 'Your store is ready',
     subtitle: 'The menu is empty. Nothing can be rung up until it is not.',
     children: [
+      // The step said the menu was empty and offered three ways to fix it,
+      // without ever showing what was being offered. This does.
+      const SizedBox(height: 150, child: Center(child: MenuFilling())),
+      const SizedBox(height: 24),
       PreAuthButton(
         label: 'Import menu from a photo',
         onPressed: () => _finish(next: _MenuStart.importFromPhoto),

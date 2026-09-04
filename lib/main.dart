@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'animation/fade_animation.dart';
 import 'database/repositories.dart';
+import 'database/session_resolver.dart';
 import 'firebase_options.dart';
 import 'home.dart';
 import 'login.dart';
@@ -106,6 +109,46 @@ class _HomePageState extends State<HomePage> {
   /// there were two, which is worse than the spinner it replaced.
   bool _ready = false;
 
+  /// Watches the same stream the builder below does, for one thing the builder
+  /// cannot do.
+  ///
+  /// Signing out happens from Account & App, which is three routes deep. The
+  /// stream then swaps this route's content for the welcome screen — correctly
+  /// — but those three routes are still stacked on top of it, so what the
+  /// person actually keeps looking at is a settings page belonging to an
+  /// account that no longer exists. Every read on it fails, and the screen
+  /// they are left staring at says "You do not have permission to do that".
+  StreamSubscription<String?>? _signOutWatch;
+  bool _wasSignedIn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // After boot, because the stream reaches FirebaseAuth.
+    widget.services
+        .then((_) {
+          if (!mounted) return;
+          _signOutWatch = authRepository.uidChanges.listen((uid) {
+            final leaving = _wasSignedIn && uid == null;
+            _wasSignedIn = uid != null;
+            if (leaving) {
+              // Everything above the root belonged to the session that just ended.
+              navigatorKey.currentState?.popUntil((route) => route.isFirst);
+            }
+          });
+        })
+        .catchError((_) {
+          // Reported by the builder below; nothing to watch if Firebase never
+          // started.
+        });
+  }
+
+  @override
+  void dispose() {
+    _signOutWatch?.cancel();
+    super.dispose();
+  }
+
   void _markReady() {
     if (_ready) return;
     // Called from inside a builder, so it cannot set state now.
@@ -136,23 +179,24 @@ class _HomePageState extends State<HomePage> {
             }
             return StreamBuilder<String?>(
               // Emits the signed-in uid, or null when signed out — `hasData` is
-              // false for null, so signing out falls through to the welcome screen.
+              // false for null, so signing out falls through to the welcome
+              // screen.
               stream: authRepository.uidChanges,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  // Nothing: the opening is on top of this, and a progress circle
-                  // underneath would only ever be seen as a flash on its way out.
+                  // Nothing: the opening is on top of this, and a progress
+                  // circle underneath would only ever be seen as a flash on
+                  // its way out.
                   return const SizedBox.shrink();
                 } else if (snapshot.hasData) {
                   return _SessionGate(onReady: _markReady);
                 } else if (snapshot.hasError) {
-                  // Was `'An error occurred: ${snapshot.error}'`. This is the first
-                  // screen the app ever draws, and the thing being interpolated is a
-                  // `FirebaseAuthException` whose `toString()` opens with
-                  // `[firebase_auth/…]` — an error code, with no next step, to
-                  // somebody who has not even reached a login field. The session
-                  // gate fifty lines below already does this properly; this is the
-                  // one place that was still doing it by hand.
+                  // Was `'An error occurred: ${snapshot.error}'`. This is the
+                  // first screen the app ever draws, and the thing being
+                  // interpolated is a `FirebaseAuthException` whose
+                  // `toString()` opens with `[firebase_auth/…]` — an error
+                  // code, with no next step, to somebody who has not even
+                  // reached a login field.
                   _markReady();
                   return ErrorView(snapshot.error!);
                 } else {
@@ -188,43 +232,42 @@ class _SessionGate extends StatefulWidget {
 }
 
 class _SessionGateState extends State<_SessionGate> {
-  late Future<Session> _session = _resolve();
+  late final SessionResolver _resolver = SessionResolver(
+    // The write that creates the user document is what tells this to look
+    // again, so there is no window between signing in and being provisioned
+    // for it to fall into. See SessionResolver for what that replaced.
+    changes: userRepository.watchCurrent(),
+    load: loadSession,
+  )..addListener(_onChange);
 
-  /// Retries briefly: the user document lands a moment after sign-in, and that
-  /// window is the only case worth waiting through. A genuine failure — no
-  /// store, no permission — still surfaces after a second or so.
-  Future<Session> _resolve() async {
-    for (var attempt = 0; ; attempt++) {
-      try {
-        return await loadSession();
-      } on SessionException {
-        if (attempt >= 4) rethrow;
-        await Future.delayed(const Duration(milliseconds: 400));
-      }
-    }
+  void _onChange() => setState(() {});
+
+  @override
+  void dispose() {
+    _resolver
+      ..removeListener(_onChange)
+      ..dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Session>(
-      future: _session,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          // Kept, rather than blanked like the auth wait above: this builder
-          // runs again on Retry, long after the opening has gone.
-          return const Center(child: CircularProgressIndicator());
-        }
-        widget.onReady();
-        if (snapshot.hasError) {
-          // A SessionException already reads as a sentence; anything else
-          // reaching here is a Firestore failure whose `toString()` starts
-          // `[cloud_firestore/…]`, and this is the first screen after sign-in
-          // — the worst place in the app to show somebody an error code.
-          return _buildError(context, describeFailure(snapshot.error!).message);
-        }
-        return const LoginHomePage();
-      },
-    );
+    if (_resolver.session != null) {
+      widget.onReady();
+      return const LoginHomePage();
+    }
+    final failure = _resolver.reportableFailure;
+    if (failure != null) {
+      widget.onReady();
+      // A SessionException already reads as a sentence; anything else reaching
+      // here is a Firestore failure whose `toString()` starts
+      // `[cloud_firestore/…]`, and this is the first screen after sign-in — the
+      // worst place in the app to show somebody an error code.
+      return _buildError(context, describeFailure(failure).message);
+    }
+    // The opening animation's job on a cold start; a progress circle on a
+    // retry, when the opening has long gone.
+    return const Center(child: CircularProgressIndicator());
   }
 
   Widget _buildError(BuildContext context, String message) {
@@ -247,7 +290,7 @@ class _SessionGateState extends State<_SessionGate> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   FilledButton.tonal(
-                    onPressed: () => setState(() => _session = _resolve()),
+                    onPressed: _resolver.retry,
                     child: const Text('Retry'),
                   ),
                   const SizedBox(width: 12),

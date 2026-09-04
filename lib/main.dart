@@ -1,7 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'animation/fade_animation.dart';
@@ -20,49 +18,58 @@ import 'theme.dart';
 final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
-  final binding = WidgetsFlutterBinding.ensureInitialized();
-  // Hold the native splash through the async work below.
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Awaited, unlike the rest: it reads one key out of shared_preferences, which
+  // is local and quick, and having it before the first frame is what stops the
+  // app opening light and blinking to dark a moment later.
+  await themeController.load();
+
+  // Everything that talks to the network starts here and is *not* awaited. It
+  // used to be, and that was the whole of the launch gap: Firebase and App
+  // Check both go out to the network, so runApp did not happen for well over a
+  // second and the person watched an empty window for all of it.
   //
-  // Without this the splash is drawn and then thrown away before anybody sees
-  // it: the Android embedding swaps LaunchTheme for NormalTheme the moment the
-  // engine attaches, which is long before Firebase has answered, so what the
-  // person actually watches is a blank surface-coloured window. The package
-  // was configured but this half of it was never called.
+  // FlutterNativeSplash.preserve() was meant to cover that and could not. Its
+  // entire implementation is `deferFirstFrame()` — it holds back Flutter's
+  // frame and never touches the native window — so with runApp already last in
+  // the queue it did nothing at all. Both calls are gone with it, which also
+  // removes the web hazard the old comment described: the package's `remove()`
+  // reaches for a `removeSplashFromWeb()` that only its own generator writes
+  // into index.html, and threw a PlatformException out of a post-frame
+  // callback on every web launch.
   //
-  // Never on web. `web: false` in pubspec.yaml means no splash was generated
-  // for it — see the note there — but the package's web plugin is registered
-  // regardless, and its `remove()` calls a `removeSplashFromWeb()` that only
-  // the generator writes into index.html. That call throws a PlatformException
-  // out of a post-frame callback on every single web launch, past a try/catch
-  // that cannot see it because the throw is asynchronous. The #loading overlay
-  // in web/index.html does this job there, and the bootstrap removes it.
-  if (!kIsWeb) FlutterNativeSplash.preserve(widgetsBinding: binding);
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // What covers the wait now is the opening animation, which is what it was
+  // built for. Flutter's first frame lands in a couple of hundred milliseconds
+  // and draws the same mark the splash was showing.
+  final services = _startServices();
+
+  runApp(MyApp(services: services));
+}
+
+/// Firebase, its offline cache, and App Check — off the critical path.
+///
+/// Nothing may read from Firestore or Auth until this has finished, which is
+/// why [HomePage] holds the entire auth subscription behind it rather than
+/// merely showing something else in the meantime. A request that goes out
+/// before App Check has activated carries no token, and with enforcement on
+/// that is a refusal on the first screen.
+Future<void> _startServices() async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   // Offline cache, set explicitly rather than left to each platform's
   // default. The mobile SDKs enable it; the web SDK does not, so the same shop
   // on a tablet kept working through a dropped connection and on a laptop went
   // blank. A kitchen's wifi is the case this app should assume, not the one it
   // should be surprised by.
   configureFirestore();
-  // After initializeApp and before the first read. Awaited rather than fired
-  // and forgotten: a request that goes out before activation carries no token,
-  // and with enforcement on that is a refusal on the first screen.
   await configureAppCheck();
-
-  // Read before the first frame, so the app does not open light and then blink
-  // to dark a moment later.
-  await themeController.load();
-  runApp(const MyApp());
-  // Lets Flutter paint. Holding it any longer would mean holding it across the
-  // auth stream, and a slow network has no upper bound — better a spinner on
-  // the app's own surface than a splash that will not go away.
-  if (!kIsWeb) FlutterNativeSplash.remove();
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({required this.services, super.key});
+
+  /// Firebase and App Check, still starting.
+  final Future<void> services;
 
   @override
   Widget build(BuildContext context) {
@@ -74,14 +81,16 @@ class MyApp extends StatelessWidget {
         darkTheme: const MaterialTheme(TextTheme()).dark(),
         navigatorKey: navigatorKey,
         debugShowCheckedModeBanner: false,
-        home: const HomePage(),
+        home: HomePage(services: services),
       ),
     );
   }
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({required this.services, super.key});
+
+  final Future<void> services;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -110,31 +119,48 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       body: OpeningSequence(
         ready: _ready,
-        child: StreamBuilder<String?>(
-          // Emits the signed-in uid, or null when signed out — `hasData` is
-          // false for null, so signing out falls through to the welcome screen.
-          stream: authRepository.uidChanges,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              // Nothing: the opening is on top of this, and a progress circle
-              // underneath would only ever be seen as a flash on its way out.
+        child: FutureBuilder<void>(
+          // The gate. Firebase has to have answered before anything below can
+          // ask it a question, and the opening animation is what the person
+          // sees while it does.
+          future: widget.services,
+          builder: (context, boot) {
+            if (boot.connectionState != ConnectionState.done) {
               return const SizedBox.shrink();
-            } else if (snapshot.hasData) {
-              return _SessionGate(onReady: _markReady);
-            } else if (snapshot.hasError) {
-            // Was `'An error occurred: ${snapshot.error}'`. This is the first
-            // screen the app ever draws, and the thing being interpolated is a
-            // `FirebaseAuthException` whose `toString()` opens with
-            // `[firebase_auth/…]` — an error code, with no next step, to
-            // somebody who has not even reached a login field. The session
-            // gate fifty lines below already does this properly; this is the
-            // one place that was still doing it by hand.
-              _markReady();
-              return ErrorView(snapshot.error!);
-            } else {
-              _markReady();
-              return const WelcomeScreen();
             }
+            if (boot.hasError) {
+              // Reaches the screen now instead of being an unhandled error in
+              // main() that left the app on a blank window.
+              _markReady();
+              return ErrorView(boot.error!);
+            }
+            return StreamBuilder<String?>(
+              // Emits the signed-in uid, or null when signed out — `hasData` is
+              // false for null, so signing out falls through to the welcome screen.
+              stream: authRepository.uidChanges,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  // Nothing: the opening is on top of this, and a progress circle
+                  // underneath would only ever be seen as a flash on its way out.
+                  return const SizedBox.shrink();
+                } else if (snapshot.hasData) {
+                  return _SessionGate(onReady: _markReady);
+                } else if (snapshot.hasError) {
+                  // Was `'An error occurred: ${snapshot.error}'`. This is the first
+                  // screen the app ever draws, and the thing being interpolated is a
+                  // `FirebaseAuthException` whose `toString()` opens with
+                  // `[firebase_auth/…]` — an error code, with no next step, to
+                  // somebody who has not even reached a login field. The session
+                  // gate fifty lines below already does this properly; this is the
+                  // one place that was still doing it by hand.
+                  _markReady();
+                  return ErrorView(snapshot.error!);
+                } else {
+                  _markReady();
+                  return const WelcomeScreen();
+                }
+              },
+            );
           },
         ),
       ),
@@ -168,7 +194,7 @@ class _SessionGateState extends State<_SessionGate> {
   /// window is the only case worth waiting through. A genuine failure — no
   /// store, no permission — still surfaces after a second or so.
   Future<Session> _resolve() async {
-    for (var attempt = 0;; attempt++) {
+    for (var attempt = 0; ; attempt++) {
       try {
         return await loadSession();
       } on SessionException {
@@ -209,9 +235,11 @@ class _SessionGateState extends State<_SessionGate> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.cloud_off_rounded,
-                  size: 48,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+              Icon(
+                Icons.cloud_off_rounded,
+                size: 48,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
               const SizedBox(height: 16),
               Text(message, textAlign: TextAlign.center),
               const SizedBox(height: 24),
@@ -276,9 +304,7 @@ class WelcomeScreen extends StatelessWidget {
           0,
           Text(
             'Welcome',
-            style: Theme.of(context)
-                .textTheme
-                .headlineMedium
+            style: Theme.of(context).textTheme.headlineMedium
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
         ),
@@ -288,9 +314,7 @@ class WelcomeScreen extends StatelessWidget {
           Text(
             'Please login to continue',
             textAlign: TextAlign.center,
-            style: Theme.of(context)
-                .textTheme
-                .bodyLarge
+            style: Theme.of(context).textTheme.bodyLarge
                 ?.copyWith(color: Colors.grey),
           ),
         ),
@@ -362,9 +386,7 @@ class WelcomeScreen extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: Theme.of(context)
-            .textTheme
-            .titleLarge
+        style: Theme.of(context).textTheme.titleLarge
             ?.copyWith(fontWeight: FontWeight.w600),
       ),
     );

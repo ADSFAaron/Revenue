@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../database/repositories.dart';
 import '../models/app_user.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/confirm_by_typing.dart';
 import '../widgets/feedback.dart';
 import '../widgets/page_body.dart';
 import '../widgets/setting_tile.dart';
@@ -126,7 +127,8 @@ class _AccountSettingsState extends State<AccountSettings> {
               return const EmptyState(
                 icon: Icons.person_off_outlined,
                 title: 'No profile for this account',
-                body: 'Sign out and back in. If it keeps happening, the '
+                body:
+                    'Sign out and back in. If it keeps happening, the '
                     'account was not finished being set up.',
               );
             }
@@ -163,7 +165,8 @@ class _AccountSettingsState extends State<AccountSettings> {
             // The role decides what the rest of the app lets this account do,
             // so it says which of the two sides of that line it falls on
             // rather than leaving the word to be interpreted.
-            subtitle: '${user.role.label} · ${user.role.canManage ? 'may change the shop’s settings' : 'takes orders; settings are read-only'}',
+            subtitle:
+                '${user.role.label} · ${user.role.canManage ? 'may change the shop’s settings' : 'takes orders; settings are read-only'}',
           ),
           const SettingSection('Signing in'),
           SettingTile.page(
@@ -229,10 +232,15 @@ class _AccountSettingsState extends State<AccountSettings> {
           // because that is where somebody goes looking for it.
           ListTile(
             leading: Icon(Icons.person_remove_outlined, color: scheme.error),
-            title: Text('Delete account', style: TextStyle(color: scheme.error)),
-            subtitle: Text(user.role == UserRole.owner
-                ? 'Closes the store and erases everything in it'
-                : 'Removes you from this store and deletes your login'),
+            title: Text(
+              'Delete account',
+              style: TextStyle(color: scheme.error),
+            ),
+            subtitle: Text(
+              user.role == UserRole.owner
+                  ? 'Closes the store and erases everything in it'
+                  : 'Removes you from this store and deletes your login',
+            ),
             onTap: () => _deleteAccount(user),
           ),
         ],
@@ -361,8 +369,10 @@ class _AccountSettingsState extends State<AccountSettings> {
               onPressed: () {
                 final text = _feedbackController.text.trim();
                 if (text.isEmpty) {
-                  setDialogState(() =>
-                      error = 'Say what happened, or what you would change.');
+                  setDialogState(
+                    () =>
+                        error = 'Say what happened, or what you would change.',
+                  );
                   return;
                 }
                 Navigator.pop(context, text);
@@ -397,7 +407,8 @@ class _AccountSettingsState extends State<AccountSettings> {
       builder: (context) => AlertDialog(
         title: const Text('Log out?'),
         content: const Text(
-            'You will need your password, or a passkey, to get back in.'),
+          'You will need your password, or a passkey, to get back in.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -437,11 +448,11 @@ class _AccountSettingsState extends State<AccountSettings> {
         content: Text(
           owner
               ? 'You own ${store?.name ?? 'this store'}. Deleting your account '
-                  'closes it: every order, every day\'s takings, the menu, and '
-                  'your colleagues\' logins all go with it. There is no undo '
-                  'and no export afterwards.'
+                    'closes it: every order, every day\'s takings, the menu, and '
+                    'your colleagues\' logins all go with it. There is no undo '
+                    'and no export afterwards.'
               : 'Your login and your place on this store are deleted. The '
-                  'orders you rang up stay on the store\'s books.',
+                    'orders you rang up stay on the store\'s books.',
         ),
         actions: [
           TextButton(
@@ -476,38 +487,13 @@ class _AccountSettingsState extends State<AccountSettings> {
     }
   }
 
-  Future<String?> _askForStoreName(String storeName) {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Type the store name to confirm'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Enter “$storeName” exactly.'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Store name'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          DestructiveButton(
-            label: 'Delete everything',
-            onPressed: () => Navigator.pop(context, controller.text),
-          ),
-        ],
-      ),
-    ).whenComplete(controller.dispose);
-  }
+  Future<String?> _askForStoreName(String storeName) => confirmByTyping(
+    context,
+    title: 'Type the store name to confirm',
+    phrase: storeName,
+    fieldLabel: 'Store name',
+    confirmLabel: 'Delete everything',
+  );
 }
 
 /// The version, and whether Google Play is serving a newer one.
@@ -565,14 +551,20 @@ class _VersionTileState extends State<_VersionTile> {
     final code = _state.availableVersionCode;
     setState(() {
       _state = switch (status) {
-        InstallStatus.downloaded =>
-          AppUpdateState(UpdateStage.readyToInstall, availableVersionCode: code),
-        InstallStatus.pending || InstallStatus.downloading =>
-          AppUpdateState(UpdateStage.downloading, availableVersionCode: code),
+        InstallStatus.downloaded => AppUpdateState(
+          UpdateStage.readyToInstall,
+          availableVersionCode: code,
+        ),
+        InstallStatus.pending || InstallStatus.downloading => AppUpdateState(
+          UpdateStage.downloading,
+          availableVersionCode: code,
+        ),
         // Cancelled or failed puts the button back rather than leaving a
         // progress bar that has stopped moving.
-        InstallStatus.failed || InstallStatus.canceled =>
-          AppUpdateState(UpdateStage.available, availableVersionCode: code),
+        InstallStatus.failed || InstallStatus.canceled => AppUpdateState(
+          UpdateStage.available,
+          availableVersionCode: code,
+        ),
         _ => _state,
       };
     });
@@ -624,64 +616,68 @@ class _VersionTileState extends State<_VersionTile> {
 
     return switch (_state.stage) {
       UpdateStage.available => SettingTile.inline(
-          icon: Icons.system_update_rounded,
-          title: 'Update available',
-          subtitle: 'A newer build is on Google Play. It downloads in the '
-              'background — the till keeps working. You are on $_installed.',
-          trailing: _starting
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : FilledButton(
-                  onPressed: _download,
-                  child: const Text('Update'),
-                ),
-        ),
+        icon: Icons.system_update_rounded,
+        title: 'Update available',
+        subtitle:
+            'A newer build is on Google Play. It downloads in the '
+            'background — the till keeps working. You are on $_installed.',
+        trailing: _starting
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : FilledButton(onPressed: _download, child: const Text('Update')),
+      ),
       UpdateStage.downloading => SettingTile.inline(
-          icon: Icons.downloading_rounded,
-          title: 'Downloading update',
-          subtitle: 'Carry on serving — you will be asked to restart when it '
-              'is ready.',
-          trailing: const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+        icon: Icons.downloading_rounded,
+        title: 'Downloading update',
+        subtitle:
+            'Carry on serving — you will be asked to restart when it '
+            'is ready.',
+        trailing: const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
+      ),
       UpdateStage.readyToInstall => SettingTile.inline(
-          icon: Icons.restart_alt_rounded,
-          title: 'Update ready',
-          subtitle: 'Restarting takes a few seconds. Anything rung up is '
-              'already saved.',
-          trailing: FilledButton(
-            onPressed: _install,
-            child: const Text('Restart'),
-          ),
+        icon: Icons.restart_alt_rounded,
+        title: 'Update ready',
+        subtitle:
+            'Restarting takes a few seconds. Anything rung up is '
+            'already saved.',
+        trailing: FilledButton(
+          onPressed: _install,
+          child: const Text('Restart'),
         ),
+      ),
       UpdateStage.current => SettingTile.readOnly(
-          icon: Icons.verified_outlined,
-          title: 'Version',
-          subtitle: '$_installed · up to date',
-        ),
+        icon: Icons.verified_outlined,
+        title: 'Version',
+        subtitle: '$_installed · up to date',
+      ),
       // Play could not be asked: not an Android build, no Play Services, a
       // sideloaded APK, or simply offline. Saying "up to date" here would be a
       // guess, so the row offers the listing instead of an answer.
-      UpdateStage.unavailable => AppUpdates.supported
-          ? SettingTile.inline(
-              icon: Icons.info_outline,
-              title: 'Version',
-              subtitle: '$_installed · check Google Play for a newer one',
-              trailing: Icon(Icons.open_in_new_rounded,
-                  size: 18, color: scheme.onSurfaceVariant),
-              onTap: _openListing,
-            )
-          : SettingTile.readOnly(
-              icon: Icons.info_outline,
-              title: 'Version',
-              subtitle: _installed,
-            ),
+      UpdateStage.unavailable =>
+        AppUpdates.supported
+            ? SettingTile.inline(
+                icon: Icons.info_outline,
+                title: 'Version',
+                subtitle: '$_installed · check Google Play for a newer one',
+                trailing: Icon(
+                  Icons.open_in_new_rounded,
+                  size: 18,
+                  color: scheme.onSurfaceVariant,
+                ),
+                onTap: _openListing,
+              )
+            : SettingTile.readOnly(
+                icon: Icons.info_outline,
+                title: 'Version',
+                subtitle: _installed,
+              ),
     };
   }
 }

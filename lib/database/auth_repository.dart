@@ -92,6 +92,25 @@ class AuthRepository {
 
   String? get currentEmail => _auth.currentUser?.email;
 
+  /// Whether this account has a password at all.
+  ///
+  /// Not the same question as "does it have an email". A Google account has
+  /// one — Google supplies it — and a passkey session is minted on top of
+  /// whatever the account already was, so [currentEmail] is set in every case
+  /// and says nothing about whether there is a password behind it. Only the
+  /// linked providers do. Ask this before offering to *change* a password:
+  /// otherwise the screen demands a current password the account has never
+  /// had, and the re-authentication comes back `invalid-credential`, which
+  /// reads to the person as "you typed it wrong".
+  bool get hasPasswordSignIn =>
+      _auth.currentUser?.providerData.any(
+        (info) => info.providerId == _passwordProviderId,
+      ) ??
+      false;
+
+  /// Firebase's own id for the email-and-password provider.
+  static const String _passwordProviderId = 'password';
+
   /// Emits the signed-in uid, and null on sign-out.
   ///
   /// Deliberately not a `User`: the root of the app only needs to know whether
@@ -368,10 +387,10 @@ class AuthRepository {
   }) async {
     final user = _auth.currentUser;
     final email = user?.email;
-    if (user == null || email == null) {
+    if (user == null || email == null || !hasPasswordSignIn) {
       throw const AuthException(
         AuthFailure.reauthenticationRequired,
-        'You are not signed in with an email and password.',
+        'This account does not sign in with a password.',
       );
     }
 
@@ -380,6 +399,39 @@ class AuthRepository {
         EmailAuthProvider.credential(email: email, password: currentPassword),
       );
       await user.updatePassword(newPassword);
+    } on FirebaseAuthException catch (e) {
+      throw _translate(e);
+    }
+  }
+
+  /// Gives an account that signs in some other way a password as well.
+  ///
+  /// There is nothing to re-authenticate against — that is the whole point, so
+  /// no current password is asked for. The credential is *linked* rather than
+  /// set, which is what makes it additive: Google and any passkeys carry on
+  /// working, and the account gains a second way in for the day somebody is at
+  /// a till where Google is signed in as the wrong person.
+  ///
+  /// The email is the account's own. Linking under a different address would
+  /// leave two ways in that disagree about who this is.
+  Future<void> setPassword(String newPassword) async {
+    final user = _auth.currentUser;
+    final email = user?.email;
+    if (user == null || email == null) {
+      throw const AuthException(
+        AuthFailure.reauthenticationRequired,
+        'You are not signed in.',
+      );
+    }
+
+    try {
+      await user.linkWithCredential(
+        EmailAuthProvider.credential(email: email, password: newPassword),
+      );
+      // The linked provider does not reach the cached user on its own, so a
+      // screen asking [hasPasswordSignIn] immediately afterwards would still
+      // be told no.
+      await user.reload();
     } on FirebaseAuthException catch (e) {
       throw _translate(e);
     }
@@ -447,6 +499,14 @@ class AuthRepository {
       AuthFailure.reauthenticationRequired,
       'Please sign out and sign in again before changing this.',
     ),
+    // Both arrive from linking rather than signing in: the first when the
+    // account already has a password, the second when the credential belongs
+    // to somebody else's account.
+    'provider-already-linked' => const AuthException(
+      AuthFailure.credentialConflict,
+      'This account already has a password.',
+    ),
+    'credential-already-in-use' ||
     'account-exists-with-different-credential' => const AuthException(
       AuthFailure.credentialConflict,
       'That email already has an account created a different way. Sign '

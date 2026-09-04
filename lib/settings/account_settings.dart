@@ -169,9 +169,17 @@ class _AccountSettingsState extends State<AccountSettings> {
                 '${user.role.label} · ${user.role.canManage ? 'may change the shop’s settings' : 'takes orders; settings are read-only'}',
           ),
           const SettingSection('Signing in'),
+          // An account that came in through Google has no password to change,
+          // so the row says what it will actually do. Offering "change" would
+          // send it to a form asking for a current password it never had.
           SettingTile.page(
             icon: Icons.password_outlined,
-            title: 'Change password',
+            title: authRepository.hasPasswordSignIn
+                ? 'Change password'
+                : 'Set a password',
+            subtitle: authRepository.hasPasswordSignIn
+                ? null
+                : 'Adds a second way in alongside the one you use now',
             onTap: () => _push(const ChangePassword()),
           ),
           SettingTile.page(
@@ -274,8 +282,11 @@ class _AccountSettingsState extends State<AccountSettings> {
     );
   }
 
-  void _push(Widget page) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  Future<void> _push(Widget page) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+    // Setting a password changes what the row above should say, and nothing
+    // else on this screen would notice.
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadAppInfo() async {

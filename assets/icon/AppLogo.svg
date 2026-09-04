@@ -3,8 +3,8 @@
        Every shape is separately addressable on purpose: the opening animation
        moves the rays independently of the letter. -->
   <g id="mark-r" fill="#4A672D">
-    <path id="r-top" d="M 76.0 333.0 L 515.0 333.0 L 515.0 484.2 L 76.0 484.2 Z"/>
-    <path id="r-stem" d="M 76.0 333.0 L 226.0 333.0 L 226.0 1472.0 L 76.0 1472.0 Z"/>
+    <path id="r-top" d="M 76.0 335.6 L 473.9 335.6 A 342.2 342.2 0 0 1 756.1 484.2 L 76.0 484.2 Z"/>
+    <path id="r-stem" d="M 76.0 335.6 L 226.0 335.6 L 226.0 1472.0 L 76.0 1472.0 Z"/>
     <path id="r-bowl" d="M 473.9 335.6 A 342.2 342.2 0 0 1 684.3 947.6 L 580.8 839.2 A 193.6 193.6 0 0 0 473.9 484.2 Z"/>
     <path id="r-leg" d="M 306.7 865.4 L 491.6 865.4 L 1080.2 1472.0 L 877.6 1472.0 Z"/>
     <circle id="r-dot" cx="421.5" cy="865.4" r="120.9"/>

@@ -50,11 +50,22 @@ GROWTH = '#A8D46F'    # the rays
 
 # --- geometry, measured from assets/icon/AppLogo.png (1600x1580) -------------
 STEM_X0, STEM_X1 = 76.0, 226.0
-TOP_Y, BASE_Y = 333.0, 1472.0
-TOP_BAR_X = 515.0          # right edge of the flat top, under the bowl's arc
-
+BASE_Y = 1472.0
 BOWL_CX, BOWL_CY = 473.9, 677.8
 BOWL_RO, BOWL_RI = 342.2, 193.6
+
+# The flat top is the arc's own apex, and the top bar stops at the tangent
+# point. Measured independently these disagreed by 2.6px — the topmost row of
+# ink is at y=333 and the arc crowns at 335.6 — and because the bar ran on to
+# x=515 past the tangent point, the arc had already fallen 5px away beneath its
+# top edge by the time the two met. That corner is meant to be one continuous
+# line and instead had a step chipped out of it.
+#
+# Derived rather than measured, so the two cannot drift apart again. It costs
+# about three thousandths of IoU against the raster master, which is the master
+# admitting it has the step too: it is a lossy export, and a scan of tangent
+# positions puts the best fit within half a pixel of this one.
+TOP_Y = BOWL_CY - BOWL_RO
 
 DOT_CX, DOT_CY, DOT_R = 421.5, 865.4, 120.9
 
@@ -111,6 +122,28 @@ def bowl_path():
     )
 
 
+def top_path():
+    """The solid block above the counter, bounded on the right by the arc.
+
+    A rectangle stopping at the tangent point would be geometrically right and
+    still wrong to look at: it and the bowl would share an edge rather than
+    overlap, and two antialiased shapes meeting along a line leave a visible
+    seam down it whatever their fill. Ending this block *on* the arc makes the
+    two overlap in area, so there is no shared edge to show through, and it
+    costs no accuracy because the arc is where the shape really ends.
+    """
+    # Where the outer arc has come down to the top of the counter.
+    x_end = BOWL_CX + math.sqrt(BOWL_RO ** 2 - BOWL_RI ** 2)
+    y_end = BOWL_CY - BOWL_RI
+    return (
+        f'M {STEM_X0:.1f} {TOP_Y:.1f} '
+        f'L {BOWL_CX:.1f} {TOP_Y:.1f} '
+        f'A {BOWL_RO:.1f} {BOWL_RO:.1f} 0 0 1 {x_end:.1f} {y_end:.1f} '
+        f'L {STEM_X0:.1f} {y_end:.1f} '
+        f'Z'
+    )
+
+
 def leg_path():
     def at(y):
         return LEG_ML * y + LEG_BL, LEG_MR * y + LEG_BR
@@ -160,7 +193,7 @@ def svg():
        Every shape is separately addressable on purpose: the opening animation
        moves the rays independently of the letter. -->
   <g id="mark-r" fill="{PRIMARY}">
-    <path id="r-top" d="M {STEM_X0:.1f} {TOP_Y:.1f} L {TOP_BAR_X:.1f} {TOP_Y:.1f} L {TOP_BAR_X:.1f} {BOWL_CY - BOWL_RI:.1f} L {STEM_X0:.1f} {BOWL_CY - BOWL_RI:.1f} Z"/>
+    <path id="r-top" d="{top_path()}"/>
     <path id="r-stem" d="M {STEM_X0:.1f} {TOP_Y:.1f} L {STEM_X1:.1f} {TOP_Y:.1f} L {STEM_X1:.1f} {BASE_Y:.1f} L {STEM_X0:.1f} {BASE_Y:.1f} Z"/>
     <path id="r-bowl" d="{bowl_path()}"/>
     <path id="r-leg" d="{leg_path()}"/>
@@ -185,7 +218,12 @@ def verify(mask_path='assets/icon/AppLogo.png'):
     Y, X = np.mgrid[0:H, 0:W]
 
     stem = (X >= STEM_X0) & (X < STEM_X1) & (Y >= TOP_Y) & (Y < BASE_Y)
-    top = (X >= STEM_X0) & (X < TOP_BAR_X) & (Y >= TOP_Y) & (Y < BOWL_CY - BOWL_RI)
+    # Bounded by the arc on the right only — not by the disc, which would cut
+    # the left of the block away as well.
+    arc_right = BOWL_CX + np.sqrt(
+        np.clip(BOWL_RO ** 2 - (Y - BOWL_CY) ** 2, 0, None))
+    top = ((X >= STEM_X0) & (X <= arc_right)
+           & (Y >= TOP_Y) & (Y < BOWL_CY - BOWL_RI))
     r = np.hypot(X - BOWL_CX, Y - BOWL_CY)
     ang = np.degrees(np.arctan2(Y - BOWL_CY, X - BOWL_CX))
     bowl = (r >= BOWL_RI) & (r <= BOWL_RO) & (ang >= -90) & (Y <= END_M * X + END_B)

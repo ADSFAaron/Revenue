@@ -254,15 +254,28 @@ Web 設 `web: false`，由 [web/index.html](../web/index.html) 手寫——理�
 與翻轉後的主色 `#B0D18B`、teal `#A0CFCC`——全部沒有出現在色票圖上。
 **建議**：色票圖補一列深色模式對照，否則設計稿無法驗收深色模式。
 
-### 6.5 登入前的三個畫面在色彩系統之外
-Welcome / Login / Register 是刻意的黑底白線手繪風，用 `Colors.black`、`Colors.grey[700]`、
-`Colors.greenAccent`、`Colors.yellow`、`Color(0xFFB71C1C)` 等 47 處字面色
-（[register.dart](../lib/register.dart) 22 處、[login.dart](../lib/login.dart) 15 處、
-[main.dart](../lib/main.dart) 的 `WelcomeScreen` 6 處、
-[sign_in_options.dart](../lib/sign_in_options.dart) 4 處）。
-目前用 [pre_auth_theme.dart](../lib/widgets/pre_auth_theme.dart) 把這些路由鎖在 light 主題，
-避免深色模式下變成黑字黑底。那個檔案的註解自己說了：這是暫時的守勢，不是修好。
-**建議**：這是最大的一塊未涵蓋區，要嘛正式承認它是獨立的 pre-auth 設計語言並替它定一套 token，要嘛重畫成 M3。
+### 6.5 登入前的三個畫面在色彩系統之外 — 已修正
+
+Welcome / Login / Register 原本是刻意的黑底白線手繪風，用 `Colors.black`、
+`Colors.grey[700]`、`Colors.greenAccent`、`Colors.yellow`、`Color(0xFFB71C1C)`
+等 47 處字面色，並靠 `pre_auth_theme.dart` 把這些路由鎖在 light 主題，避免深色
+模式下變成黑字黑底。那個檔案的註解自己說了：那是暫時的守勢，不是修好。
+
+現在：
+
+* 字面色全部改成 scheme token，`pre_auth_theme.dart` 已刪除，這三個畫面跟著
+  系統的深淺設定走。
+* 兩張 unDraw 插圖的顏色本來就烤進檔案裡，這是「必須鎖在亮色」的根源之一。
+  [illustration_palette.py](../tool/illustration_palette.py) 把 unDraw 的每個
+  顏色映射到在這裡做同一件事的 token，亮暗各產一份；原始檔留在 `assets/src/`。
+* 三處重複的「黑框膠囊 + 3px 偏移外框」按鈕收斂成
+  [pre_auth_button.dart](../lib/widgets/pre_auth_button.dart)。那個外框只在白
+  紙上成立——黑色是因為背景是白的，深色模式沒有對應值——所以造型（滿寬、60 高、
+  全圓角）留下，顏色與所有狀態交給 M3 按鈕。
+* 狀態列圖示原本硬寫 `SystemUiOverlayStyle.dark`（深色圖示），在 `#12140E` 上
+  是看不見的；現在跟著 brightness 走。
+
+`register.dart` 同時從 1326 行拆成 `lib/register/` 下的四個檔案。
 
 ### 6.6 相機拍菜單頁是全黑 UI
 [menu_capture_page.dart](../lib/settings/menu_capture_page.dart) 用 `Colors.black` /

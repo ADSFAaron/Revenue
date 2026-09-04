@@ -248,10 +248,11 @@ allow read: if signedIn() &&
 
 **Phase 3 — 登入流程重做**
 8. 資訊架構翻轉：選人成為主畫面，登入降級為分支（§3.1）
-9. `lib/register.dart` 1325 行拆檔——全 repo 最大的 UI 檔案，而它是最罕見的
-   路徑
-10. 檢查 `lib/widgets/pre_auth_theme.dart` 該留還是併回主 theme，這很可能是
-    「視覺與圖案完全不相符」的根源
+9. ~~`lib/register.dart` 1325 行拆檔~~——已拆成 `lib/register/` 下的
+   `open_store` / `join_store` / `account_fields` / `registration_ui` 四個檔案
+10. ~~檢查 `lib/widgets/pre_auth_theme.dart` 該留還是併回主 theme~~——已刪除。
+    它確實是「視覺與圖案完全不相符」的根源：那三個畫面的字面色與烤進 SVG 的
+    unDraw 配色，逼得整個登入前流程只能鎖在亮色主題。見 design-tokens.md §6.5
 
 **Phase 4 — 可選的鎖**
 11. 裝置生物辨識鎖（要裝 `local_auth`，不碰 Firebase）

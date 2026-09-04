@@ -112,13 +112,14 @@ class _OrDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final line = Expanded(child: Divider(color: Colors.grey[400]));
+    final scheme = Theme.of(context).colorScheme;
+    final line = Expanded(child: Divider(color: scheme.outlineVariant));
     return Row(
       children: [
         line,
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text('or', style: TextStyle(color: Colors.grey[600])),
+          child: Text('or', style: TextStyle(color: scheme.onSurfaceVariant)),
         ),
         line,
       ],
@@ -146,12 +147,8 @@ class _ProviderButton extends StatelessWidget {
       icon: icon,
       label: Text(label, style: Theme.of(context).textTheme.titleMedium),
       style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.black87,
         minimumSize: const Size.fromHeight(52),
-        side: const BorderSide(color: Colors.black),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(50),
-        ),
+        shape: const StadiumBorder(),
       ),
     );
   }

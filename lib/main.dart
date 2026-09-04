@@ -12,7 +12,7 @@ import 'widgets/feedback.dart';
 import 'widgets/illustration.dart';
 import 'widgets/opening_sequence.dart';
 import 'widgets/page_body.dart';
-import 'widgets/pre_auth_theme.dart';
+import 'widgets/pre_auth_button.dart';
 import 'theme.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -270,25 +270,22 @@ class WelcomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Its own Scaffold, inside PreAuthTheme: the background this draws on has
-    // to come from the light palette too, and the Scaffold above this one
-    // belongs to the signed-in half of the app.
-    return PreAuthTheme(
-      child: Scaffold(
-        body: SafeArea(
-          child: PageBody(
-            maxWidth: 480,
-            child: Container(
-              width: double.infinity,
-              height: MediaQuery.of(context).size.height,
-              padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 50),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: <Widget>[
-                  _buildWelcomeMessage(context),
-                  _buildAuthButtons(context),
-                ],
-              ),
+    // Its own Scaffold: the one above this belongs to the signed-in half of the
+    // app and is where the opening animation lives.
+    return Scaffold(
+      body: SafeArea(
+        child: PageBody(
+          maxWidth: 480,
+          child: Container(
+            width: double.infinity,
+            height: MediaQuery.of(context).size.height,
+            padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 50),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: <Widget>[
+                _buildWelcomeMessage(context),
+                _buildAuthButtons(context),
+              ],
             ),
           ),
         ),
@@ -314,8 +311,9 @@ class WelcomeScreen extends StatelessWidget {
           Text(
             'Please login to continue',
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyLarge
-                ?.copyWith(color: Colors.grey),
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
         const SizedBox(height: 20),
@@ -336,59 +334,26 @@ class WelcomeScreen extends StatelessWidget {
       children: <Widget>[
         FadeAnimation(
           750,
-          _buildButton(
-            context,
-            text: 'Login',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginPage()),
-              );
-            },
+          PreAuthButton.outlined(
+            label: 'Login',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const LoginPage()),
+            ),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 16),
         FadeAnimation(
           1000,
-          _buildButton(
-            context,
-            text: 'Register',
-            color: Colors.yellow,
-            textColor: Colors.black,
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const RegisterPage()),
-              );
-            },
+          PreAuthButton(
+            label: 'Register',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const RegisterPage()),
+            ),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildButton(
-    BuildContext context, {
-    required String text,
-    required VoidCallback onPressed,
-    Color color = Colors.transparent,
-    Color textColor = Colors.black,
-  }) {
-    return MaterialButton(
-      height: 60,
-      minWidth: double.infinity,
-      onPressed: onPressed,
-      color: color,
-      textColor: textColor,
-      shape: RoundedRectangleBorder(
-        side: const BorderSide(color: Colors.black),
-        borderRadius: BorderRadius.circular(50),
-      ),
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.titleLarge
-            ?.copyWith(fontWeight: FontWeight.w600),
-      ),
     );
   }
 }

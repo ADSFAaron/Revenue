@@ -464,11 +464,17 @@ D2 把 `themeMode` 打開跟隨系統，但登入前的四個畫面被刻意排�
 裡面約四十個寫死的淺色色值不會跟著走。Scaffold 背景變深、上面的
 `Colors.black` 標題沒變 → 整條入口流程在深色手機上讀不到。
 
-- [x] 新增 [pre_auth_theme.dart](../lib/widgets/pre_auth_theme.dart)，把
-      WelcomeScreen、LoginPage、RegisterPage（三個 Scaffold）釘在淺色主題
+- [x] 新增 `pre_auth_theme.dart`，把 WelcomeScreen、LoginPage、RegisterPage
+      （三個 Scaffold）釘在淺色主題
 
-這是**權宜之計，不是修好**——那套黑白手繪風是刻意選的，要真的支援深色就是
-把它重新設計一次。文件裡寫清楚了。
+這曾經是**權宜之計，不是修好**——那套黑白手繪風是刻意選的，要真的支援深色就是
+把它重新設計一次。
+
+- [x] 已經重新設計過，`pre_auth_theme.dart` 隨之刪除。字面色改成 scheme
+      token；unDraw 插圖由 [illustration_palette.py](../tool/illustration_palette.py)
+      映射到本專案的調色盤並亮暗各產一份；黑框膠囊按鈕收斂成
+      [pre_auth_button.dart](../lib/widgets/pre_auth_button.dart)。
+      見 [design-tokens.md](design-tokens.md) §6.5
 
 ### 8.2 登入頁
 

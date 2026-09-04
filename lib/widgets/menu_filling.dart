@@ -14,10 +14,7 @@ import 'package:flutter/material.dart';
 /// which is the one thing the step is asking for. It is also three rectangles
 /// and a circle per row, so it costs a CustomPainter rather than an asset, and
 /// it takes its colours from the scheme in both modes for free.
-///
-/// If a drawing is wanted here instead, dropping an SVG into assets/src/ is the
-/// whole job — tool/illustration_palette.py recolours it and Illustration()
-/// picks it up.
+
 class MenuFilling extends StatefulWidget {
   const MenuFilling({this.rows = 3, super.key});
 

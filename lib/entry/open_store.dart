@@ -10,11 +10,11 @@ import '../models/app_user.dart';
 import '../models/store.dart';
 import '../settings/store_settings_edit_menu.dart';
 import '../settings/store_settings_import_menu.dart';
-import '../sign_in_options.dart';
+import 'sign_in_options.dart';
 import '../widgets/menu_filling.dart';
-import '../widgets/pre_auth_button.dart';
+import 'entry_button.dart';
 import 'account_fields.dart';
-import 'registration_ui.dart';
+import 'entry_ui.dart';
 
 // Path A — open a new store
 // ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
         if (!didPop && !_submitting) _back();
       },
       child: Scaffold(
-        appBar: buildRegistrationAppBar(
+        appBar: buildEntryAppBar(
           context,
           onBack: _step == 0 ? null : (_submitting ? () {} : _back),
         ),
@@ -142,7 +142,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
             ),
           ),
           const SizedBox(height: 16),
-          PreAuthButton(
+          EntryButton(
             label: 'Continue',
             onPressed: _submitting ? null : _next,
           ),
@@ -156,7 +156,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
       children: [
         _account.build(onSubmit: _next),
         const SizedBox(height: 8),
-        PreAuthButton(label: 'Continue', onPressed: _submitting ? null : _next),
+        EntryButton(label: 'Continue', onPressed: _submitting ? null : _next),
         const SizedBox(height: 24),
         SignInOptions(busy: _submitting, onGoogle: _continueWithGoogle),
       ],
@@ -175,7 +175,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
         onSubmitted: (_) => _next(),
       ),
       const SizedBox(height: 8),
-      PreAuthButton(
+      EntryButton(
         label: 'Create store',
         busy: _submitting,
         onPressed: _submitting ? null : _next,
@@ -205,7 +205,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
       // without ever showing what was being offered. This does.
       const SizedBox(height: 150, child: Center(child: MenuFilling())),
       const SizedBox(height: 24),
-      PreAuthButton(
+      EntryButton(
         label: 'Import menu from a photo',
         onPressed: () => _finish(next: _MenuStart.importFromPhoto),
       ),
@@ -294,7 +294,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
     } on AuthException catch (e) {
       if (e.failure == AuthFailure.cancelled) return;
       if (mounted && !_account.showAuthError(e)) {
-        showRegistrationError(context, e.message);
+        showEntryError(context, e.message);
       }
     }
   }
@@ -377,7 +377,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
         curve: Curves.easeOut,
       );
       if (mounted && !_account.showAuthError(e)) {
-        showRegistrationError(context, e.message);
+        showEntryError(context, e.message);
       }
     } catch (e) {
       // The sign-in account exists but its store does not, which would leave an
@@ -387,7 +387,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
         if (mounted) setState(() => _google = null);
       }
       if (mounted) {
-        showRegistrationError(context, 'Could not create the store: $e');
+        showEntryError(context, 'Could not create the store: $e');
       }
     } finally {
       if (mounted) setState(() => _submitting = false);

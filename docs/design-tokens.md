@@ -266,16 +266,33 @@ Welcome / Login / Register 原本是刻意的黑底白線手繪風，用 `Colors
 * 字面色全部改成 scheme token，`pre_auth_theme.dart` 已刪除，這三個畫面跟著
   系統的深淺設定走。
 * 兩張 unDraw 插圖的顏色本來就烤進檔案裡，這是「必須鎖在亮色」的根源之一。
-  [illustration_palette.py](../tool/illustration_palette.py) 把 unDraw 的每個
-  顏色映射到在這裡做同一件事的 token，亮暗各產一份；原始檔留在 `assets/src/`。
+  一度用 `tool/illustration_palette.py` 把 unDraw 的每個顏色映射到在這裡做同
+  一件事的 token、亮暗各產一份。**2026-09-04 起整套插圖已移除**（見 §6.9），
+  腳本與 `assets/src/` 一併刪除。
 * 三處重複的「黑框膠囊 + 3px 偏移外框」按鈕收斂成
-  [pre_auth_button.dart](../lib/widgets/pre_auth_button.dart)。那個外框只在白
-  紙上成立——黑色是因為背景是白的，深色模式沒有對應值——所以造型（滿寬、60 高、
-  全圓角）留下，顏色與所有狀態交給 M3 按鈕。
+  [entry_button.dart](../lib/entry/entry_button.dart)（原
+  `widgets/pre_auth_button.dart`）。那個外框只在白紙上成立——黑色是因為背景是
+  白的，深色模式沒有對應值——所以造型（滿寬、60 高、全圓角）留下，顏色與所有
+  狀態交給 M3 按鈕。
 * 狀態列圖示原本硬寫 `SystemUiOverlayStyle.dark`（深色圖示），在 `#12140E` 上
   是看不見的；現在跟著 brightness 走。
 
-`register.dart` 同時從 1326 行拆成 `lib/register/` 下的四個檔案。
+`register.dart` 同時從 1326 行拆成四個檔案。
+
+### 6.9 插圖整套移除，入口改成選人畫面（2026-09-04）
+
+§6.5 的做法讓那三個畫面能跟著主題走，但代價還在：兩張圖各有亮暗兩份、一個產生
+腳本、一份原始檔，而它們畫的是「一個人在筆電前」這種跟收銀台無關的東西。
+
+**現在沒有插圖了。** 入口只剩下字、[LogoMark](../lib/widgets/logo_mark.dart)
+（幾何繪製，兩個模式都對，也是開場動畫交棒過來的同一個形狀），和店家自己的
+配色。`assets/` 只剩 Google 的品牌圖示——那是他們的條款要求的。
+
+同時入口的資訊架構翻轉了：主畫面是**這台裝置上有誰**（
+[entry_screen.dart](../lib/entry/entry_screen.dart)），輸入帳號密碼降級成
+「Another account」後面的一個分支。理由不是視覺，是歸屬：共用平板上決定訂單
+歸屬正不正確的不是驗證有多強，而是**換人有沒有比共用便宜**。見
+docs/auth-and-operator-plan.md §3.1。
 
 ### 6.6 相機拍菜單頁是全黑 UI
 [menu_capture_page.dart](../lib/settings/menu_capture_page.dart) 用 `Colors.black` /

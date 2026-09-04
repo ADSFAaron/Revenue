@@ -122,9 +122,12 @@ class PasskeyRepository {
     }
   }
 
-  /// Adds a passkey to the signed-in account. Returns the name it was stored
-  /// under.
-  Future<String> add({String? deviceName}) async {
+  /// Adds a passkey to the signed-in account.
+  ///
+  /// The credential id comes back with it so the device can remember which of
+  /// its passkeys belongs to whom, which is what lets the operator picker skip
+  /// the authenticator's own account list. See [signIn].
+  Future<PasskeyRegistration> add({String? deviceName}) async {
     final begin = await _call('beginPasskeyRegistration');
     final challengeId = begin['challengeId'] as String;
 
@@ -142,7 +145,11 @@ class PasskeyRepository {
       'response': signed.toJson(),
       'deviceName': deviceName ?? defaultDeviceName,
     });
-    return finish['deviceName'] as String? ?? (deviceName ?? 'This device');
+    return PasskeyRegistration(
+      deviceName:
+          finish['deviceName'] as String? ?? (deviceName ?? 'This device'),
+      credentialId: signed.id,
+    );
   }
 
   /// Signs in with a passkey and returns who was signed in.
@@ -152,8 +159,18 @@ class PasskeyRepository {
   /// server which one they chose; the server resolves that to a uid. That also
   /// means this flow cannot be used to ask whether a given email has an
   /// account, because it is never told one.
-  Future<SignInResult> signIn() async {
-    final begin = await _call('beginPasskeyAuthentication');
+  ///
+  /// [credentialIds] narrows the ceremony to passkeys this device already
+  /// knows belong to one person — what the operator picker passes after
+  /// somebody taps their own name, so the authenticator asks for a fingerprint
+  /// instead of asking them to pick themselves out of a list of colleagues
+  /// they have just picked themselves out of. It is a hint and nothing more:
+  /// the server verifies whatever assertion comes back against the public key
+  /// it stored, regardless of what was asked for.
+  Future<PasskeySession> signIn({List<String> credentialIds = const []}) async {
+    final begin = await _call('beginPasskeyAuthentication', {
+      if (credentialIds.isNotEmpty) 'credentialIds': credentialIds,
+    });
     final challengeId = begin['challengeId'] as String;
 
     final AuthenticateResponseType signed;
@@ -182,7 +199,10 @@ class PasskeyRepository {
     }
 
     try {
-      return await _auth.signInWithCustomToken(token);
+      return PasskeySession(
+        user: await _auth.signInWithCustomToken(token),
+        credentialId: signed.id,
+      );
     } on AuthException catch (e) {
       throw PasskeyException(PasskeyFailure.rejected, e.message);
     }
@@ -322,4 +342,26 @@ class PasskeyRepository {
             e.message ?? 'The passkey service failed (${e.code}).',
           ),
       };
+}
+
+/// A passkey that was just created, and the id the authenticator gave it.
+class PasskeyRegistration {
+  const PasskeyRegistration({
+    required this.deviceName,
+    required this.credentialId,
+  });
+
+  final String deviceName;
+  final String credentialId;
+}
+
+/// A completed passkey sign-in: who it was, and which credential did it.
+///
+/// The id is worth carrying back because the device can then offer that person
+/// a one-tap way in next time — see [PasskeyRepository.signIn].
+class PasskeySession {
+  const PasskeySession({required this.user, required this.credentialId});
+
+  final SignInResult user;
+  final String credentialId;
 }

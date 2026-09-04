@@ -14,8 +14,8 @@ import 'package:flutter/material.dart';
 /// rounded. The colour and every state — pressed, disabled, focused — come from
 /// the scheme, so these buttons are the same objects the rest of the app uses
 /// and follow the theme without being told to.
-class PreAuthButton extends StatelessWidget {
-  const PreAuthButton({
+class EntryButton extends StatelessWidget {
+  const EntryButton({
     required this.label,
     required this.onPressed,
     this.busy = false,
@@ -24,7 +24,7 @@ class PreAuthButton extends StatelessWidget {
     super.key,
   });
 
-  const PreAuthButton.outlined({
+  const EntryButton.outlined({
     required this.label,
     required this.onPressed,
     this.busy = false,

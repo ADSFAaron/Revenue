@@ -5,7 +5,7 @@
 import 'package:flutter/material.dart';
 
 import '../database/repositories.dart';
-import 'registration_ui.dart';
+import 'entry_ui.dart';
 
 /// Email, password and display name — identical on both paths, so they are
 /// written once.

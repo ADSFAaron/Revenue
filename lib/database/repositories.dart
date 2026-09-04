@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/foundation.dart';
@@ -11,6 +13,7 @@ import '../models/store.dart';
 import 'audit_log_repository.dart';
 import 'auth_repository.dart';
 import 'data_exception.dart';
+import 'device_accounts.dart';
 import 'feedback_repository.dart';
 import 'invite_repository.dart';
 import 'menu_import_repository.dart';
@@ -25,6 +28,7 @@ import 'user_repository.dart';
 export 'audit_log_repository.dart';
 export 'auth_repository.dart';
 export 'data_exception.dart';
+export 'device_accounts.dart';
 export 'feedback_repository.dart';
 export 'invite_repository.dart';
 export 'menu_import_repository.dart';
@@ -114,6 +118,9 @@ final inviteRepository = InviteRepository();
 final feedbackRepository = FeedbackRepository();
 final auditLogRepository = AuditLogRepository();
 
+/// Who uses this till. Local only — see [DeviceAccounts].
+final deviceAccounts = DeviceAccounts();
+
 /// Orders rung up with no connection, waiting on this device. Device-local and
 /// never synced — see [PendingOrderQueue].
 final pendingOrders = PendingOrderQueue(
@@ -202,5 +209,10 @@ Future<Session> loadSession() async {
     );
   }
   _lastKnownActor = Actor(uid: user.uid, name: user.displayName);
+  // Every way into the app ends here, which is why the device's roster is
+  // updated here rather than on each of the four sign-in screens: one call
+  // that cannot drift, and it records the identity the store has confirmed
+  // rather than whatever the sign-in screen was told.
+  unawaited(deviceAccounts.remember(user));
   return Session(user: user, store: store);
 }

@@ -2,19 +2,27 @@
 // UI file in the project — by carrying the chooser, both registration flows and
 // every piece of furniture they share in one place.
 
-// The furniture the registration screens share: the app bar, the error
+// The furniture the screens before sign-in share: the app bar, the error
 // snackbar, and the small presentational pieces every step is built from.
+//
+// There are no drawings here any more. The four unDraw illustrations these
+// screens used to open with were black-line artwork with a palette baked into
+// the file, which is why they needed a generator script, two copies each, and
+// — for a while — a whole theme pinning the entry flow to the light palette.
+// What is left is type, the mark, and the shop's own colours, which follow the
+// theme because they are the theme.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/invite.dart';
 import '../database/repositories.dart';
+import '../widgets/logo_mark.dart';
 import '../widgets/page_body.dart';
 
 /// The app bar every registration screen shares: transparent, so it always
 /// matches the scaffold background instead of drifting from it.
-PreferredSizeWidget buildRegistrationAppBar(
+PreferredSizeWidget buildEntryAppBar(
   BuildContext context, {
   VoidCallback? onBack,
 }) {
@@ -42,7 +50,7 @@ PreferredSizeWidget buildRegistrationAppBar(
   );
 }
 
-void showRegistrationError(BuildContext context, String message) {
+void showEntryError(BuildContext context, String message) {
   final scheme = Theme.of(context).colorScheme;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -436,4 +444,71 @@ class InviteCodeFormatter extends TextInputFormatter {
       selection: TextSelection.collapsed(offset: cleaned.length),
     );
   }
+}
+
+
+/// The mark and the app's name, at the top of every screen before sign-in.
+///
+/// The mark is drawn from geometry rather than loaded, so it is correct in
+/// both themes with nothing to generate and nothing to ship, and it is the
+/// same shape the launch animation hands over from.
+class EntryHeader extends StatelessWidget {
+  const EntryHeader({this.tagline, super.key});
+
+  /// One line under the name. Present on the first screen somebody sees and
+  /// absent on the rest — a wordmark that explains itself on every step is a
+  /// wordmark nobody reads by the third.
+  final String? tagline;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        const SizedBox(
+          height: 56,
+          child: LogoMark(semanticLabel: 'Revenue'),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Revenue',
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.5,
+          ),
+        ),
+        if (tagline != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            tagline!,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The layout every entry screen sits in: centred, capped at a form's width,
+/// and scrollable, because a keyboard on a short phone takes half the screen.
+class EntryBody extends StatelessWidget {
+  const EntryBody({required this.children, this.padding, super.key});
+
+  final List<Widget> children;
+  final EdgeInsets? padding;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+        padding: padding ?? const EdgeInsets.fromLTRB(28, 8, 28, 32),
+        child: PageBody(
+          maxWidth: 480,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
+        ),
+      );
 }

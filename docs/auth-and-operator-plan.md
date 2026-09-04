@@ -271,11 +271,30 @@ allow read: if signedIn() &&
 
 **Phase 2 — 選人畫面**
 5. 操作者概念與「目前操作者：X」常駐指示
-6. 選人畫面（全店員工，本機有 session 的排前面）
+6. ~~選人畫面（全店員工，本機有 session 的排前面）~~（已完成 2026-09-04，
+   **範圍與原計畫不同，見下**）
 7. 閒置逾時退回選人，長度做成店家設定，草稿保留（決策 2、3）
 
+**「全店員工」做不到，只能是「這台裝置上有誰」。** 選人畫面出現在**登入前**，
+而列出同事需要讀 `users` 的 storeId 查詢——那條規則要求 `memberOf()`，登出狀態
+下必然被拒。所以名單只能來自本機：
+[device_accounts.dart](../lib/database/device_accounts.dart) 記下曾在這台裝置
+登入成功過的人（uid／名字／email／這台裝置上屬於他的 passkey credential id），
+最近用過的排前面。它**不存任何憑證**，點名字之後仍然要通過 passkey、密碼或
+Google。第一個人一定得走一次完整登入，這是無法避開的。
+
+**passkey 必須能指定人，否則選人畫面是兩層選單。** credential 是
+discoverable 的，所以原本的 `beginPasskeyAuthentication` 不帶
+`allowCredentials`，作業系統會自己列出所有 passkey 讓人挑——在剛剛才點過自己
+名字的畫面上，等於要他從同事清單裡再挑一次自己。現在該 callable 接受
+`credentialIds`，由裝置端傳自己記下的 id。**這不是驗證的一部分**：assertion 仍
+由 `finishPasskeyAuthentication` 依照 authenticator 實際簽出的 id 去查公鑰驗
+證，`allowCredentials` 只是給 authenticator 的提示。也不外洩任何東西——那些 id
+本來就存在呼叫端自己的裝置上，是那個人自己註冊或上次登入時寫下的。
+
 **Phase 3 — 登入流程重做**
-8. 資訊架構翻轉：選人成為主畫面，登入降級為分支（§3.1）
+8. ~~資訊架構翻轉：選人成為主畫面，登入降級為分支（§3.1）~~（已完成
+   2026-09-04）
 9. ~~`lib/register.dart` 1325 行拆檔~~——已拆成 `lib/register/` 下的
    `open_store` / `join_store` / `account_fields` / `registration_ui` 四個檔案
 10. ~~檢查 `lib/widgets/pre_auth_theme.dart` 該留還是併回主 theme~~——已刪除。

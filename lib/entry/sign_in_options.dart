@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import 'database/repositories.dart';
+import '../database/repositories.dart';
 
 /// The alternatives to email and password, shared by the login screen and both
 /// registration paths.

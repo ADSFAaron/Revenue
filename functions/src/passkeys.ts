@@ -189,18 +189,44 @@ export const finishPasskeyRegistration = onCall(options, async (request) => {
 // ---------------------------------------------------------------------------
 
 /**
+ * How many credential ids a caller may narrow the ceremony to. A till with
+ * more than a handful of people on it is not the case this is for, and an
+ * unbounded list is a free way to make us build a large response.
+ */
+const MAX_ALLOWED_CREDENTIALS = 10;
+
+/**
  * Issues an authentication challenge. Deliberately unauthenticated — the whole
  * point is to sign somebody in who is not signed in yet.
  *
- * No `allowCredentials`: the credential is discoverable, so the authenticator
- * shows the person their own passkeys and tells us which one they picked. That
- * also means this endpoint reveals nothing. It cannot be used to ask "does
- * this email have a passkey?", because it is never told an email.
+ * Credentials are discoverable, so with no `allowCredentials` the authenticator
+ * shows the person every passkey it holds for us and tells us which one they
+ * picked. That is right when the app does not know who is asking, and wrong on
+ * the operator picker, where they have just tapped their own name: the OS would
+ * ask them to choose all over again, from a list of their colleagues.
+ *
+ * So the caller may narrow it. `credentialIds` is a hint to the authenticator
+ * and nothing more — the assertion is still verified against the stored public
+ * key in `finishPasskeyAuthentication`, which looks the credential up by the
+ * id the authenticator signed, not by anything sent here. Nor does taking the
+ * list leak anything: these ids come off the caller's own device, where they
+ * were written when that person registered or last signed in. This endpoint
+ * still cannot be asked "does this email have a passkey?", because it is still
+ * never told an email.
  */
-export const beginPasskeyAuthentication = onCall(options, async () => {
+export const beginPasskeyAuthentication = onCall(options, async (request) => {
+  const requested = request.data?.credentialIds;
+  const allowCredentials = Array.isArray(requested)
+    ? requested
+        .filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
+        .slice(0, MAX_ALLOWED_CREDENTIALS)
+        .map((id: string) => ({ id }))
+    : undefined;
+
   const created = await generateAuthenticationOptions({
     rpID: RP_ID,
     userVerification: "preferred",
+    ...(allowCredentials?.length ? { allowCredentials } : {}),
   });
 
   const challengeId = await storeChallenge(created.challenge, "authentication");

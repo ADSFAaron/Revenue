@@ -3,19 +3,14 @@ import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
-import 'animation/fade_animation.dart';
 import 'database/repositories.dart';
 import 'database/session_resolver.dart';
 import 'firebase_options.dart';
 import 'home.dart';
-import 'login.dart';
-import 'register.dart';
+import 'entry/entry_screen.dart';
 import 'settings/theme_controller.dart';
 import 'widgets/feedback.dart';
-import 'widgets/illustration.dart';
 import 'widgets/opening_sequence.dart';
-import 'widgets/page_body.dart';
-import 'widgets/pre_auth_button.dart';
 import 'theme.dart';
 
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -201,7 +196,7 @@ class _HomePageState extends State<HomePage> {
                   return ErrorView(snapshot.error!);
                 } else {
                   _markReady();
-                  return const WelcomeScreen();
+                  return const EntryScreen();
                 }
               },
             );
@@ -304,99 +299,6 @@ class _SessionGateState extends State<_SessionGate> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class WelcomeScreen extends StatelessWidget {
-  const WelcomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    // Its own Scaffold: the one above this belongs to the signed-in half of the
-    // app and is where the opening animation lives.
-    return Scaffold(
-      body: SafeArea(
-        child: PageBody(
-          maxWidth: 480,
-          child: Container(
-            width: double.infinity,
-            height: MediaQuery.of(context).size.height,
-            padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 50),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: <Widget>[
-                _buildWelcomeMessage(context),
-                _buildAuthButtons(context),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWelcomeMessage(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: <Widget>[
-        FadeAnimation(
-          0,
-          Text(
-            'Welcome',
-            style: Theme.of(context).textTheme.headlineMedium
-                ?.copyWith(fontWeight: FontWeight.bold),
-          ),
-        ),
-        const SizedBox(height: 10),
-        FadeAnimation(
-          100,
-          Text(
-            'Please login to continue',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        FadeAnimation(
-          500,
-          SizedBox(
-            height: MediaQuery.of(context).size.height / 3,
-            child: const Illustration('welcome'),
-          ),
-        ),
-        const SizedBox(height: 20),
-      ],
-    );
-  }
-
-  Widget _buildAuthButtons(BuildContext context) {
-    return Column(
-      children: <Widget>[
-        FadeAnimation(
-          750,
-          PreAuthButton.outlined(
-            label: 'Login',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const LoginPage()),
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        FadeAnimation(
-          1000,
-          PreAuthButton(
-            label: 'Register',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const RegisterPage()),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

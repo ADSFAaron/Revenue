@@ -194,7 +194,14 @@ class _UserPasskeysState extends State<UserPasskeys> {
       final added = await passkeyRepository.add(
         deviceName: name.isEmpty ? null : name,
       );
-      _snack('$added can now sign you in');
+      // So the entry screen can offer this person a one-tap way in next time
+      // rather than making them pick themselves out of the authenticator's own
+      // list. See DeviceAccounts.
+      final uid = authRepository.currentUid;
+      if (uid != null) {
+        await deviceAccounts.rememberPasskey(uid, added.credentialId);
+      }
+      _snack('${added.deviceName} can now sign you in');
       _reload();
     } on PasskeyException catch (e) {
       // Backing out of the platform sheet is a decision, not a failure.

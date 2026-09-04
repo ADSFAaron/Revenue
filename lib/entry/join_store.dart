@@ -7,10 +7,10 @@ import 'package:flutter/services.dart';
 
 import '../database/repositories.dart';
 import '../models/invite.dart';
-import '../sign_in_options.dart';
-import '../widgets/pre_auth_button.dart';
+import 'sign_in_options.dart';
+import 'entry_button.dart';
 import 'account_fields.dart';
-import 'registration_ui.dart';
+import 'entry_ui.dart';
 
 // ---------------------------------------------------------------------------
 // Path B — join an existing store
@@ -57,7 +57,7 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
         if (!didPop && !_submitting) _back();
       },
       child: Scaffold(
-        appBar: buildRegistrationAppBar(
+        appBar: buildEntryAppBar(
           context,
           onBack: _step == 0 ? null : (_submitting ? () {} : _back),
         ),
@@ -104,7 +104,7 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
         onSubmitted: (_) => _checkCode(),
       ),
       const SizedBox(height: 8),
-      PreAuthButton(
+      EntryButton(
         label: 'Check code',
         busy: _submitting,
         onPressed: _submitting ? null : _checkCode,
@@ -124,7 +124,7 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
         ],
         _account.build(onSubmit: _join),
         const SizedBox(height: 8),
-        PreAuthButton(
+        EntryButton(
           label: 'Join store',
           busy: _submitting,
           onPressed: _submitting ? null : _join,
@@ -154,7 +154,7 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
       if (await userRepository.fetch(account.uid) != null) {
         await authRepository.discardSignIn(account);
         if (mounted) {
-          showRegistrationError(
+          showEntryError(
             context,
             'That Google account already belongs to a store. Sign in with it '
             'instead, or use a different account to join this one.',
@@ -177,7 +177,7 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
     } on AuthException catch (e) {
       if (e.failure == AuthFailure.cancelled) return;
       if (mounted && !_account.showAuthError(e)) {
-        showRegistrationError(context, e.message);
+        showEntryError(context, e.message);
       }
     } on InviteException catch (e) {
       await _undo(account);
@@ -198,7 +198,7 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
         // Translated rather than interpolated: `$e` on a Firestore failure
         // opens with `[cloud_firestore/permission-denied]`, which is an error
         // code shown to somebody halfway through joining a shop.
-        showRegistrationError(
+        showEntryError(
           context,
           'Could not join the store. ${describeFailure(e).message}',
         );
@@ -291,7 +291,7 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
       Navigator.of(context).popUntil((route) => route.isFirst);
     } on AuthException catch (e) {
       if (mounted && !_account.showAuthError(e)) {
-        showRegistrationError(context, e.message);
+        showEntryError(context, e.message);
       }
     } on InviteException catch (e) {
       // Somebody spent the code between validating it and finishing the form.
@@ -311,7 +311,7 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
     } catch (e) {
       if (uid != null) await authRepository.deleteCurrentAccount();
       if (mounted) {
-        showRegistrationError(context, 'Could not join the store: $e');
+        showEntryError(context, 'Could not join the store: $e');
       }
     } finally {
       if (mounted) setState(() => _submitting = false);

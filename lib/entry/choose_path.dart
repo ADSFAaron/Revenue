@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
 
-import 'login.dart';
-import 'register/join_store.dart';
-import 'register/open_store.dart';
-import 'register/registration_ui.dart';
-import 'widgets/page_body.dart';
+import 'join_store.dart';
+import 'open_store.dart';
+import 'entry_ui.dart';
+import '../widgets/page_body.dart';
 
-export 'register/join_store.dart' show JoinStoreRegistration;
-export 'register/open_store.dart' show OpenStoreRegistration;
 
 /// The first thing registration asks: are you opening a store, or joining one?
 ///
@@ -15,13 +12,13 @@ export 'register/open_store.dart' show OpenStoreRegistration;
 /// created depended on whether the store ID you pasted happened to exist
 /// already. The only thing telling anyone which one they were doing was a line
 /// of helper text under the last field.
-class RegisterPage extends StatelessWidget {
-  const RegisterPage({super.key});
+class ChoosePathScreen extends StatelessWidget {
+  const ChoosePathScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: buildRegistrationAppBar(context),
+      appBar: buildEntryAppBar(context),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(28, 8, 28, 32),
@@ -61,12 +58,9 @@ class RegisterPage extends StatelessWidget {
                   children: [
                     const Text('Already have an account? '),
                     TextButton(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LoginPage()),
-                      ),
+                      onPressed: () => Navigator.pop(context),
                       child: Text(
-                        'Login',
+                        'Sign in',
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.w600),
                       ),

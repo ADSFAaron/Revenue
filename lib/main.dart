@@ -1,6 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import 'animation/fade_animation.dart';
 import 'database/repositories.dart';
@@ -10,6 +9,7 @@ import 'login.dart';
 import 'register.dart';
 import 'settings/theme_controller.dart';
 import 'widgets/feedback.dart';
+import 'widgets/illustration.dart';
 import 'widgets/opening_sequence.dart';
 import 'widgets/page_body.dart';
 import 'widgets/pre_auth_theme.dart';
@@ -323,7 +323,7 @@ class WelcomeScreen extends StatelessWidget {
           500,
           SizedBox(
             height: MediaQuery.of(context).size.height / 3,
-            child: SvgPicture.asset('assets/welcome.svg'),
+            child: const Illustration('welcome'),
           ),
         ),
         const SizedBox(height: 20),

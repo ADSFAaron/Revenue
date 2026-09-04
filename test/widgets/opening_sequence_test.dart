@@ -26,6 +26,27 @@ Future<void> finish(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 600));
 }
 
+/// A child that notices being torn down and rebuilt.
+class _Tenant extends StatefulWidget {
+  const _Tenant();
+
+  static int mounted = 0;
+
+  @override
+  State<_Tenant> createState() => _TenantState();
+}
+
+class _TenantState extends State<_Tenant> {
+  @override
+  void initState() {
+    super.initState();
+    _Tenant.mounted++;
+  }
+
+  @override
+  Widget build(BuildContext context) => const Center(child: Text('the app'));
+}
+
 void main() {
   group('the first frame continues the still splash', () {
     test('every ray starts at rest', () {
@@ -100,6 +121,72 @@ void main() {
     await finish(tester);
     expect(find.text('the app'), findsOneWidget);
     expect(find.byType(LogoMark), findsNothing);
+  });
+
+  testWidgets('the mark covers the screen even when the child has no size',
+      (tester) async {
+    // The regression that shipped: while auth is still answering, main.dart
+    // gives this an empty child on purpose, and a Stack sizes itself from its
+    // non-positioned children. With the overlay merely Positioned.fill the
+    // whole Stack collapsed to nothing and the app opened to a blank window —
+    // no mark, no error, nothing to see in a log.
+    final ready = ValueNotifier<bool>(false);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ValueListenableBuilder<bool>(
+            valueListenable: ready,
+            builder: (context, value, _) => OpeningSequence(
+              ready: value,
+              child: const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 100));
+    final size = tester.getSize(find.byType(LogoMark));
+    expect(size.width, greaterThan(0));
+    expect(size.height, greaterThan(0));
+
+    ready.value = true;
+    await finish(tester);
+  });
+
+  testWidgets('the app underneath is never rebuilt by the handover',
+      (tester) async {
+    // The regression that shipped, and the worse half of it. Finishing by
+    // returning widget.child on its own moved the child from inside the Stack
+    // to the Scaffold's body slot, and Flutter rebuilds an element whose
+    // parent has changed. In the app that child is a StreamBuilder on the auth
+    // stream: it re-subscribed, went back to `waiting`, and drew the empty box
+    // it draws while waiting. A launch that animated correctly and then landed
+    // on a blank screen, with nothing in any log to say so.
+    _Tenant.mounted = 0;
+    final ready = ValueNotifier<bool>(false);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ValueListenableBuilder<bool>(
+            valueListenable: ready,
+            builder: (context, value, _) =>
+                OpeningSequence(ready: value, child: const _Tenant()),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(_Tenant.mounted, 1);
+
+    ready.value = true;
+    await finish(tester);
+
+    expect(find.byType(LogoMark), findsNothing);
+    expect(find.text('the app'), findsOneWidget);
+    // Mounted once for the whole launch, not once more on the way out.
+    expect(_Tenant.mounted, 1);
   });
 
   testWidgets('the app underneath is built while the mark is still up',

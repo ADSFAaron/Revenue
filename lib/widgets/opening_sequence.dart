@@ -117,8 +117,6 @@ class _OpeningSequenceState extends State<OpeningSequence>
 
   @override
   Widget build(BuildContext context) {
-    if (_done) return widget.child;
-
     final scheme = Theme.of(context).colorScheme;
     // Reduced motion is not "no splash": the handover still has to happen, and
     // a hard cut from the native splash to the app is exactly the jolt the
@@ -129,13 +127,29 @@ class _OpeningSequenceState extends State<OpeningSequence>
     return Stack(
       children: [
         widget.child,
-        Positioned.fill(
-          child: ValueListenableBuilder<double>(
-            valueListenable: _clock,
-            builder: (context, seconds, _) =>
-                _overlay(context, scheme, seconds, still),
+        // Dropped from the list when it is finished, never by returning
+        // widget.child on its own. Returning the child directly changes its
+        // parent — Stack one frame, the Scaffold's body slot the next — and
+        // Flutter rebuilds an element whose position in the tree has moved.
+        // That took the StreamBuilder above with it: it re-subscribed to the
+        // auth stream, went back to `waiting`, and drew the empty box it draws
+        // while waiting. The app opened, animated, handed over, and landed on
+        // a blank screen with nothing in any log.
+        //
+        // SizedBox.expand rather than Positioned.fill, which is a second thing
+        // the same shape. A Stack takes its size from its *non-positioned*
+        // children, and while auth is still answering that child has no size,
+        // so a Positioned.fill overlay filled a 0x0 Stack. Expanding here makes
+        // the overlay the child that gives the Stack its size, and leaves
+        // widget.child on the loose constraints it would have had as the body.
+        if (!_done)
+          SizedBox.expand(
+            child: ValueListenableBuilder<double>(
+              valueListenable: _clock,
+              builder: (context, seconds, _) =>
+                  _overlay(context, scheme, seconds, still),
+            ),
           ),
-        ),
       ],
     );
   }

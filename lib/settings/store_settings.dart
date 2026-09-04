@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 
+import '../widgets/dropdown_value.dart';
 import '../database/repositories.dart';
 import '../models/app_user.dart';
 import '../models/store.dart';
@@ -304,7 +305,11 @@ class _StoreSettingsState extends State<StoreSettings> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<int>(
-                initialValue: hour,
+                // Belt and braces next to the clamp in Store.fromDoc: this is
+                // the screen that would be unopenable if an hour outside 0-23
+                // ever reached it.
+                initialValue:
+                    dropdownValue(hour, List.generate(24, (h) => h)),
                 decoration: const InputDecoration(labelText: 'Hour'),
                 items: List.generate(
                   24,

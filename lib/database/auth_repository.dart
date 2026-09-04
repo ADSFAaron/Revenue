@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:google_sign_in/google_sign_in.dart';
+
 import 'data_exception.dart';
 
 /// Why an authentication call failed, in terms the app cares about.
@@ -259,11 +260,10 @@ class AuthRepository {
   /// Returns whether the whole store went.
   Future<bool> deleteAccount({String? storeName}) async {
     try {
-      final result = await FirebaseFunctions.instanceFor(
-        region: accountFunctionsRegion,
-      ).httpsCallable('deleteAccount').call<Map<String, dynamic>>({
-        'storeName': ?storeName,
-      });
+      final result =
+          await FirebaseFunctions.instanceFor(region: accountFunctionsRegion)
+              .httpsCallable('deleteAccount')
+              .call<Map<String, dynamic>>({'storeName': ?storeName});
       return result.data['deletedStore'] == true;
     } on FirebaseFunctionsException catch (e) {
       throw AuthException(AuthFailure.unknown, _describeDeletion(e));
@@ -284,9 +284,18 @@ class AuthRepository {
       switch (e.code) {
         'failed-precondition' =>
           'The store name did not match. Nothing was deleted.',
-        'unauthenticated' => 'Your session expired. Sign in again and retry.',
-        'deadline-exceeded' ||
-        'unavailable' =>
+        // Two very different things land here. Firebase returns
+        // `unauthenticated` both when the ID token is missing or stale *and*
+        // when App Check refuses the call — and App Check refuses every call
+        // from a debug build whose token has not been registered in the
+        // console. Saying only "your session expired" sent somebody to sign in
+        // again over and over against a check that had nothing to do with
+        // their session.
+        'unauthenticated' =>
+          'The app could not prove who it was, so nothing was deleted. Sign in '
+              'again and retry; if it keeps happening this build has not been '
+              'registered for App Check.',
+        'deadline-exceeded' || 'unavailable' =>
           'The deletion could not be finished — the connection dropped part '
               'of the way through. Nothing else was removed; sign in again to '
               'check and retry.',
@@ -373,23 +382,21 @@ class AuthRepository {
   /// Cancelling is not an error worth a red snackbar — the caller is expected
   /// to branch on [AuthFailure.cancelled] and stay quiet.
   AuthException _translateGoogle(GoogleSignInException e) => switch (e.code) {
-        GoogleSignInExceptionCode.canceled ||
-        GoogleSignInExceptionCode.interrupted =>
-          const AuthException(
-            AuthFailure.cancelled,
-            'Google sign-in was cancelled.',
-          ),
-        GoogleSignInExceptionCode.providerConfigurationError =>
-          const AuthException(
-            AuthFailure.signInMethodDisabled,
-            'Google sign-in is not configured for this app. Check the OAuth '
-            'client and the signing SHA-1 in the Firebase console.',
-          ),
-        _ => AuthException(
-            AuthFailure.unknown,
-            e.description ?? 'Google sign-in failed (${e.code.name}).',
-          ),
-      };
+    GoogleSignInExceptionCode.canceled ||
+    GoogleSignInExceptionCode.interrupted => const AuthException(
+      AuthFailure.cancelled,
+      'Google sign-in was cancelled.',
+    ),
+    GoogleSignInExceptionCode.providerConfigurationError => const AuthException(
+      AuthFailure.signInMethodDisabled,
+      'Google sign-in is not configured for this app. Check the OAuth '
+      'client and the signing SHA-1 in the Firebase console.',
+    ),
+    _ => AuthException(
+      AuthFailure.unknown,
+      e.description ?? 'Google sign-in failed (${e.code.name}).',
+    ),
+  };
 
   /// Maps a Firebase error code onto an [AuthException].
   ///
@@ -397,65 +404,60 @@ class AuthRepository {
   /// `wrong-password` / `user-not-found`; both spellings are handled because
   /// which one arrives depends on the project's email-enumeration setting.
   AuthException _translate(FirebaseAuthException e) => switch (e.code) {
-        'invalid-credential' ||
-        'wrong-password' ||
-        'user-not-found' =>
-          const AuthException(
-            AuthFailure.wrongPassword,
-            'Wrong email or password.',
-          ),
-        'invalid-email' => const AuthException(
-            AuthFailure.invalidEmail,
-            'That is not a valid email address.',
-          ),
-        'email-already-in-use' => const AuthException(
-            AuthFailure.emailInUse,
-            'An account already exists for that email.',
-          ),
-        'weak-password' => const AuthException(
-            AuthFailure.weakPassword,
-            'The password must be at least 6 characters.',
-          ),
-        'user-disabled' => const AuthException(
-            AuthFailure.userDisabled,
-            'This account has been disabled.',
-          ),
-        'operation-not-allowed' => const AuthException(
-            AuthFailure.signInMethodDisabled,
-            'Email/password sign-in is not enabled for this Firebase project. '
-            'Enable it under Authentication → Sign-in method.',
-          ),
-        'network-request-failed' => const AuthException(
-            AuthFailure.networkUnavailable,
-            'No connection to Firebase. Check your network.',
-          ),
-        'requires-recent-login' => const AuthException(
-            AuthFailure.reauthenticationRequired,
-            'Please sign out and sign in again before changing this.',
-          ),
-        'account-exists-with-different-credential' => const AuthException(
-            AuthFailure.credentialConflict,
-            'That email already has an account created a different way. Sign '
-            'in with the original method first.',
-          ),
-        'popup-closed-by-user' ||
-        'cancelled-popup-request' =>
-          const AuthException(
-            AuthFailure.cancelled,
-            'Google sign-in was cancelled.',
-          ),
-        'invalid-custom-token' ||
-        'custom-token-mismatch' =>
-          const AuthException(
-            AuthFailure.unknown,
-            'The passkey sign-in token was rejected. Please try again.',
-          ),
-        // Anything unhandled still says what happened. Registration used to
-        // fail silently here: the button stopped spinning and nothing on
-        // screen explained why.
-        _ => AuthException(
-            AuthFailure.unknown,
-            e.message ?? 'Authentication failed (${e.code}).',
-          ),
-      };
+    'invalid-credential' ||
+    'wrong-password' ||
+    'user-not-found' => const AuthException(
+      AuthFailure.wrongPassword,
+      'Wrong email or password.',
+    ),
+    'invalid-email' => const AuthException(
+      AuthFailure.invalidEmail,
+      'That is not a valid email address.',
+    ),
+    'email-already-in-use' => const AuthException(
+      AuthFailure.emailInUse,
+      'An account already exists for that email.',
+    ),
+    'weak-password' => const AuthException(
+      AuthFailure.weakPassword,
+      'The password must be at least 6 characters.',
+    ),
+    'user-disabled' => const AuthException(
+      AuthFailure.userDisabled,
+      'This account has been disabled.',
+    ),
+    'operation-not-allowed' => const AuthException(
+      AuthFailure.signInMethodDisabled,
+      'Email/password sign-in is not enabled for this Firebase project. '
+      'Enable it under Authentication → Sign-in method.',
+    ),
+    'network-request-failed' => const AuthException(
+      AuthFailure.networkUnavailable,
+      'No connection to Firebase. Check your network.',
+    ),
+    'requires-recent-login' => const AuthException(
+      AuthFailure.reauthenticationRequired,
+      'Please sign out and sign in again before changing this.',
+    ),
+    'account-exists-with-different-credential' => const AuthException(
+      AuthFailure.credentialConflict,
+      'That email already has an account created a different way. Sign '
+      'in with the original method first.',
+    ),
+    'popup-closed-by-user' || 'cancelled-popup-request' => const AuthException(
+      AuthFailure.cancelled,
+      'Google sign-in was cancelled.',
+    ),
+    'invalid-custom-token' || 'custom-token-mismatch' => const AuthException(
+      AuthFailure.unknown,
+      'The passkey sign-in token was rejected. Please try again.',
+    ),
+    // Anything unhandled still says what happened. Registration used to
+    // fail silently here: the button stopped spinning and nothing on
+    // screen explained why.
+    _ => AuthException(
+      AuthFailure.unknown,
+      e.message ?? 'Authentication failed (${e.code}).',
+    ),
+  };
 }

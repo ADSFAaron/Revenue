@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../widgets/dropdown_value.dart';
 import '../database/repositories.dart';
 import '../models/menu_item.dart';
 import '../models/store.dart';
@@ -606,7 +607,11 @@ class _StoreEditMenuState extends State<StoreEditMenu> {
                   )
                 else
                   DropdownButtonFormField<String>(
-                    initialValue: categoryId,
+                    // A dish keeps pointing at a category after somebody
+                    // deletes it, and the dropdown asserts on a value it has
+                    // no item for.
+                    initialValue: dropdownValue(
+                        categoryId, _categories.map((c) => c.id)),
                     decoration: const InputDecoration(labelText: 'Category'),
                     items: _categories
                         .map((c) => DropdownMenuItem(

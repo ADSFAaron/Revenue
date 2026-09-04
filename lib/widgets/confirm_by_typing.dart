@@ -4,9 +4,16 @@ import 'feedback.dart';
 
 /// Asks somebody to type a phrase back before an irreversible action.
 ///
-/// Returns what they typed, or null if they backed out. Comparing it with
-/// [phrase] is the caller's job — for account deletion that check belongs on
-/// the server, and a dialog that decides locally would only be theatre.
+/// Returns what they typed, or null if they backed out. The confirm button
+/// stays disabled until it matches [phrase], so a mistyped name is answered on
+/// the spot instead of by a round trip — which is what happened, and the round
+/// trip came back "Your session expired" because App Check had rejected the
+/// call long before anything looked at the name. From the counter that reads as
+/// nothing having checked at all.
+///
+/// The real guard is still the server's: functions/src/account.ts compares the
+/// name against the store document, and it has to, because a client can be
+/// made to say anything. This is the half that belongs in front of a person.
 ///
 /// Its own widget, and that is the whole point of the file. This used to be a
 /// `TextEditingController` created next to `showDialog` and disposed in its
@@ -50,7 +57,7 @@ class ConfirmByTypingDialog extends StatefulWidget {
 
   final String title;
 
-  /// What the reader is asked to type. Shown, never checked here.
+  /// What the reader is asked to type.
   final String phrase;
 
   final String fieldLabel;
@@ -64,10 +71,24 @@ class _ConfirmByTypingDialogState extends State<ConfirmByTypingDialog> {
   final _controller = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onTyped);
+  }
+
+  @override
   void dispose() {
-    _controller.dispose();
+    _controller
+      ..removeListener(_onTyped)
+      ..dispose();
     super.dispose();
   }
+
+  void _onTyped() => setState(() {});
+
+  /// Trimmed on both sides: a name copied off a sign carries a trailing space
+  /// more often than it carries a typo, and the server trims too.
+  bool get _matches => _controller.text.trim() == widget.phrase.trim();
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +106,9 @@ class _ConfirmByTypingDialogState extends State<ConfirmByTypingDialog> {
             decoration: InputDecoration(labelText: widget.fieldLabel),
             // The keyboard's own action, for somebody who has just typed the
             // name and has the button below hidden behind the keyboard.
-            onSubmitted: (value) => Navigator.pop(context, value),
+            onSubmitted: (value) {
+              if (_matches) Navigator.pop(context, value);
+            },
           ),
         ],
       ),
@@ -96,7 +119,9 @@ class _ConfirmByTypingDialogState extends State<ConfirmByTypingDialog> {
         ),
         DestructiveButton(
           label: widget.confirmLabel,
-          onPressed: () => Navigator.pop(context, _controller.text),
+          onPressed: _matches
+              ? () => Navigator.pop(context, _controller.text)
+              : null,
         ),
       ],
     );

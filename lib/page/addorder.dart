@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../widgets/dropdown_value.dart';
 import '../database/repositories.dart';
 import '../models/menu_item.dart';
 import '../models/order.dart';
@@ -765,7 +766,10 @@ class _AddOrderState extends State<AddOrder> {
     return ListTile(
       leading: const Icon(Icons.storefront_outlined),
       title: DropdownButtonFormField<String>(
-        initialValue: _deliveryPlatformId,
+        // The platform can be removed from the store while an order that
+        // names it is still open.
+        initialValue: dropdownValue(
+            _deliveryPlatformId, store.deliveryPlatforms.map((p) => p.id)),
         decoration: const InputDecoration(labelText: 'Delivery platform'),
         items: store.deliveryPlatforms
             .map((p) => DropdownMenuItem(value: p.id, child: Text(p.name)))

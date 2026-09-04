@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'menu_capture_page.dart';
 
+import '../widgets/dropdown_value.dart';
 import '../database/repositories.dart';
 import '../models/menu_import.dart';
 import '../models/menu_item.dart';
@@ -662,7 +663,10 @@ class _StoreImportMenuState extends State<StoreImportMenu> {
                   ],
                 ),
                 DropdownButtonFormField<String?>(
-                  initialValue: category,
+                  // 'No category' is a real choice here, so null is in the
+                  // list rather than the fallback.
+                  initialValue:
+                      dropdownValue(category, <String?>[null, ...choices]),
                   decoration: const InputDecoration(labelText: 'Category'),
                   items: [
                     const DropdownMenuItem<String?>(

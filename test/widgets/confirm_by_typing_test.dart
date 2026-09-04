@@ -60,11 +60,59 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('it hands back exactly what was typed, right or wrong',
-      (tester) async {
-    // Whether the phrase matches is the caller's business — for account
-    // deletion the real check is on the server, and a dialog that decided
-    // locally would only be theatre.
+  testWidgets('the wrong name cannot be confirmed at all', (tester) async {
+    // What was reported: typing anything and pressing the button appeared to
+    // work, because the server's check was never reached — App Check had
+    // already refused the call, and the round trip came back "Your session
+    // expired". Answered here now, before anything leaves the phone.
+    await open(tester);
+    await tester.enterText(find.byType(TextField), 'not the shop name');
+    await tester.pump();
+
+    final button = tester.widget<TextButton>(
+      find.ancestor(
+        of: find.text('Delete everything'),
+        matching: find.byType(TextButton),
+      ),
+    );
+    expect(button.onPressed, isNull);
+
+    await tester.tap(find.text('Delete everything'));
+    await tester.pumpAndSettle();
+    // Still open, because nothing happened.
+    expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('a trailing space is not a typo', (tester) async {
+    // A name copied off a sign carries one more often than it carries a
+    // mistake, and the server trims too.
+    String? answer;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => answer = await confirmByTyping(
+              context,
+              title: 'Type the store name to confirm',
+              phrase: 'Shop',
+              fieldLabel: 'Store name',
+              confirmLabel: 'Delete everything',
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '  Shop ');
+    await tester.pump();
+    await tester.tap(find.text('Delete everything'));
+    await tester.pumpAndSettle();
+    expect(answer, '  Shop ');
+  });
+
+  testWidgets('the right name hands back what was typed', (tester) async {
     String? answer;
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
@@ -85,11 +133,12 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'not the shop name');
+    await tester.enterText(find.byType(TextField), 'Shop');
+    await tester.pump();
     await tester.tap(find.text('Delete everything'));
     await tester.pumpAndSettle();
 
-    expect(answer, 'not the shop name');
+    expect(answer, 'Shop');
     expect(tester.takeException(), isNull);
   });
 

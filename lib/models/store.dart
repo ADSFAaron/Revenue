@@ -26,16 +26,16 @@ class StoreCategory {
   final int sortOrder;
 
   factory StoreCategory.fromMap(Map<String, dynamic> map) => StoreCategory(
-        id: map['id'] as String? ?? '',
-        name: map['name'] as String? ?? '',
-        sortOrder: (map['sortOrder'] as num?)?.toInt() ?? 0,
-      );
+    id: map['id'] as String? ?? '',
+    name: map['name'] as String? ?? '',
+    sortOrder: (map['sortOrder'] as num?)?.toInt() ?? 0,
+  );
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'name': name,
-        'sortOrder': sortOrder,
-      };
+    'id': id,
+    'name': name,
+    'sortOrder': sortOrder,
+  };
 }
 
 /// Daily goals that drive the statistics gauge.
@@ -46,14 +46,14 @@ class StoreTargets {
   final int dailyRevenue;
 
   factory StoreTargets.fromMap(Map<String, dynamic>? map) => StoreTargets(
-        dailyOrders: (map?['dailyOrders'] as num?)?.toInt() ?? 100,
-        dailyRevenue: (map?['dailyRevenue'] as num?)?.toInt() ?? 20000,
-      );
+    dailyOrders: (map?['dailyOrders'] as num?)?.toInt() ?? 100,
+    dailyRevenue: (map?['dailyRevenue'] as num?)?.toInt() ?? 20000,
+  );
 
   Map<String, dynamic> toMap() => {
-        'dailyOrders': dailyOrders,
-        'dailyRevenue': dailyRevenue,
-      };
+    'dailyOrders': dailyOrders,
+    'dailyRevenue': dailyRevenue,
+  };
 }
 
 /// A way a customer is allowed to pay, as this shop actually takes money.
@@ -95,20 +95,22 @@ class StorePaymentMethod {
       );
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'name': name,
-        'iconKey': iconKey,
-        'sortOrder': sortOrder,
-      };
+    'id': id,
+    'name': name,
+    'iconKey': iconKey,
+    'sortOrder': sortOrder,
+  };
 
-  StorePaymentMethod copyWith(
-          {String? name, String? iconKey, int? sortOrder}) =>
-      StorePaymentMethod(
-        id: id,
-        name: name ?? this.name,
-        iconKey: iconKey ?? this.iconKey,
-        sortOrder: sortOrder ?? this.sortOrder,
-      );
+  StorePaymentMethod copyWith({
+    String? name,
+    String? iconKey,
+    int? sortOrder,
+  }) => StorePaymentMethod(
+    id: id,
+    name: name ?? this.name,
+    iconKey: iconKey ?? this.iconKey,
+    sortOrder: sortOrder ?? this.sortOrder,
+  );
 }
 
 /// What a store takes until somebody edits the list.
@@ -118,9 +120,17 @@ class StorePaymentMethod {
 const List<StorePaymentMethod> kDefaultPaymentMethods = [
   StorePaymentMethod(id: 'cash', name: 'Cash', iconKey: 'cash'),
   StorePaymentMethod(
-      id: 'credit_card', name: 'Credit card', iconKey: 'card', sortOrder: 1),
+    id: 'credit_card',
+    name: 'Credit card',
+    iconKey: 'card',
+    sortOrder: 1,
+  ),
   StorePaymentMethod(
-      id: 'line_pay', name: 'Line Pay', iconKey: 'contactless', sortOrder: 2),
+    id: 'line_pay',
+    name: 'Line Pay',
+    iconKey: 'contactless',
+    sortOrder: 2,
+  ),
   StorePaymentMethod(id: 'other', name: 'Other', iconKey: 'more', sortOrder: 3),
 ];
 
@@ -175,10 +185,10 @@ class DeliveryPlatform {
       );
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'name': name,
-        'commissionRate': commissionRate,
-      };
+    'id': id,
+    'name': name,
+    'commissionRate': commissionRate,
+  };
 }
 
 /// `stores/{storeId}`.
@@ -245,20 +255,31 @@ class Store {
       timezone: data['timezone'] as String? ?? 'Asia/Taipei',
       taxRate: (data['taxRate'] as num?)?.toDouble() ?? 0,
       taxIncluded: data['taxIncluded'] as bool? ?? true,
+      // Clamped, because this ends up as a dropdown's value and a dropdown
+      // asserts fatally on a value it has no item for. A hand-edited document
+      // holding 25 would make Store Settings unopenable.
       dayCutoffHour:
-          (data['dayCutoffHour'] as num?)?.toInt() ?? defaultDayCutoffHour,
-      businessHours:
-          Map<String, dynamic>.from(data['businessHours'] as Map? ?? const {}),
+          ((data['dayCutoffHour'] as num?)?.toInt() ?? defaultDayCutoffHour)
+              .clamp(0, 23),
+      businessHours: Map<String, dynamic>.from(
+        data['businessHours'] as Map? ?? const {},
+      ),
       targets: StoreTargets.fromMap(
-          (data['targets'] as Map?)?.cast<String, dynamic>()),
-      categories: ((data['categories'] as List?) ?? const [])
-          .map((c) => StoreCategory.fromMap((c as Map).cast<String, dynamic>()))
-          .toList()
-        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder)),
+        (data['targets'] as Map?)?.cast<String, dynamic>(),
+      ),
+      categories:
+          ((data['categories'] as List?) ?? const [])
+              .map(
+                (c) =>
+                    StoreCategory.fromMap((c as Map).cast<String, dynamic>()),
+              )
+              .toList()
+            ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder)),
       paymentMethods: _paymentMethodsFrom(data['paymentMethods'] as List?),
       deliveryPlatforms: ((data['deliveryPlatforms'] as List?) ?? const [])
-          .map((p) =>
-              DeliveryPlatform.fromMap((p as Map).cast<String, dynamic>()))
+          .map(
+            (p) => DeliveryPlatform.fromMap((p as Map).cast<String, dynamic>()),
+          )
           .toList(),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
@@ -266,18 +287,18 @@ class Store {
   }
 
   Map<String, dynamic> toMap() => {
-        'name': name,
-        'currency': currency,
-        'timezone': timezone,
-        'taxRate': taxRate,
-        'taxIncluded': taxIncluded,
-        'dayCutoffHour': dayCutoffHour,
-        'businessHours': businessHours,
-        'targets': targets.toMap(),
-        'categories': categories.map((c) => c.toMap()).toList(),
-        'paymentMethods': paymentMethods.map((p) => p.toMap()).toList(),
-        'deliveryPlatforms': deliveryPlatforms.map((p) => p.toMap()).toList(),
-      };
+    'name': name,
+    'currency': currency,
+    'timezone': timezone,
+    'taxRate': taxRate,
+    'taxIncluded': taxIncluded,
+    'dayCutoffHour': dayCutoffHour,
+    'businessHours': businessHours,
+    'targets': targets.toMap(),
+    'categories': categories.map((c) => c.toMap()).toList(),
+    'paymentMethods': paymentMethods.map((p) => p.toMap()).toList(),
+    'deliveryPlatforms': deliveryPlatforms.map((p) => p.toMap()).toList(),
+  };
 
   /// The trading day a wall-clock time belongs to, as `yyyy-MM-dd`.
   String businessDateOf(DateTime at) =>
@@ -319,23 +340,22 @@ class Store {
     List<StoreCategory>? categories,
     List<StorePaymentMethod>? paymentMethods,
     List<DeliveryPlatform>? deliveryPlatforms,
-  }) =>
-      Store(
-        id: id,
-        name: name ?? this.name,
-        currency: currency,
-        timezone: timezone,
-        taxRate: taxRate ?? this.taxRate,
-        taxIncluded: taxIncluded ?? this.taxIncluded,
-        dayCutoffHour: dayCutoffHour ?? this.dayCutoffHour,
-        businessHours: businessHours,
-        targets: targets ?? this.targets,
-        categories: categories ?? this.categories,
-        paymentMethods: paymentMethods ?? this.paymentMethods,
-        deliveryPlatforms: deliveryPlatforms ?? this.deliveryPlatforms,
-        createdAt: createdAt,
-        updatedAt: updatedAt,
-      );
+  }) => Store(
+    id: id,
+    name: name ?? this.name,
+    currency: currency,
+    timezone: timezone,
+    taxRate: taxRate ?? this.taxRate,
+    taxIncluded: taxIncluded ?? this.taxIncluded,
+    dayCutoffHour: dayCutoffHour ?? this.dayCutoffHour,
+    businessHours: businessHours,
+    targets: targets ?? this.targets,
+    categories: categories ?? this.categories,
+    paymentMethods: paymentMethods ?? this.paymentMethods,
+    deliveryPlatforms: deliveryPlatforms ?? this.deliveryPlatforms,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+  );
 }
 
 /// Reads the stored payment methods, falling back to the defaults.
@@ -344,11 +364,14 @@ class Store {
 /// the till has to offer something, and the settings screen refuses to delete
 /// the last method for the same reason.
 List<StorePaymentMethod> _paymentMethodsFrom(List<dynamic>? raw) {
-  final methods = (raw ?? const [])
-      .map(
-          (p) => StorePaymentMethod.fromMap((p as Map).cast<String, dynamic>()))
-      .where((p) => p.id.isNotEmpty)
-      .toList()
-    ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+  final methods =
+      (raw ?? const [])
+          .map(
+            (p) =>
+                StorePaymentMethod.fromMap((p as Map).cast<String, dynamic>()),
+          )
+          .where((p) => p.id.isNotEmpty)
+          .toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
   return methods.isEmpty ? kDefaultPaymentMethods : methods;
 }

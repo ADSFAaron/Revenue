@@ -478,8 +478,22 @@ class _AccountSettingsState extends State<AccountSettings> {
 
     try {
       await authRepository.deleteAccount(storeName: typedName);
-      // The auth listener at the root notices the account is gone and returns
-      // to the welcome screen on its own.
+      // Signed out here rather than left to the auth listener, which is what
+      // this used to assume. Deleting the account happens on the server, and
+      // FirebaseAuth on this device does not find out until its token is next
+      // refreshed — up to an hour later. Until then the app sits on a signed-in
+      // session belonging to an account that no longer exists, every read
+      // failing, which is exactly the screen this whole flow was reported for.
+      //
+      // Signing out locally makes the auth stream fire now, and the listener at
+      // the root takes the routes above it with it.
+      try {
+        await authRepository.signOut();
+      } catch (_) {
+        // The deletion succeeded, which is the part that cannot be undone.
+        // Failing to tidy up the local session afterwards is not worth an
+        // error message about; the next launch signs out anyway.
+      }
     } on AuthException catch (e) {
       if (mounted) showError(context, e.message);
     } catch (e) {

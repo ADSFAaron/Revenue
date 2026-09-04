@@ -379,11 +379,53 @@ service cloud.firestore {
       // `at` is pinned to the server clock for the same reason `createdAt` is
       // on orders: a log that can be back-dated can be hidden in the middle of
       // a list nobody scrolls.
+      //
+      // The shape is checked for the same reason `feedback`'s is: a create
+      // rule that only says who may write accepts any document of any size
+      // under any field names, and Firestore's ceiling is a 1 MiB document —
+      // which is not a limit on anything, it is the size of the hole. This
+      // collection is the worse place for that: entries cannot be deleted, by
+      // design, so junk written here is permanent, and it is a shop's own
+      // change history that fills up with it.
+      //
+      // `action` is bounded rather than enumerated, deliberately. A list of
+      // the four ids the app writes today would be stronger, and it would also
+      // mean that adding a fifth action to lib/models/audit_log.dart without
+      // remembering this file makes voiding an order fail outright — the log
+      // is written inside the same transaction as the change, so a refused
+      // entry takes the void with it. A wrong id renders as "Unknown action"
+      // and is still attributed; a shop that cannot void is a shop that
+      // cannot trade.
+      //
+      // `before` and `after` are not enumerated either: they are snapshots of
+      // whatever the change was about, and naming their fields here would mean
+      // editing this file whenever one of them gains a column. How many keys
+      // they may carry is the part that bounds the hole.
+      function wellFormedAuditEntry() {
+        let entry = request.resource.data;
+        return entry.keys().hasOnly([
+            'action', 'targetId', 'before', 'after',
+            'byUid', 'byName', 'at', 'note']) &&
+          entry.action is string &&
+          entry.action.size() > 0 && entry.action.size() <= 40 &&
+          (entry.get('targetId', null) == null ||
+            (entry.targetId is string && entry.targetId.size() <= 200)) &&
+          (entry.get('byName', null) == null ||
+            (entry.byName is string && entry.byName.size() <= 200)) &&
+          (entry.get('note', null) == null ||
+            (entry.note is string && entry.note.size() <= 500)) &&
+          (entry.get('before', null) == null ||
+            (entry.before is map && entry.before.keys().size() <= 20)) &&
+          (entry.get('after', null) == null ||
+            (entry.after is map && entry.after.keys().size() <= 20));
+      }
+
       match /auditLogs/{logId} {
         allow read: if managerOf(storeId);
         allow create: if memberOf(storeId) &&
           request.resource.data.byUid == request.auth.uid &&
-          request.resource.data.at == request.time;
+          request.resource.data.at == request.time &&
+          wellFormedAuditEntry();
         allow update, delete: if false;
       }
     }

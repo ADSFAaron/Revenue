@@ -144,4 +144,51 @@ describe('the change log', () => {
     await assertFails(getDocs(collection(as(env, OUTSIDER), 'stores', STORE, 'auditLogs')));
     await assertFails(setDoc(log(as(env, OUTSIDER)), entry({ byUid: OUTSIDER })));
   });
+
+  // Entries can never be deleted, by design, so anything written here is
+  // permanent — which makes an unbounded create rule a way to fill a shop's
+  // own change history with junk it can never clear.
+  describe('what an entry may contain', () => {
+    test('a field nobody writes is refused', async () => {
+      await assertFails(setDoc(log(as(env, STAFF)), entry({ payload: 'x' })));
+    });
+
+    test('the pieces the app actually sends are accepted', async () => {
+      await assertSucceeds(setDoc(log(as(env, STAFF)), entry({
+        before: { orderNo: 1, businessDate: DATE, total: 100 },
+        after: { orderNo: 1, businessDate: DATE, total: 90 },
+        note: 'Rang up twice',
+      })));
+    });
+
+    test('a null optional is not the same as a wrong one', async () => {
+      // `AuditLog.toMap()` writes nulls for the fields an entry does not use,
+      // so refusing null here would refuse every menu-price change.
+      await assertSucceeds(setDoc(log(as(env, STAFF)), entry({
+        targetId: null, before: null, after: null, note: null, byName: null,
+      })));
+    });
+
+    test('long strings are refused', async () => {
+      await assertFails(setDoc(log(as(env, STAFF)), entry({ note: 'x'.repeat(501) })));
+      await assertFails(setDoc(log(as(env, STAFF)), entry({ targetId: 'x'.repeat(201) })));
+      await assertFails(setDoc(log(as(env, STAFF)), entry({ byName: 'x'.repeat(201) })));
+      await assertFails(setDoc(log(as(env, STAFF)), entry({ action: 'x'.repeat(41) })));
+    });
+
+    test('a snapshot cannot be a payload', async () => {
+      const wide = {};
+      for (let i = 0; i < 21; i++) wide['k' + i] = i;
+      await assertFails(setDoc(log(as(env, STAFF)), entry({ before: wide })));
+      await assertFails(setDoc(log(as(env, STAFF)), entry({ after: wide })));
+    });
+
+    test('an action the rules have never heard of still writes', async () => {
+      // Bounded, not enumerated, and on purpose: the entry is written inside
+      // the same transaction as the change, so a rule that refused an
+      // unrecognised action would turn "somebody added a fifth action to the
+      // app" into "this shop can no longer void an order".
+      await assertSucceeds(setDoc(log(as(env, STAFF)), entry({ action: 'issue_refund' })));
+    });
+  });
 });

@@ -15,6 +15,7 @@ import '../widgets/page_body.dart';
 import '../widgets/setting_tile.dart';
 import 'app_update.dart';
 import 'change_password.dart';
+import 'screen_lock.dart';
 import 'theme_controller.dart';
 import 'user_passkeys.dart';
 
@@ -438,6 +439,8 @@ class _AccountSettingsState extends State<AccountSettings> {
     // and the screen has not changed — so without this they would tap Log out,
     // watch nothing happen, and have no idea why.
     try {
+      // The next person at this counter is a different person.
+      screenLock.relock();
       await authRepository.signOut();
     } catch (e) {
       if (mounted) showFailure(context, e);
@@ -499,6 +502,8 @@ class _AccountSettingsState extends State<AccountSettings> {
       // Signing out locally makes the auth stream fire now, and the listener at
       // the root takes the routes above it with it.
       try {
+        // The next person at this counter is a different person.
+        screenLock.relock();
         await authRepository.signOut();
       } catch (_) {
         // The deletion succeeded, which is the part that cannot be undone.

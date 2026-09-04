@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'database/repositories.dart';
 
 import 'page/analysis.dart';
+import 'settings/screen_lock.dart';
 import 'page/statistics.dart';
 import 'page/store.dart';
 import 'page/transaction.dart';
@@ -85,10 +86,26 @@ class _LoginHomePageState extends State<LoginHomePage> {
     ),
   ];
 
-  void _select(int index) => setState(() {
-        pageIndex = index;
-        _visited.add(index);
-      });
+  /// Insights is the one tab behind the screen lock: it is where a shop's
+  /// costs, margins and worst-performing dishes are, and it is the tab a
+  /// stranger behind an unattended counter would learn something from. Today
+  /// and Reports show takings that anybody working the till sees anyway, and
+  /// gating them would mean a prompt on the way to the thing staff open all
+  /// day — which is how a lock ends up switched off.
+  Future<void> _select(int index) async {
+    if (index == _insightsTab &&
+        pageIndex != _insightsTab &&
+        !await screenLock.confirm('Unlock to open Insights')) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
+      pageIndex = index;
+      _visited.add(index);
+    });
+  }
+
+  static const int _insightsTab = 1;
 
   @override
   Widget build(BuildContext context) {

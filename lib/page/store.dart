@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import '../database/repositories.dart';
 import '../models/app_user.dart';
 import '../settings/account_settings.dart';
+import '../settings/screen_lock.dart';
+import '../settings/store_security.dart';
 import '../settings/store_import_orders.dart';
 import '../settings/store_settings.dart';
 import '../settings/store_settings_audit_log.dart';
@@ -152,14 +154,29 @@ class _StorePageState extends State<StorePage> {
                     // door. The other two rows stay open: orders are readable
                     // and creatable by any member.
                     locked: !session.user.role.canManage,
-                    onTap: () => _navigateTo(StoreAuditLog(session.storeId)),
+                    onTap: () => _openLocked(
+                      StoreAuditLog(session.storeId),
+                      'Unlock to open the change history',
+                    ),
+                  ),
+                  SettingTile.page(
+                    icon: Icons.shield_outlined,
+                    title: 'Security',
+                    subtitle: 'What protects this shop, and the screen lock',
+                    onTap: () => _navigateTo(StoreSecurity(
+                      storeId: session.storeId,
+                      role: session.user.role,
+                    )),
                   ),
                   const SettingSection('You'),
                   SettingTile.page(
                     icon: Icons.manage_accounts_outlined,
                     title: 'Account & app',
                     subtitle: 'Your profile, sign-in, appearance, log out',
-                    onTap: () => _navigateTo(const AccountSettings()),
+                    onTap: () => _openLocked(
+                      const AccountSettings(),
+                      'Unlock to open your account',
+                    ),
                   ),
                   SettingTile.page(
                     icon: Icons.help_outline_rounded,
@@ -257,6 +274,14 @@ class _StorePageState extends State<StorePage> {
 
   void _navigateTo(Widget page) {
     Navigator.push(context, MaterialPageRoute(builder: (context) => page));
+  }
+
+  /// Opens a screen that a stranger behind an unattended counter should not
+  /// reach. No-ops when the lock is off, which is the default.
+  Future<void> _openLocked(Widget page, String reason) async {
+    if (!await screenLock.confirm(reason)) return;
+    if (!mounted) return;
+    _navigateTo(page);
   }
 }
 

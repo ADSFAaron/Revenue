@@ -8,6 +8,7 @@ import 'database/session_resolver.dart';
 import 'firebase_options.dart';
 import 'home.dart';
 import 'entry/entry_screen.dart';
+import 'settings/screen_lock.dart';
 import 'settings/theme_controller.dart';
 import 'widgets/feedback.dart';
 import 'widgets/opening_sequence.dart';
@@ -22,6 +23,10 @@ Future<void> main() async {
   // is local and quick, and having it before the first frame is what stops the
   // app opening light and blinking to dark a moment later.
   await themeController.load();
+  // Same shape and the same reason: one key out of shared_preferences, wanted
+  // before the first screen that consults it. A lock that loads late is a lock
+  // that is off for the first tap.
+  await screenLock.load();
 
   // Everything that talks to the network starts here and is *not* awaited. It
   // used to be, and that was the whole of the launch gap: Firebase and App

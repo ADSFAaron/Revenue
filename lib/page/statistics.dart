@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 
 import '../database/repositories.dart';
+import '../settings/screen_lock.dart';
 import '../export/statistics_workbook.dart';
 import '../export/workbook_saver.dart';
 import '../models/daily_stats.dart';
@@ -144,6 +145,12 @@ class _StatisticsPageState extends State<StatisticsPage>
   }
 
   Future<void> _export(Session session, PeriodReport report) async {
+    // A spreadsheet leaves the app. Everything else on this page can be read
+    // by looking at it; this is the one action that makes a copy somebody can
+    // carry away, which is why it is behind the lock while the tab it sits on
+    // is not.
+    if (!await screenLock.confirm('Unlock to export this period')) return;
+    if (!mounted) return;
     setState(() => _exporting = true);
     try {
       final workbook = StatisticsWorkbook(

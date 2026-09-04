@@ -12,6 +12,7 @@ import '../widgets/money.dart';
 import 'store_settings_edit_menu.dart';
 import 'store_delivery_platforms.dart';
 import 'store_payment_methods.dart';
+import 'screen_lock.dart';
 import 'store_staff.dart';
 import '../widgets/page_body.dart';
 import '../widgets/setting_tile.dart';
@@ -233,7 +234,7 @@ class _StoreSettingsState extends State<StoreSettings> {
                   ? 'Loading…'
                   : '$count ${count == 1 ? 'person' : 'people'}'
                       '${_isManager ? ' · invite a colleague' : ''}',
-          onTap: () => _push(StoreStaff(widget.storeId, storeName: store.name)),
+          onTap: () => _openStaff(store.name),
         );
       },
     );
@@ -241,6 +242,14 @@ class _StoreSettingsState extends State<StoreSettings> {
 
   void _push(Widget page) {
     Navigator.push(context, MaterialPageRoute(builder: (context) => page));
+  }
+
+  /// The staff list is behind the screen lock: it carries colleagues' names
+  /// and email addresses, and it is where somebody is removed from the shop.
+  Future<void> _openStaff(String storeName) async {
+    if (!await screenLock.confirm('Unlock to open the staff list')) return;
+    if (!mounted) return;
+    _push(StoreStaff(widget.storeId, storeName: storeName));
   }
 
   Future<void> _editStoreNameDialog(Store store) async {

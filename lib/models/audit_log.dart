@@ -103,8 +103,16 @@ class AuditLog {
       };
 
   /// A one-line summary for the history list.
-  String get summary {
-    final who = byName?.isNotEmpty == true ? byName! : 'Someone';
-    return '$who ${action.label.toLowerCase()}';
+  ///
+  /// [who] is the name looked up from the store's staff at display time, so a
+  /// person who has since been renamed reads as themselves. [byName] is the
+  /// copy taken when the entry was written, and it is the better answer in
+  /// exactly one case — an account that has since been deleted, where nothing
+  /// can be looked up but the trail should still say who it was.
+  String summaryBy(String? who) {
+    final name = (who?.isNotEmpty == true ? who : null) ??
+        (byName?.isNotEmpty == true ? byName : null) ??
+        'Someone';
+    return '$name ${action.label.toLowerCase()}';
   }
 }

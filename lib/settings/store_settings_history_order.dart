@@ -36,6 +36,11 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
   final List<Order> _orders = [];
 
   Store? _store;
+
+  /// Who the `createdBy` uids on these orders belong to, resolved once per
+  /// visit rather than copied onto the orders themselves. See [StaffNames].
+  StaffNames _staff = const StaffNames.empty();
+
   bool _loading = true;
   bool _loadingMore = false;
   bool _hasMore = true;
@@ -92,9 +97,16 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
       final store = await storeRepository.fetch(widget.storeID);
       final page =
           await orderRepository.fetchPage(widget.storeID, limit: _pageSize);
+      // Names are the one part of this screen that may fail on its own: a list
+      // of orders with nobody's name against them is still the list of orders,
+      // and refusing to show it would be the worse trade.
+      final staff = await userRepository
+          .staffNames(widget.storeID)
+          .catchError((_) => const StaffNames.empty());
       if (!mounted) return;
       setState(() {
         _store = store;
+        _staff = staff;
         _orders
           ..clear()
           ..addAll(page);
@@ -317,8 +329,10 @@ class _StoreHistoryOrderState extends State<StoreHistoryOrder> {
         ),
         subtitle: Text(
           '${DateFormat.Hm().format(order.placedAt)}  ·  '
-          '${order.channel.label}  ·  ${_paymentName(order)}',
+          '${order.channel.label}  ·  ${_paymentName(order)}\n'
+          '${_staff.labelFor(order.createdBy)}',
         ),
+        isThreeLine: true,
         trailing: Text(
           _money.format(order.total),
           style: Theme.of(context).textTheme.titleMedium?.copyWith(

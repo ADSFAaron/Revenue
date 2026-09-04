@@ -260,7 +260,13 @@ allow read: if signedIn() &&
 **Phase 1 — 讓歸屬先有意義**（不動流程，風險低）
 1. ~~修離線 `createdBy` 為 null~~（已完成 2026-09-03）
 2. ~~rules 加 `active`，補上移除離職員工的路徑（§5.1）~~（已完成 2026-09-04）
-3. 歷史訂單、稽核紀錄顯示是誰，含懸空 uid 的處理（§6）
+3. ~~歷史訂單、稽核紀錄顯示是誰，含懸空 uid 的處理（§6）~~（已完成 2026-09-04）
+   —— `UserRepository.staffNames()` 一次查一份、快取到店家有人寫入為止；
+   `StaffNames.labelFor()` 分開三種狀態：查得到＝名字、查不到＝「Former
+   staff」、根本沒有 uid＝「Not recorded」。稽核紀錄優先用**現在**查到的名字
+   （改名會跟著變），查不到才退回寫入當下複寫的 `byName`——帳號被刪掉時那是
+   唯一還留著的線索。報表匯出目前是 `dailyStats` 彙總、沒有逐筆列，所以第三處
+   要等 A4 的逐筆 CSV 才有地方放。
 4. `orders.createdBy` 的取捨寫進 rules 註解（§5.2）
 
 **Phase 2 — 選人畫面**

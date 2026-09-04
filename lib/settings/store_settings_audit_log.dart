@@ -11,17 +11,40 @@ import '../widgets/page_body.dart';
 /// Manager-only, enforced by the security rules rather than by hiding the
 /// screen — a check that lives only in the UI is not a check. Staff who reach
 /// it are shown why they cannot read it instead of a raw permission error.
-class StoreAuditLog extends StatelessWidget {
+class StoreAuditLog extends StatefulWidget {
   const StoreAuditLog(this.storeId, {super.key});
 
   final String storeId;
 
   @override
+  State<StoreAuditLog> createState() => _StoreAuditLogState();
+}
+
+class _StoreAuditLogState extends State<StoreAuditLog> {
+  /// Resolved once per visit. Names change rarely enough that re-reading them
+  /// per row would be a query per row for the same answer, and an entry whose
+  /// author cannot be resolved is not an error worth interrupting the list
+  /// with — [StaffNames.empty] falls back to the name stored on the entry.
+  late final Future<StaffNames> _names =
+      userRepository.staffNames(widget.storeId);
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Change history')),
-      body: StreamBuilder<List<AuditLog>>(
-        stream: auditLogRepository.watchRecent(storeId),
+      body: FutureBuilder<StaffNames>(
+        future: _names,
+        builder: (context, namesSnapshot) => _buildList(
+          context,
+          namesSnapshot.data ?? const StaffNames.empty(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildList(BuildContext context, StaffNames names) {
+    return StreamBuilder<List<AuditLog>>(
+        stream: auditLogRepository.watchRecent(widget.storeId),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return _buildError(context, snapshot.error!);
@@ -50,11 +73,11 @@ class StoreAuditLog extends StatelessWidget {
               padding: insets,
               itemCount: logs.length,
               separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, index) => _AuditTile(log: logs[index]),
+              itemBuilder: (context, index) =>
+                  _AuditTile(log: logs[index], names: names),
             ),
           );
-        },
-      ),
+      },
     );
   }
 
@@ -85,15 +108,16 @@ class StoreAuditLog extends StatelessWidget {
 }
 
 class _AuditTile extends StatelessWidget {
-  const _AuditTile({required this.log});
+  const _AuditTile({required this.log, required this.names});
 
   final AuditLog log;
+  final StaffNames names;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       leading: Icon(_iconFor(log.action)),
-      title: Text(log.summary),
+      title: Text(log.summaryBy(_who)),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -111,6 +135,11 @@ class _AuditTile extends StatelessWidget {
       isThreeLine: log.note?.isNotEmpty == true,
     );
   }
+
+  /// The author's name as the store knows it now, or null when the account
+  /// has gone — [AuditLog.summaryBy] falls back to the name recorded at the
+  /// time, which is the only record left of who that was.
+  String? get _who => names.knows(log.byUid) ? names.labelFor(log.byUid) : null;
 
   /// What actually changed, in one line.
   String _detail() {

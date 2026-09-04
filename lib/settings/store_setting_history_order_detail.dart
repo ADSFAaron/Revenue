@@ -36,6 +36,11 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
   /// Managers may change any order at any time; everyone else has
   /// [kStaffCorrectionWindow] from the moment it was rung up.
   bool _isManager = false;
+
+  /// Who the uids on this order belong to. Empty until the lookup lands, which
+  /// reads as "Not recorded" for a moment rather than as a blank row that
+  /// appears late and pushes the rest of the page down.
+  StaffNames _staff = const StaffNames.empty();
   bool _busy = false;
 
   /// True when anything was changed, so the list behind can refresh.
@@ -70,10 +75,17 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
       // The session rather than the store alone: the buttons below also need
       // to know whether this is a manager.
       final session = await loadSession();
+      // The staff lookup is allowed to fail on its own: an order with no name
+      // against it is still an order worth showing, and Void must not be held
+      // up by a query it does not need.
+      final staff = await userRepository
+          .staffNames(session.storeId)
+          .catchError((_) => const StaffNames.empty());
       if (mounted) {
         setState(() {
           _store = session.store;
           _isManager = session.user.role.canManage;
+          _staff = staff;
         });
       }
     } catch (e) {
@@ -114,6 +126,13 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
                   _buildFact('Trading day', order.businessDate),
                   _buildFact('Channel', _channelLabel(order)),
                   _buildFact('Guests', '${order.guestCount}'),
+                  // A uid that resolves to nobody is the expected end state,
+                  // not a fault: account deletion takes the person's document
+                  // and leaves their orders, because those are the shop's
+                  // books. See StaffNames.
+                  _buildFact('Rung up by', _staff.labelFor(order.createdBy)),
+                  if (order.isVoided)
+                    _buildFact('Voided by', _staff.labelFor(order.voidedBy)),
                   _buildFact('Payment method', _paymentLabel(order),
                       icon: _paymentIcon(order)),
                   if (order.commissionAmount > 0)

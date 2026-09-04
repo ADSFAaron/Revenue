@@ -83,6 +83,12 @@ class AppUser {
         'active': active,
       };
 
+  /// What to call this person on screen. The name if there is one, the email
+  /// if there is not — an account that never set a name still has to be
+  /// identifiable next to an order it rang up.
+  String get displayLabel =>
+      displayName.trim().isNotEmpty ? displayName.trim() : email.trim();
+
   /// Initials for the avatar circles. Falls back to the email so a user who
   /// never set a name still gets something readable.
   String get initials {

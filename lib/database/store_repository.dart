@@ -1,13 +1,23 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'session_apps.dart';
+
 import '../models/store.dart';
 
 /// Everything that touches `stores/{storeId}`.
 class StoreRepository {
-  StoreRepository({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance;
+  StoreRepository({FirebaseFirestore? firestore}) : _injected = firestore;
 
-  final FirebaseFirestore _db;
+  final FirebaseFirestore? _injected;
+
+  /// Read through the session that is current, not captured once.
+  ///
+  /// A counter tablet can hold several operators signed in at the same time,
+  /// one Firebase app each, and handing the till over swaps which of them is
+  /// current. A handle captured in the constructor would keep answering as the
+  /// person who was at the till when this object was built. See SessionApps.
+  FirebaseFirestore get _db =>
+      _injected ?? FirebaseFirestore.instanceFor(app: sessionApps.active);
 
   CollectionReference<Map<String, dynamic>> get _stores =>
       _db.collection('stores');
@@ -42,6 +52,12 @@ class StoreRepository {
   Future<void> updateDayCutoffHour(String storeId, int hour) {
     assert(hour >= 0 && hour <= 23);
     return _update(storeId, {'dayCutoffHour': hour});
+  }
+
+  /// Minutes of no touching before the till covers itself. Zero is off.
+  Future<void> updateIdleTimeout(String storeId, int minutes) {
+    assert(minutes >= 0 && minutes <= 60);
+    return _update(storeId, {'idleTimeoutMinutes': minutes});
   }
 
   Future<void> updateTax(String storeId,

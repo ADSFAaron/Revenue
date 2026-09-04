@@ -22,7 +22,12 @@ import 'entry_ui.dart';
 /// discover they typed the code wrong. On a good code the next screen names
 /// the store, so joining the wrong one is caught before an account exists.
 class JoinStoreRegistration extends StatefulWidget {
-  const JoinStoreRegistration({super.key});
+  const JoinStoreRegistration({this.account, super.key});
+
+  /// An account that already exists and is signed in, for carrying on from a
+  /// registration that stopped after it was created. The code step is the
+  /// same; the account step becomes "you, joining", with no sign-up on it.
+  final SignInResult? account;
 
   @override
   State<JoinStoreRegistration> createState() => _JoinStoreRegistrationState();
@@ -41,9 +46,21 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
   /// store — the person does not belong to it yet and so cannot read it.
   Invite? _invite;
 
+  /// The name to redeem under, when the account has none of its own. An
+  /// interrupted email-and-password registration leaves a sign-in with no
+  /// display name, because that only ever lived in the profile it never wrote.
+  final _resumeNameController = TextEditingController();
+  String _resumeNameError = '';
+
+  String get _resumedName {
+    final own = widget.account?.displayName.trim() ?? '';
+    return own.isNotEmpty ? own : _resumeNameController.text.trim();
+  }
+
   @override
   void dispose() {
     _account.dispose();
+    _resumeNameController.dispose();
     _codeController.dispose();
     _pageController.dispose();
     super.dispose();
@@ -114,6 +131,42 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
 
   Widget _accountStep() {
     final invite = _invite;
+    final resuming = widget.account;
+
+    // An account that already exists has nothing to sign up for. The step
+    // becomes the invite, a name if it never got one, and the button.
+    if (resuming != null) {
+      return StepBody(
+        title: 'Your account',
+        subtitle: 'This account exists already. It just has no shop yet.',
+        children: [
+          if (invite != null) ...[
+            JoiningBanner(invite: invite),
+            const SizedBox(height: 24),
+          ],
+          SignedInBanner(result: resuming),
+          if (resuming.displayName.isEmpty) ...[
+            const SizedBox(height: 16),
+            LabelledField(
+              label: 'Your name',
+              controller: _resumeNameController,
+              errorText: _resumeNameError,
+              helperText: 'Shown on the staff list and against orders you take',
+              textInputAction: TextInputAction.done,
+              autofillHints: const [AutofillHints.name],
+              onSubmitted: (_) => _joinAsExisting(),
+            ),
+          ],
+          const SizedBox(height: 16),
+          EntryButton(
+            label: 'Join store',
+            busy: _submitting,
+            onPressed: _submitting ? null : _joinAsExisting,
+          ),
+        ],
+      );
+    }
+
     return StepBody(
       title: 'Your account',
       subtitle: 'This is how you sign in.',
@@ -133,6 +186,56 @@ class _JoinStoreRegistrationState extends State<JoinStoreRegistration> {
         SignInOptions(busy: _submitting, onGoogle: _joinWithGoogle),
       ],
     );
+  }
+
+  /// Redeems the code for an account that already exists.
+  ///
+  /// No account is created and none is deleted on failure — this one was not
+  /// brought into existence here, and taking it away would leave somebody with
+  /// neither a shop nor a sign-in.
+  Future<void> _joinAsExisting() async {
+    final account = widget.account;
+    final invite = _invite;
+    if (account == null || _submitting) return;
+    if (invite == null) return _back();
+
+    if (_resumedName.isEmpty) {
+      setState(() => _resumeNameError = 'Enter your name');
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      await inviteRepository.redeem(
+        code: invite.code,
+        uid: account.uid,
+        email: account.email,
+        displayName: _resumedName,
+      );
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } on InviteException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _codeError = e.message;
+        _step = 0;
+        _invite = null;
+      });
+      await _pageController.animateToPage(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    } catch (e) {
+      if (mounted) {
+        showEntryError(
+          context,
+          'Could not join the store. ${describeFailure(e).message}',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   /// Joins with a Google account instead of a new email and password.

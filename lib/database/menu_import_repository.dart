@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
+import 'session_apps.dart';
+
 import '../models/menu_import.dart';
 import '../models/menu_item.dart';
 import '../models/store.dart';
@@ -123,11 +125,20 @@ class MenuImportRepository {
   MenuImportRepository({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
-  })  : _db = firestore ?? FirebaseFirestore.instance,
+  })  : _injected = firestore,
         _functions = functions ??
             FirebaseFunctions.instanceFor(region: menuImportFunctionsRegion);
 
-  final FirebaseFirestore _db;
+  final FirebaseFirestore? _injected;
+
+  /// Read through the session that is current, not captured once.
+  ///
+  /// A counter tablet can hold several operators signed in at the same time,
+  /// one Firebase app each, and handing the till over swaps which of them is
+  /// current. A handle captured in the constructor would keep answering as the
+  /// person who was at the till when this object was built. See SessionApps.
+  FirebaseFirestore get _db =>
+      _injected ?? FirebaseFirestore.instanceFor(app: sessionApps.active);
   final FirebaseFunctions _functions;
 
   /// The most photographs one menu may be. Mirrors `MAX_PHOTOS` in the

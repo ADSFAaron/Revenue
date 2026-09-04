@@ -205,6 +205,7 @@ class Store {
     this.taxRate = 0,
     this.taxIncluded = true,
     this.dayCutoffHour = defaultDayCutoffHour,
+    this.idleTimeoutMinutes = 0,
     this.businessHours = const {},
     this.targets = const StoreTargets(),
     this.categories = const [],
@@ -232,6 +233,14 @@ class Store {
 
   /// Hour of day (0-23) at which one trading day rolls into the next.
   final int dayCutoffHour;
+
+  /// Minutes of no touching before the till returns to the operator picker.
+  /// Zero is off, which is the default.
+  ///
+  /// Per store rather than per device, because it is a rule about how the shop
+  /// runs its counter rather than about the hardware. It does not sign anybody
+  /// out — see IdleLock for why that would cost more than it protects.
+  final int idleTimeoutMinutes;
 
   final Map<String, dynamic> businessHours;
   final StoreTargets targets;
@@ -261,6 +270,10 @@ class Store {
       dayCutoffHour:
           ((data['dayCutoffHour'] as num?)?.toInt() ?? defaultDayCutoffHour)
               .clamp(0, 23),
+      // Clamped for the same reason as the cut-off: this drives a dropdown,
+      // and an hour-long timeout is already past the point of being one.
+      idleTimeoutMinutes:
+          ((data['idleTimeoutMinutes'] as num?)?.toInt() ?? 0).clamp(0, 60),
       businessHours: Map<String, dynamic>.from(
         data['businessHours'] as Map? ?? const {},
       ),
@@ -293,6 +306,7 @@ class Store {
     'taxRate': taxRate,
     'taxIncluded': taxIncluded,
     'dayCutoffHour': dayCutoffHour,
+    'idleTimeoutMinutes': idleTimeoutMinutes,
     'businessHours': businessHours,
     'targets': targets.toMap(),
     'categories': categories.map((c) => c.toMap()).toList(),
@@ -336,6 +350,7 @@ class Store {
     double? taxRate,
     bool? taxIncluded,
     int? dayCutoffHour,
+    int? idleTimeoutMinutes,
     StoreTargets? targets,
     List<StoreCategory>? categories,
     List<StorePaymentMethod>? paymentMethods,
@@ -348,6 +363,7 @@ class Store {
     taxRate: taxRate ?? this.taxRate,
     taxIncluded: taxIncluded ?? this.taxIncluded,
     dayCutoffHour: dayCutoffHour ?? this.dayCutoffHour,
+    idleTimeoutMinutes: idleTimeoutMinutes ?? this.idleTimeoutMinutes,
     businessHours: businessHours,
     targets: targets ?? this.targets,
     categories: categories ?? this.categories,

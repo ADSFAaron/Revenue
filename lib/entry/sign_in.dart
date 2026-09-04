@@ -149,8 +149,7 @@ class _SignInScreenState extends State<SignInScreen> {
       // offer to save. Without it a manager that filled the form has no idea
       // whether what it filled was right.
       TextInput.finishAutofillContext();
-      // No navigation: the root is watching auth state and swaps the whole
-      // screen out from under this one.
+      _leave();
     } on AuthException catch (e) {
       if (mounted) {
         setState(() => _passwordError = e.message);
@@ -165,6 +164,7 @@ class _SignInScreenState extends State<SignInScreen> {
   Future<void> _signInWithGoogle() async {
     try {
       await authRepository.signInWithGoogle();
+      _leave();
     } on AuthException catch (e) {
       // Backing out of the sheet is a decision, not a failure.
       if (e.failure != AuthFailure.cancelled && mounted) {
@@ -184,11 +184,30 @@ class _SignInScreenState extends State<SignInScreen> {
         session.user.uid,
         session.credentialId,
       );
+      _leave();
     } on PasskeyException catch (e) {
       if (e.failure != PasskeyFailure.cancelled && mounted) {
         showEntryError(context, e.message);
       }
     }
+  }
+
+  /// Takes this screen off the stack once somebody is in.
+  ///
+  /// The root swaps the *home route's* content when the auth state changes —
+  /// it cannot remove routes pushed on top of it, and this is one of those. So
+  /// signing in successfully used to leave the person looking at the form they
+  /// had just filled in, with the app behind it, and pressing Back was what
+  /// appeared to complete the sign-in.
+  ///
+  /// The registration flows deliberately do the opposite and stay: an account
+  /// exists halfway through them and the flow has work left to do. Popping is
+  /// this screen's business because this screen's whole job is finished the
+  /// moment it succeeds.
+  void _leave() {
+    if (!mounted) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
   }
 
   Future<void> _resetPassword() async {

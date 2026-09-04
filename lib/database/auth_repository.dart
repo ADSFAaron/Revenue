@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart'
@@ -5,6 +7,7 @@ import 'package:flutter/foundation.dart'
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'data_exception.dart';
+import 'session_apps.dart';
 
 /// Why an authentication call failed, in terms the app cares about.
 ///
@@ -83,9 +86,15 @@ class AuthException implements AppException {
 const String accountFunctionsRegion = 'asia-east1';
 
 class AuthRepository {
-  AuthRepository({FirebaseAuth? auth}) : _auth = auth ?? FirebaseAuth.instance;
+  AuthRepository({FirebaseAuth? auth}) : _injected = auth;
 
-  final FirebaseAuth _auth;
+  final FirebaseAuth? _injected;
+
+  /// Read through the session that is current, not captured once. A counter
+  /// tablet can hold several operators signed in at the same time, one
+  /// Firebase app each; see SessionApps.
+  FirebaseAuth get _auth =>
+      _injected ?? FirebaseAuth.instanceFor(app: sessionApps.active);
 
   /// The signed-in uid, or null while signed out.
   String? get currentUid => _auth.currentUser?.uid;
@@ -115,8 +124,35 @@ class AuthRepository {
   ///
   /// Deliberately not a `User`: the root of the app only needs to know whether
   /// somebody is signed in and who they are.
-  Stream<String?> get uidChanges =>
-      _auth.authStateChanges().map((user) => user?.uid);
+  ///
+  /// Re-subscribes when the till changes hands. `authStateChanges()` belongs
+  /// to the Firebase app it came from, so a stream taken once would go on
+  /// reporting the operator who handed over — and would report *them* signing
+  /// out, at the moment somebody else took the till.
+  Stream<String?> get uidChanges {
+    StreamSubscription<User?>? inner;
+    late final StreamController<String?> controller;
+
+    void attach() {
+      inner?.cancel();
+      inner = _auth.authStateChanges().listen(
+        (user) => controller.add(user?.uid),
+        onError: controller.addError,
+      );
+    }
+
+    controller = StreamController<String?>.broadcast(
+      onListen: () {
+        sessionApps.revision.addListener(attach);
+        attach();
+      },
+      onCancel: () async {
+        sessionApps.revision.removeListener(attach);
+        await inner?.cancel();
+      },
+    );
+    return controller.stream;
+  }
 
   /// Signs in and returns the uid.
   Future<String> signIn({
@@ -246,6 +282,27 @@ class AuthRepository {
       email: user.email ?? '',
       displayName: user.displayName ?? '',
       isNewAccount: credential.additionalUserInfo?.isNewUser ?? false,
+    );
+  }
+
+  /// The signed-in account, described the way a registration flow describes
+  /// one it has just created.
+  ///
+  /// For picking up a registration that stopped after the account existed and
+  /// before its documents did — a process killed between the two writes, which
+  /// no `catch` can clean up after.
+  ///
+  /// [SignInResult.isNewAccount] is false and must stay false: it is what
+  /// licenses a flow to delete the account on the way out, and an account that
+  /// has outlived the flow that made it must not be deleted by the next one
+  /// that picks it up.
+  SignInResult? currentSignIn() {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    return SignInResult(
+      uid: user.uid,
+      email: user.email ?? '',
+      displayName: user.displayName ?? '',
     );
   }
 

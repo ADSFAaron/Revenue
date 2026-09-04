@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:Revenue/database/repositories.dart';
 import 'package:Revenue/entry/choose_path.dart';
 import 'package:Revenue/entry/entry_button.dart';
 import 'package:Revenue/entry/entry_ui.dart';
@@ -44,6 +45,48 @@ void main() {
         expect(find.text('Revenue'), findsOneWidget);
       });
     }
+  });
+
+  group('finishing a registration that stopped halfway', () {
+    // The state a killed process leaves: the sign-in account exists, its
+    // documents do not. It used to be a dead end — Retry could not help and
+    // signing out was worse than useless, because registering again with the
+    // same address is refused as "email already in use".
+    const stranded = SignInResult(uid: 'u1', email: 'ming@example.test');
+
+    testWidgets('the chooser says what is actually missing', (tester) async {
+      await tester.pumpWidget(
+        wrap(const ChoosePathScreen(account: stranded), Brightness.light),
+      );
+      await tester.pump();
+
+      expect(find.text('Finish setting up'), findsOneWidget);
+      expect(find.text('Your account is ready. It needs a shop.'),
+          findsOneWidget);
+      // Both ways out of the state are still offered: this account can own a
+      // shop or join one, exactly as a new one could.
+      expect(find.text('Open a new store'), findsOneWidget);
+      expect(find.text('Join an existing store'), findsOneWidget);
+    });
+
+    testWidgets('and does not offer to sign in to the account already signed '
+        'in', (tester) async {
+      await tester.pumpWidget(
+        wrap(const ChoosePathScreen(account: stranded), Brightness.light),
+      );
+      await tester.pump();
+      expect(find.text('Already have an account? '), findsNothing);
+    });
+
+    testWidgets('a fresh start is unchanged', (tester) async {
+      await tester.pumpWidget(
+        wrap(const ChoosePathScreen(), Brightness.light),
+      );
+      await tester.pump();
+
+      expect(find.text('Get started'), findsOneWidget);
+      expect(find.text('Already have an account? '), findsOneWidget);
+    });
   });
 
   group('the shared action button', () {

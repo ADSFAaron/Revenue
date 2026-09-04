@@ -25,7 +25,12 @@ import 'entry_ui.dart';
 /// identifier that exists so documents have somewhere to live; the only thing
 /// about the store anybody has to type is its name.
 class OpenStoreRegistration extends StatefulWidget {
-  const OpenStoreRegistration({super.key});
+  const OpenStoreRegistration({this.account, super.key});
+
+  /// An account that already exists and is signed in, for carrying on from a
+  /// registration that stopped after it was created. The account step is
+  /// skipped; everything after it is the same.
+  final SignInResult? account;
 
   @override
   State<OpenStoreRegistration> createState() => _OpenStoreRegistrationState();
@@ -45,12 +50,23 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
   /// does with a store that is already theirs.
   String? _createdStoreId;
 
-  /// Set when the account came from Google rather than from the form.
+  /// The account, when one already exists and is signed in.
   ///
-  /// Google creates and signs in the account at the *account* step, whereas
-  /// the form defers that to the store step. So this doubles as "the account
-  /// already exists": [_createStore] must not try to create a second one.
-  SignInResult? _google;
+  /// Two ways to get here. Google creates and signs in the account at the
+  /// *account* step, whereas the form defers that to the store step. And a
+  /// registration interrupted between those two points leaves an account
+  /// behind with no documents, which this screen is also how somebody
+  /// finishes. Either way it means the same thing to [_createStore]: do not
+  /// try to create a second one.
+  late SignInResult? _google = widget.account;
+
+  /// The name to file the profile under, when the account has none of its own.
+  ///
+  /// A Google account always brings one. An interrupted email-and-password
+  /// registration does not — `register()` only creates the sign-in — so the
+  /// name it never got to write has to be asked for again.
+  final _resumeNameController = TextEditingController();
+  String _resumeNameError = '';
 
   @override
   void dispose() {
@@ -62,6 +78,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
     _discardAbandonedGoogleAccount();
 
     _account.dispose();
+    _resumeNameController.dispose();
     _storeNameController.dispose();
     _pageController.dispose();
     super.dispose();
@@ -129,16 +146,33 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
       // The account already exists and is signed in. Showing the form again
       // would invite somebody to fill in an email that is no longer used for
       // anything.
+      final resuming = widget.account != null;
       return StepBody(
         title: 'Your account',
-        subtitle: 'Signed in with Google.',
+        subtitle: resuming
+            ? 'This account exists already. It just has no shop yet.'
+            : 'Signed in with Google.',
         children: [
           SignedInBanner(result: google),
+          if (google.displayName.isEmpty) ...[
+            const SizedBox(height: 16),
+            LabelledField(
+              label: 'Your name',
+              controller: _resumeNameController,
+              errorText: _resumeNameError,
+              helperText: 'Shown on the staff list and against orders you take',
+              textInputAction: TextInputAction.done,
+              autofillHints: const [AutofillHints.name],
+              onSubmitted: (_) => _next(),
+            ),
+          ],
           const SizedBox(height: 8),
           Center(
             child: TextButton(
               onPressed: _submitting ? null : _useDifferentAccount,
-              child: const Text('Not you? Use a different account'),
+              child: Text(resuming
+                  ? 'Not you? Sign out'
+                  : 'Not you? Use a different account'),
             ),
           ),
           const SizedBox(height: 16),
@@ -299,11 +333,30 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
     }
   }
 
+  /// The name for an account that already exists: its own if it has one, and
+  /// otherwise whatever was typed on the account step.
+  String get _resumedName {
+    final own = _google?.displayName.trim() ?? '';
+    return own.isNotEmpty ? own : _resumeNameController.text.trim();
+  }
+
   Future<void> _createStore() async {
     final storeName = _storeNameController.text.trim();
     setState(
       () => _storeNameError = storeName.isEmpty ? 'Enter the store name' : '',
     );
+    if (_google != null && _resumedName.isEmpty) {
+      setState(() {
+        _resumeNameError = 'Enter your name';
+        _step = 0;
+      });
+      await _pageController.animateToPage(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+      return;
+    }
     if (storeName.isNotEmpty && _google == null && !_account.validate()) {
       // Something on the first step no longer passes — send them back to it
       // rather than failing against Firebase with a message they cannot act on.
@@ -346,9 +399,7 @@ class _OpenStoreRegistrationState extends State<OpenStoreRegistration> {
         AppUser(
           uid: uid,
           email: email,
-          displayName: google?.displayName.isNotEmpty == true
-              ? google!.displayName
-              : _account.displayName,
+          displayName: google == null ? _account.displayName : _resumedName,
           storeId: storeId,
           role: UserRole.owner,
         ),

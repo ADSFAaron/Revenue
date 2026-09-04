@@ -55,9 +55,15 @@ class _StoreSecurityState extends State<StoreSecurity> {
               _buildLockTile(),
               const SettingSection('This account'),
               SettingTile.page(
-                icon: Icons.fingerprint,
+                // Not a fingerprint icon, and not fingerprint wording. These
+                // two rows both begin with a fingertip and answer opposite
+                // questions, which is exactly why they were being read as the
+                // same feature: the lock above asks *somebody is holding this
+                // device*, and says nothing about who; a passkey proves *who*,
+                // to the server, and is what creates a session at all.
+                icon: Icons.key_outlined,
                 title: 'Passkeys',
-                subtitle: 'Sign in with a fingerprint, face or screen lock',
+                subtitle: 'Sign in as you, with no password to steal',
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const UserPasskeys()),
@@ -91,12 +97,14 @@ class _StoreSecurityState extends State<StoreSecurity> {
             icon: Icons.lock_outline,
             title: 'Lock the figures',
             subtitle: available
-                ? 'Ask for a fingerprint before Insights, exports, the staff '
+                ? 'This device\'s own fingerprint, face or PIN, asked for '
+                    'when the app opens and before the figures, the staff '
                     'list and the change history'
                 // Said plainly rather than by disabling a switch with no
                 // explanation — "why is this greyed out" is the question a
                 // greyed-out switch always produces.
-                : 'This device has no fingerprint, face or screen lock set up',
+                : 'This device has no fingerprint, face, PIN or pattern set '
+                    'up, so there is nothing to ask for',
             trailing: Switch(
               value: enabled && available,
               onChanged: available ? _setLock : null,
@@ -153,6 +161,14 @@ class _StoreSecurityState extends State<StoreSecurity> {
                   ?.copyWith(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 12),
+            const _Point(
+              icon: Icons.phone_iphone_rounded,
+              title: 'A session outlives being closed',
+              body: 'Signing in once keeps you signed in, which is right for '
+                  'a till and wrong for a phone in a bag — so with the lock '
+                  'on, opening the app asks before anything is loaded or '
+                  'shown, not after.',
+            ),
             const _Point(
               icon: Icons.key_outlined,
               title: 'Passkeys instead of a code',

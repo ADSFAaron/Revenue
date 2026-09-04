@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'session_apps.dart';
+
 import '../models/audit_log.dart';
 
 /// Reads and appends `stores/{storeId}/auditLogs/{logId}`.
@@ -10,10 +12,18 @@ import '../models/audit_log.dart';
 /// second call, is a log that goes missing exactly when the network drops
 /// halfway through.
 class AuditLogRepository {
-  AuditLogRepository({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance;
+  AuditLogRepository({FirebaseFirestore? firestore}) : _injected = firestore;
 
-  final FirebaseFirestore _db;
+  final FirebaseFirestore? _injected;
+
+  /// Read through the session that is current, not captured once.
+  ///
+  /// A counter tablet can hold several operators signed in at the same time,
+  /// one Firebase app each, and handing the till over swaps which of them is
+  /// current. A handle captured in the constructor would keep answering as the
+  /// person who was at the till when this object was built. See SessionApps.
+  FirebaseFirestore get _db =>
+      _injected ?? FirebaseFirestore.instanceFor(app: sessionApps.active);
 
   CollectionReference<Map<String, dynamic>> _logs(String storeId) =>
       _db.collection('stores').doc(storeId).collection('auditLogs');

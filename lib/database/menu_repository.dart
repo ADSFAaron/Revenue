@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'session_apps.dart';
+
 import '../models/audit_log.dart';
 import '../models/menu_item.dart';
 import 'audit_log_repository.dart';
@@ -10,10 +12,19 @@ import 'audit_log_repository.dart';
 /// that each dish keeps a stable id across renames and price changes.
 class MenuRepository {
   MenuRepository({FirebaseFirestore? firestore, AuditLogRepository? auditLogs})
-      : _db = firestore ?? FirebaseFirestore.instance,
+      : _injected = firestore,
         _auditLogs = auditLogs ?? AuditLogRepository();
 
-  final FirebaseFirestore _db;
+  final FirebaseFirestore? _injected;
+
+  /// Read through the session that is current, not captured once.
+  ///
+  /// A counter tablet can hold several operators signed in at the same time,
+  /// one Firebase app each, and handing the till over swaps which of them is
+  /// current. A handle captured in the constructor would keep answering as the
+  /// person who was at the till when this object was built. See SessionApps.
+  FirebaseFirestore get _db =>
+      _injected ?? FirebaseFirestore.instanceFor(app: sessionApps.active);
   final AuditLogRepository _auditLogs;
 
   CollectionReference<Map<String, dynamic>> _items(String storeId) =>

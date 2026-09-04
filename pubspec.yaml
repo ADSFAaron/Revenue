@@ -89,6 +89,13 @@ dependencies:
   # Use for locating where an exported Excel file may be written
   path_provider: ^2.1.5
 
+  # The browser download for exports that are not Excel. `excel_plus.save()`
+  # triggers its own download, so this is only needed for the CSV and JSON
+  # backups. Already present transitively through Flutter itself; declared here
+  # because this app imports it directly, and an undeclared transitive import
+  # breaks the day the package that pulled it in stops needing it.
+  web: ^1.1.0
+
   # Use for history order grouped
   grouped_list: ^6.0.0
 

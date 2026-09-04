@@ -270,10 +270,13 @@ allow read: if signedIn() &&
 4. ~~`orders.createdBy` 的取捨寫進 rules 註解（§5.2）~~（已完成 2026-09-04）
 
 **Phase 2 — 選人畫面**
-5. 操作者概念與「目前操作者：X」常駐指示
+5. ~~操作者概念與「目前操作者：X」常駐指示~~（已完成 2026-09-04）——
+   `OperatorChip` 放在 [addorder.dart](../lib/page/addorder.dart) 的 AppBar，
+   因為那是「弄錯就變成假紀錄」的那一屏；點它就是交接。
 6. ~~選人畫面（全店員工，本機有 session 的排前面）~~（已完成 2026-09-04，
    **範圍與原計畫不同，見下**）
-7. 閒置逾時退回選人，長度做成店家設定，草稿保留（決策 2、3）
+7. ~~閒置逾時退回選人，長度做成店家設定，草稿保留（決策 2、3）~~
+   （已完成 2026-09-04，**做法與字面不同，見下**）
 
 **「全店員工」做不到，只能是「這台裝置上有誰」。** 選人畫面出現在**登入前**，
 而列出同事需要讀 `users` 的 storeId 查詢——那條規則要求 `memberOf()`，登出狀態
@@ -291,6 +294,118 @@ discoverable 的，所以原本的 `beginPasskeyAuthentication` 不帶
 由 `finishPasskeyAuthentication` 依照 authenticator 實際簽出的 id 去查公鑰驗
 證，`allowCredentials` 只是給 authenticator 的提示。也不外洩任何東西——那些 id
 本來就存在呼叫端自己的裝置上，是那個人自己註冊或上次登入時寫下的。
+
+**閒置逾時不登出，改成蓋住畫面**（[idle_lock.dart](../lib/entry/idle_lock.dart)）。
+原本寫「退回選人」，但選人畫面在登出後才會出現，而登出會把整棵樹拆掉——籃子
+裡打到一半的單就沒了。那等於「每次轉身去煮杯咖啡就掉一張單」，而那正是店家把
+逾時設成 Off 的原因。
+
+保留 session、只蓋住畫面，保護的東西一樣（沒人站著的收銀台），代價是零：
+「Carry on」把同一個人放回他原本在的地方，籃子原封不動。**交接給別人才登出**，
+因為那是決定而不是意外，而且會先講清楚代價。開了螢幕鎖的話，Carry on 要通過鎖。
+
+`IdleLock` 掛在 `MaterialApp.builder`，在 Navigator 之上——推一個路由或開一個
+對話框就能蓋過去的蓋子不是蓋子。長度是店家設定（`Store.idleTimeoutMinutes`，
+0 = 關閉，選項到 30 分鐘為止：再長就不是在蓋無人看管的櫃台了，誠實的做法是選
+Off 而不是設一小時然後假裝有在保護）。
+
+### 7.1 多重 live session —— 已實作（2026-09-04）
+
+**先記下一次判斷錯誤**，因為它會再發生：我第一次評估時把這項判掉，理由是
+「省下的只是一次指紋」，並且寫了「離線換人不是多重 session 能解的」。**後面
+那句是反的。** 多重 session 正是唯一能解它的東西——每個 `FirebaseApp` 會把自
+己登入的使用者持久化在本機，所以把一個先前已在這台裝置登入過的人重新變成
+current，**完全不需要網路**。第一次的成本估算也錯了一個量級：我把 repository
+的**讀取端**（28 檔 100 處）當成改動範圍，實際要改的是它們內部持有 handle 的
+方式，`lib/database/` 裡總共 9 個欄位。
+
+**做法**（[session_apps.dart](../lib/database/session_apps.dart)）：一個
+`FirebaseApp` 一個 slot，最多四個。第一個 slot **就是預設 app**，所以只有一個
+人的店，啟動路徑跟以前一模一樣。啟動時**只開作用中的那一個** slot——把三個
+Firebase 初始化放進第一幀的路徑上，去服務一個可能不會發生的換人，是不對的
+交易；其他 slot 在有人點到那個名字時才開，那是本機讀取。
+
+**Repository 改成透過持有者讀**，不在建構時抓死：
+
+```dart
+FirebaseFirestore get _db =>
+    _injected ?? FirebaseFirestore.instanceFor(app: sessionApps.active);
+```
+
+注入口留著給測試。`AuthRepository.uidChanges` 會在換手時**重新訂閱**——stream
+綁在它來自的那個 instance 上，只訂一次的話換人之後它還在報告已經交班的那個
+人，而且會在別人接手的瞬間報告**那個人**登出。
+
+**三個必須同時對的地方**：
+
+1. 每個 slot 開啟時要各自設定離線快取與 App Check。少做任何一個，第二個
+   session 就是「沒有離線快取的 session」（那正是它存在的理由）或「每個請求
+   都沒有 attestation」（開了強制就是第一屏被拒）。所以設定寫在
+   `openSessionApp()` 裡，那是唯一每個 app 剛好經過一次的地方。
+2. shell 用 uid 當 key。底下的一切——session resolver、`IndexedStack` 保活的
+   頁面、裡面每一條 Firestore stream——都屬於某一個 Firebase app，換手之後那
+   是錯的那一個。
+3. 登出一律走 `signOutOperator()`：登出當前這位，並把櫃台交給裝置上還握著
+   session 的下一位。一台裝置有三個 session 時，「其中一個結束」跟「櫃台空了」
+   不是同一件事。
+
+**換手不保留籃子**，而且這是對的：一張被某個人打到一半的單，不該掛在下一個人
+名下送出去。但每次都跳確認會讓交接變貴，所以 `unsentBasketLines` 讓蓋板只在
+**真的有東西可以失去**的時候才問。
+
+**還沒能驗證的部分（重要）**：多個 `FirebaseApp` 的實際 auth 行為需要真機與真
+專案，這裡驗不到。已驗證的是編譯、slot 帳務的單元測試（10 項）、以及只有一個
+人的店走的路徑與改動前完全相同。第一次在真機上要看三件事：
+
+1. 第二個 slot 的 **Play Integrity token 有沒有發出來**（沒發的話那個 session
+   的每個請求都會被 App Check 擋掉）。
+2. **離線切回去時 Firestore 是不是直接從那個 app 自己的快取回答。**
+3. **換手瞬間 `authStateChanges()` 會不會先吐一個 null。** 重新訂閱時
+   `_auth` 指向新開的 app；如果 Firebase 是非同步還原持久化的使用者，第一筆
+   可能是 null，那會讓根畫面閃一下入口畫面、`currentOperator` 被清掉，而且
+   `previous != uid` 的規則會多跑一次 `popUntil`。`Firebase.initializeApp`
+   應該在回傳前就還原完畢，所以預期不會發生——但這是唯一在這裡證明不了的一
+   條，也是最值得第一個看的。
+
+### 7.2 入口導覽的兩個結構性錯誤（2026-09-04 修）
+
+**登入成功後畫面不動，按返回才會進去。** 根畫面在 auth 狀態改變時換掉的是
+**home route 的內容**，它沒有辦法移除疊在上面的路由——而登入頁正是被 push 上
+去的。所以登入成功之後，人看著的還是自己剛填完的那張表單，後面才是 app。這個
+codebase 早就為**登出**處理過同一件事（`popUntil(isFirst)`），但沒有為登入。
+
+修法不是在根畫面上「登入時也 pop」——那會把註冊流程扯斷：註冊會在自己的流程
+中途把帳號建出來，後面還有建店要做，在**進來的那一刻** pop 等於製造出
+§loadSession 那個「帳號存在、文件不存在」的狀態。所以規則是不對稱的：
+
+- **自己 push 上去的畫面，自己 pop**（登入頁成功後 pop 自己）。
+- **根畫面只在 session 被換掉或結束時** pop（`previous != null && previous !=
+  uid`），這也順帶蓋掉了換操作者——不然新的人會落在前一個人開著的設定頁裡。
+
+**蓋板不能用 `showDialog`。** `IdleLock` 掛在 `MaterialApp.builder`，那是
+**Navigator 之上**（已用探針測試證實：從 builder 拿到的 context 找不到
+NavigatorState）。掛在那裡正是它能蓋住 pushed route 和對話框的原因，代價就是
+它自己不能開對話框。籃子的確認改成**畫在蓋板上**。
+
+兩件事都寫成了測試（`test/widgets/entry_navigation_test.dart`），而且
+`idle_lock_test` 改成用 `builder` 掛載——原本掛在 `home` 底下，剛好避開了這個
+問題，那正是它沒被測出來的原因。
+
+
+**本機 PIN（Phase 4 第 12 項）——不做。**
+
+三個理由，任一個都夠：
+
+1. 店主自己已經定了「每個員工有自己的帳號」，記在
+   `shared-tablet-attribution`，那條決定**本身就排除了 per-staff PIN 層**。
+2. `local_auth` 的 `biometricOnly: false` 已經自動退回裝置密碼，所以「感應器
+   讀不到手指」這個情境**已經有解**，不需要第三個密碼。
+3. 依 §5.3，PIN 只能存本機、規則驗證不到它，所以它不能承載任何授權意義。再
+   加一個沒有授權意義、大家會跨店重複使用的秘密，是負值。
+
+留下的唯一情境是「共用平板的裝置密碼不想給員工知道」。那是真的，但很窄，而且
+螢幕鎖在沒有生物辨識時是**放行**而不是拒絕（見 §Phase 4 第 11 項），所以不會
+有人被鎖在外面。要做的話這是一個獨立的小功能，不是這個 Phase 的一部分。
 
 **Phase 3 — 登入流程重做**
 8. ~~資訊架構翻轉：選人成為主畫面，登入降級為分支（§3.1）~~（已完成
@@ -322,3 +437,52 @@ Insights 分頁、匯出、員工清單、變更史、Account & app。**Today �
 在旁邊」，不說是誰。UI 文案在 Security 頁最後一段明講了這件事。
 
 離線換人（決策 5）跨 Phase 2 與 3，因為它同時牽涉選人畫面和 session 管理。
+
+### 7.3 螢幕鎖是「畫上去的蓋板」而不是「門」（2026-09-04 修）
+
+店主從櫃檯回報五件事，五件是同一個根因：**鎖被實作成畫在已經活著的 app 上的一層蓋板**，
+而不是一道擋在前面的門。`IdleLock` 掛在 `MaterialApp.builder`，在 Navigator 之上，
+`_TillCover` 是它的 `Stack` 子節點——但整個 shell 早就掛好了：每一條 Firestore stream
+都開著、當天的營業額都抓完了、Today 跟 Insights 都排版完了，就在那層蓋板底下。
+
+由此推出的五個缺陷，每一個都是真的：
+
+1. **蓋板根本沒蓋滿。** `Stack` 給沒有 `Positioned` 的子節點的是 **loose constraints**，
+   所以蓋板只有自己內容那麼高，底下的 app 繼續露出來——可讀、可捲、**可點**。截圖裡
+   「Still signed in. Unlock to carry on.」下面就是 Guests / Per order / Add Order /
+   底部導覽列。使用者說的「點一下空白處指紋鎖就跳掉了」不是鎖被關掉，是**他點到了沒被蓋住的
+   那塊 app**。→ `Positioned.fill`。
+2. **先渲染才驗證。** 鎖保護的是一張截圖，不是資料。→ 改成 `AppLockGate`，放在
+   auth stream 之下、`_SessionGate` **之上**：鎖上時 `child` 連 build 都不會 build，
+   所以沒有任何一次讀取發生。位置是修法本身——`_SessionGate` 的 state 一建立就開始讀，
+   任何比這更深的鎖都是「圖表已經抓好了才問你是誰」。
+3. **換手就是一扇沒鎖的門。** `_handOver` 成功後直接 `tillLocked.value = null`，
+   從來沒問過。「先 switch 到另一個帳號再切回來」因此完全免驗證。→ 換手不再等於解鎖；
+   進來的 session 走自己的 gate（gate 以 uid 為 key），而 gate 一律
+   `check(allowGrace: false)`——五分鐘的寬限期是給 app **裡面**的畫面用的，
+   讓門也吃它就等於「切出去再切回來」直接放行。
+4. **`confirm()` 全部 fail-open。** 裝置沒有註冊生物辨識、平台呼叫丟例外——兩種情況
+   都 `return true`。鎖開著、蓋板在畫面上、什麼都沒問就進去了。→ 改成三態
+   `LockCheck { passed, refused, unavailable }`。`unavailable` 在**門口**是明講並給兩條
+   出路（重新登入／明確關掉鎖），在 app 裡面才放行——而且只在那裡放行。
+5. **可用性判斷問錯問題。** 是 `isDeviceSupported() && canCheckBiometrics`。
+   但 `authenticate` 是用 `biometricOnly: false` 呼叫的，所以只有 PIN、沒有指紋辨識模組的
+   櫃檯平板——櫃檯上很常見——會回報「這台不能鎖」然後被直接放行。
+   → 只看 `isDeviceSupported()`（有指紋/臉 **或** 有 PIN/圖形/密碼皆為 true）。
+   `getAvailableBiometrics()` 只拿來寫文案，不拿來分支。
+
+順帶：兩個 `authenticate` 同時進行在 Android 上是平台錯誤，而這個 app 產得出來
+（門口在問，底下的畫面進場時也在問），所以 `check` 現在共用同一次提示而不是互相搶。
+`isAvailable` 的快取在 app 回到前景時作廢——離開 app 去設定裡移除指紋是唯一的移除方式，
+回來就是那個快取唯一會錯得有意義的時刻。
+
+**文案：指紋 ≠ passkey。** 店主明確指出這兩個被混在一起，而 Security 畫面確實是這樣寫的
+（鎖寫「Ask for a fingerprint」、passkey 那列也寫「Sign in with a fingerprint」，
+連 icon 都是同一個指紋）。兩者回答的是相反的問題：**鎖只證明有人拿著這台裝置，不說是誰**；
+**passkey 對伺服器證明是誰，而且是它才創得出 session**。所以 passkey 那列改成
+`Icons.key_outlined` 與「Sign in as you, with no password to steal」，鎖那列改成明講
+「這台裝置自己的指紋、臉或 PIN」。
+
+**還沒做，真機上值得看的**：Android 的最近使用畫面（recents）快照。gate 之後冷開機不再有問題，
+但 app 切到背景時系統仍會拍一張當下畫面。`FLAG_SECURE` 可以擋掉，代價是整個 app 不能截圖——
+店主可能會想截報表，所以這是要問過的取捨，不是預設。

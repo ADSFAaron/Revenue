@@ -105,6 +105,7 @@ class _EntryScreenState extends State<EntryScreen> {
             for (final account in accounts)
               _PersonTile(
                 account: account,
+                live: sessionApps.holdsSessionFor(account.uid),
                 busy: _busyUid == account.uid,
                 enabled: _busyUid == null,
                 onTap: () => _signInAs(account),
@@ -130,6 +131,16 @@ class _EntryScreenState extends State<EntryScreen> {
   /// Signs this person in the fastest way this device can, and falls back to
   /// the form rather than to a dead end.
   Future<void> _signInAs(DeviceAccount account) async {
+    // A session this device is still holding needs nothing at all: no round
+    // trip, no passkey, and it works with the wifi off — which is the case a
+    // counter tablet is most likely to be in when it changes hands.
+    setState(() => _busyUid = account.uid);
+    try {
+      if (await sessionApps.switchTo(account.uid)) return;
+    } finally {
+      if (mounted) setState(() => _busyUid = null);
+    }
+
     final canUsePasskey =
         account.passkeyIds.isNotEmpty && await _passkeysSupported;
     if (!mounted) return;
@@ -197,6 +208,7 @@ class _EntryScreenState extends State<EntryScreen> {
 class _PersonTile extends StatelessWidget {
   const _PersonTile({
     required this.account,
+    required this.live,
     required this.busy,
     required this.enabled,
     required this.onTap,
@@ -204,6 +216,11 @@ class _PersonTile extends StatelessWidget {
   });
 
   final DeviceAccount account;
+
+  /// This device is still holding their session, so tapping is instant and
+  /// needs no connection.
+  final bool live;
+
   final bool busy;
   final bool enabled;
   final VoidCallback onTap;
@@ -250,7 +267,10 @@ class _PersonTile extends StatelessWidget {
                 .titleSmall
                 ?.copyWith(fontWeight: FontWeight.w600),
           ),
-          if (account.passkeyIds.isNotEmpty) ...[
+          if (live) ...[
+            const SizedBox(height: 4),
+            Icon(Icons.bolt_rounded, size: 16, color: scheme.primary),
+          ] else if (account.passkeyIds.isNotEmpty) ...[
             const SizedBox(height: 4),
             Icon(Icons.fingerprint, size: 16, color: scheme.onSurfaceVariant),
           ],

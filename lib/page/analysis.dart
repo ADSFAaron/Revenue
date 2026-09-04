@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../analysis/basket_analysis.dart';
+import '../analysis/comparison.dart';
 import '../analysis/demand_profile.dart';
 import '../analysis/headline.dart';
 import '../analysis/menu_engineering.dart';
@@ -67,8 +68,25 @@ class _AnalysisPageState extends State<AnalysisPage>
     return (formatBusinessDate(from), formatBusinessDate(today));
   }
 
+  /// The window and the one before it, as one range.
+  ///
+  /// Twice the reads, and worth them: every report on this page states a level,
+  /// and a level cannot be acted on. A 34% food cost is an emergency in a shop
+  /// that ran at 28% last month and a relief in one that ran at 41%.
+  ///
+  /// One query rather than two. It is the same number of document reads —
+  /// Firestore bills per document, not per query — with one round trip instead
+  /// of two, and the split has to happen on the client either way because the
+  /// boundary is a trading date rather than a timestamp.
+  (String from, String to) get _comparisonRange {
+    final today = parseBusinessDate(_store.currentBusinessDate);
+    final from = DateTime(
+        today.year, today.month, today.day - (_window.days * 2 - 1));
+    return (formatBusinessDate(from), formatBusinessDate(today));
+  }
+
   Future<List<DailyStats>> _loadDays() {
-    final (from, to) = _range;
+    final (from, to) = _comparisonRange;
     return statsRepository.fetchRange(
       _session!.storeId,
       fromBusinessDate: from,
@@ -200,7 +218,16 @@ class _AnalysisPageState extends State<AnalysisPage>
           return const Center(child: CircularProgressIndicator());
         }
 
-        final days = snapshot.data!;
+        // Oldest first, so the split is a single comparison against the
+        // current window's first trading date.
+        final currentFrom = _range.$1;
+        final days = <DailyStats>[];
+        final earlier = <DailyStats>[];
+        for (final day in snapshot.data!) {
+          (day.businessDate.compareTo(currentFrom) >= 0 ? days : earlier)
+              .add(day);
+        }
+
         if (days.isEmpty) {
           return EmptyState(
             icon: Icons.event_busy_outlined,
@@ -216,6 +243,17 @@ class _AnalysisPageState extends State<AnalysisPage>
         final demand =
             DemandProfile.from(days, dayCutoffHour: _store.dayCutoffHour);
 
+        final previousTotal = DailyStats.sum(earlier);
+        final comparison = WindowComparison(
+          windowDays: _window.days,
+          current: total,
+          previous: previousTotal,
+          matrix: matrix,
+          previousMatrix: MenuEngineering.from(previousTotal),
+          currentTradingDays: days.length,
+          previousTradingDays: earlier.length,
+        );
+
         return TabBarView(
           controller: _tabController,
           children: [
@@ -224,7 +262,10 @@ class _AnalysisPageState extends State<AnalysisPage>
                 matrix: matrix,
                 demand: demand,
                 windowDays: _window.days,
+                comparison: comparison,
               ),
+              comparison: comparison,
+              store: _store,
               storeId: _session!.storeId,
               onOpen: _openTopic,
             ),
@@ -259,17 +300,23 @@ class _AnalysisPageState extends State<AnalysisPage>
 class _SummaryTab extends StatelessWidget {
   const _SummaryTab({
     required this.headlines,
+    required this.comparison,
+    required this.store,
     required this.storeId,
     required this.onOpen,
   });
 
   final List<Headline> headlines;
+  final WindowComparison comparison;
+  final Store store;
   final String storeId;
   final void Function(HeadlineTopic topic) onOpen;
 
   @override
   Widget build(BuildContext context) {
-    if (headlines.isEmpty) {
+    final showTrend = comparison.hasPrevious;
+
+    if (headlines.isEmpty && !showTrend) {
       return const EmptyState(
         icon: Icons.lightbulb_outline_rounded,
         title: 'Nothing stands out yet',
@@ -279,15 +326,145 @@ class _SummaryTab extends StatelessWidget {
       );
     }
 
+    // The trend strip first, then the findings. It is the only thing on the
+    // page that says which direction the shop is going, and every headline
+    // under it is a statement about a level.
+    final leading = showTrend ? 1 : 0;
+
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      // One extra row: a pointer to Pairings, which is the fifth of five
-      // scrollable tabs and so sits off the edge of a phone screen.
-      itemCount: headlines.length + 1,
+      // One extra row at the end: a pointer to Pairings, which is the fifth of
+      // five scrollable tabs and so sits off the edge of a phone screen.
+      itemCount: leading + headlines.length + 1,
       separatorBuilder: (context, index) => const SizedBox(height: 12),
-      itemBuilder: (context, index) => index < headlines.length
-          ? _HeadlineCard(headline: headlines[index], onOpen: onOpen)
-          : const _PairingsSignpost(),
+      itemBuilder: (context, index) {
+        if (showTrend && index == 0) {
+          return _TrendStrip(comparison: comparison, store: store);
+        }
+        final at = index - leading;
+        return at < headlines.length
+            ? _HeadlineCard(headline: headlines[at], onOpen: onOpen)
+            : const _PairingsSignpost();
+      },
+    );
+  }
+}
+
+/// The window against the one before it, in four figures.
+///
+/// Withheld entirely rather than shown against a thin previous window — a shop
+/// six weeks old has no comparable 90 days behind it, and "down 60%" would be
+/// describing when it opened. See [WindowComparison.hasPrevious].
+class _TrendStrip extends StatelessWidget {
+  const _TrendStrip({required this.comparison, required this.store});
+
+  final WindowComparison comparison;
+  final Store store;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final money = moneyFormat(store);
+    final counts = NumberFormat.decimalPattern();
+    final foodCost = comparison.foodCost;
+
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Against the previous ${comparison.windowDays} days',
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 12),
+            _row(context, comparison.revenue,
+                format: (v) => money.format(v.round())),
+            _row(context, comparison.orders,
+                format: (v) => counts.format(v.round())),
+            _row(context, comparison.averageOrder,
+                format: (v) => money.format(v.round())),
+            if (foodCost != null)
+              _row(context, foodCost,
+                  format: (v) => '${(v * 100).toStringAsFixed(1)}%',
+                  // The one figure here where up is bad.
+                  goodWhenRising: false),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(
+    BuildContext context,
+    Comparison figure, {
+    required String Function(double) format,
+    bool goodWhenRising = true,
+  }) {
+    final theme = Theme.of(context);
+    final rising = figure.asRate
+        ? figure.pointChange > 0
+        : (figure.change ?? 0) > 0;
+    final good = rising == goodWhenRising;
+
+    // Grey when flat, and that is the point of `isFlat`: a page that colours
+    // every half-percent wobble green or red teaches people to ignore the
+    // colour.
+    final colour = figure.isFlat
+        ? theme.colorScheme.onSurfaceVariant
+        : (good ? theme.colorScheme.tertiary : theme.colorScheme.error);
+
+    final String delta;
+    if (figure.asRate) {
+      delta = figure.isFlat
+          ? 'about the same'
+          : '${figure.pointChange > 0 ? '+' : ''}'
+              '${figure.pointChange.toStringAsFixed(1)} pts';
+    } else {
+      final change = figure.change;
+      delta = change == null
+          ? '—'
+          : figure.isFlat
+              ? 'about the same'
+              : '${change > 0 ? '+' : ''}${(change * 100).round()}%';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(figure.label, style: theme.textTheme.bodyMedium),
+          ),
+          Text(
+            format(figure.current),
+            style: theme.textTheme.titleSmall
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 10),
+          // The previous figure is spelled out rather than left to the
+          // percentage. "+12%" invites the reader to do arithmetic they should
+          // not have to; "from NT$16,100" is the thing they wanted to know.
+          Text(
+            'from ${format(figure.previous)}',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 84,
+            child: Text(
+              delta,
+              textAlign: TextAlign.right,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: colour, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -449,13 +626,23 @@ class _MenuMatrixTab extends StatelessWidget {
   Widget build(BuildContext context) {
     if (matrix.items.isEmpty) {
       final uncosted = matrix.unclassified.length;
+      final thin = matrix.insufficient.length;
       return EmptyState(
         icon: Icons.receipt_long_outlined,
         title: 'Nothing to place on the matrix yet',
-        body: uncosted == 0
+        // Three different reasons for the same empty screen, and they want
+        // three different next steps. "Fill in costs" is useless advice to a
+        // shop whose dishes are all costed and simply have not sold ten each
+        // yet, and it used to be the only thing this screen said.
+        body: uncosted == 0 && thin == 0
             ? 'No dishes were sold in this window.'
-            : 'The $uncosted dishes sold have no cost recorded, so this report '
-                'cannot tell you which of them actually make money.',
+            : uncosted == 0
+                ? 'The $thin ${thin == 1 ? 'dish' : 'dishes'} sold fewer than '
+                    '${MenuEngineering.minimumUnits} each, which is too few to '
+                    'place without the answer turning on one table. Come back '
+                    'after more trading, or widen the window above.'
+                : 'The $uncosted dishes sold have no cost recorded, so this '
+                    'report cannot tell you which of them actually make money.',
         action: uncosted == 0
             ? null
             : FilledButton.icon(
@@ -482,6 +669,10 @@ class _MenuMatrixTab extends StatelessWidget {
           const SizedBox(height: 16),
         ],
         if (matrix.unclassified.isNotEmpty) _unclassifiedSection(context),
+        if (matrix.insufficient.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _insufficientSection(context),
+        ],
       ],
     );
   }
@@ -610,6 +801,42 @@ class _MenuMatrixTab extends StatelessWidget {
               ),
               const Divider(),
               for (final item in matrix.unclassified)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text(item.name),
+                  subtitle: Text('${item.qty} sold'),
+                ),
+            ],
+          ),
+        ),
+      );
+
+  /// The dishes the matrix declines to judge.
+  ///
+  /// Shown rather than silently dropped. A dish missing from all four lists
+  /// with no explanation reads as a bug in the report, and the honest reason —
+  /// not enough of them sold — is itself worth knowing: it is the list of
+  /// things the menu is carrying that almost nobody orders.
+  Widget _insufficientSection(BuildContext context) => Card(
+        elevation: 0,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Too few sold to place (${matrix.insufficient.length})',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                'Costed, but sold fewer than ${MenuEngineering.minimumUnits} '
+                'times in this window. Under about ten plates one table '
+                'decides which quadrant a dish lands in, so these are left '
+                'unplaced rather than guessed at.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const Divider(),
+              for (final item in matrix.insufficient)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   dense: true,

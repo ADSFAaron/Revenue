@@ -1,13 +1,13 @@
 import 'dart:async';
 
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'database/repositories.dart';
 import 'database/session_resolver.dart';
-import 'firebase_options.dart';
 import 'home.dart';
+import 'entry/choose_path.dart';
 import 'entry/entry_screen.dart';
+import 'entry/idle_lock.dart';
 import 'settings/screen_lock.dart';
 import 'settings/theme_controller.dart';
 import 'widgets/feedback.dart';
@@ -58,14 +58,17 @@ Future<void> main() async {
 /// before App Check has activated carries no token, and with enforcement on
 /// that is a refusal on the first screen.
 Future<void> _startServices() async {
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  // Offline cache, set explicitly rather than left to each platform's
-  // default. The mobile SDKs enable it; the web SDK does not, so the same shop
+  // One slot, not all of them. On a device that has only ever had one person
+  // on it — which is most of them — this opens the default Firebase app in
+  // exactly the place and the way it always did. A second operator's slot is
+  // opened when somebody taps their name, which is a local read.
+  // Opening a slot also configures it — the offline cache and App Check, both
+  // per app. The cache is set explicitly rather than left to each platform's
+  // default: the mobile SDKs enable it, the web SDK does not, so the same shop
   // on a tablet kept working through a dropped connection and on a laptop went
   // blank. A kitchen's wifi is the case this app should assume, not the one it
   // should be surprised by.
-  configureFirestore();
-  await configureAppCheck();
+  await sessionApps.start();
 }
 
 class MyApp extends StatelessWidget {
@@ -84,6 +87,9 @@ class MyApp extends StatelessWidget {
         darkTheme: const MaterialTheme(TextTheme()).dark(),
         navigatorKey: navigatorKey,
         debugShowCheckedModeBanner: false,
+        // Above the Navigator rather than inside a screen: a cover that a
+        // pushed route or a dialog appears on top of is not a cover.
+        builder: (context, child) => IdleLock(child: child ?? const SizedBox()),
         home: HomePage(services: services),
       ),
     );
@@ -119,7 +125,15 @@ class _HomePageState extends State<HomePage> {
   /// account that no longer exists. Every read on it fails, and the screen
   /// they are left staring at says "You do not have permission to do that".
   StreamSubscription<String?>? _signOutWatch;
-  bool _wasSignedIn = false;
+
+  /// Who the routes above the root belong to.
+  ///
+  /// Null before anybody has signed in on this launch. Compared rather than
+  /// merely tested, because a counter tablet can now hand over from one
+  /// operator to another without passing through signed-out, and the routes
+  /// the first one had open are no more the second one's than they would be
+  /// after a sign-out.
+  String? _routesBelongTo;
 
   @override
   void initState() {
@@ -129,10 +143,32 @@ class _HomePageState extends State<HomePage> {
         .then((_) {
           if (!mounted) return;
           _signOutWatch = authRepository.uidChanges.listen((uid) {
-            final leaving = _wasSignedIn && uid == null;
-            _wasSignedIn = uid != null;
-            if (leaving) {
-              // Everything above the root belonged to the session that just ended.
+            final previous = _routesBelongTo;
+            _routesBelongTo = uid;
+
+            // Compared against the operator rather than tested for null: a
+            // counter tablet hands over from one uid straight to another, and
+            // the outgoing person's name, timeout and cover are no more the
+            // incoming person's than they would be after a sign-out. Leaving
+            // them set is what let the lock screen greet the new operator
+            // under the old one's name.
+            if (currentOperator.value?.uid != uid) {
+              currentOperator.value = null;
+              idleTimeout.value = Duration.zero;
+              tillLocked.value = null;
+            }
+            // The grace period belongs to the session it was granted in.
+            if (previous != uid) screenLock.relock();
+
+            // A session being replaced or ending takes its routes with it.
+            //
+            // Arriving does not, and that asymmetry is the point: registration
+            // creates the account partway through its own flow and still has a
+            // store to create afterwards, so popping on the way *in* would
+            // tear it off at exactly the moment it must not be — leaving the
+            // account with no documents, which is the state this app has a
+            // recovery screen for.
+            if (previous != null && previous != uid) {
               navigatorKey.currentState?.popUntil((route) => route.isFirst);
             }
           });
@@ -189,7 +225,23 @@ class _HomePageState extends State<HomePage> {
                   // its way out.
                   return const SizedBox.shrink();
                 } else if (snapshot.hasData) {
-                  return _SessionGate(onReady: _markReady);
+                  // Keyed by the uid, so handing the till over rebuilds the
+                  // whole signed-in half of the app. Everything under here —
+                  // the session resolver, the shell's kept-alive pages, every
+                  // Firestore stream in them — belongs to one Firebase app,
+                  // and after a switch that is the wrong one.
+                  //
+                  // The gate is *outside* the session gate rather than inside
+                  // the shell, and that placement is the fix rather than an
+                  // arrangement. `_SessionGate` starts reading the moment its
+                  // state is created, so a lock built any deeper than this is
+                  // a lock with the shop's figures already fetched behind it.
+                  return AppLockGate(
+                    key: ValueKey(snapshot.data),
+                    uid: snapshot.data!,
+                    onLocked: _markReady,
+                    child: _SessionGate(onReady: _markReady),
+                  );
                 } else if (snapshot.hasError) {
                   // Was `'An error occurred: ${snapshot.error}'`. This is the
                   // first screen the app ever draws, and the thing being
@@ -263,14 +315,28 @@ class _SessionGateState extends State<_SessionGate> {
       // here is a Firestore failure whose `toString()` starts
       // `[cloud_firestore/…]`, and this is the first screen after sign-in — the
       // worst place in the app to show somebody an error code.
-      return _buildError(context, describeFailure(failure).message);
+      return _buildError(
+        context,
+        describeFailure(failure).message,
+        // An account with no profile is a registration that stopped halfway,
+        // not a broken account. Retry cannot help it and signing out is worse
+        // than useless — registering again with the same address is refused as
+        // "email already in use", which left somebody locked out of their own
+        // shop by the screen that was supposed to explain it.
+        canFinishRegistering:
+            failure is SessionException && failure.needsRegistration,
+      );
     }
     // The opening animation's job on a cold start; a progress circle on a
     // retry, when the opening has long gone.
     return const Center(child: CircularProgressIndicator());
   }
 
-  Widget _buildError(BuildContext context, String message) {
+  Widget _buildError(
+    BuildContext context,
+    String message, {
+    bool canFinishRegistering = false,
+  }) {
     return SafeArea(
       child: Center(
         child: Padding(
@@ -279,27 +345,47 @@ class _SessionGateState extends State<_SessionGate> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.cloud_off_rounded,
+                canFinishRegistering
+                    ? Icons.storefront_outlined
+                    : Icons.cloud_off_rounded,
                 size: 48,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               const SizedBox(height: 16),
               Text(message, textAlign: TextAlign.center),
               const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  FilledButton.tonal(
-                    onPressed: _resolver.retry,
-                    child: const Text('Retry'),
+              if (canFinishRegistering) ...[
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ChoosePathScreen(
+                        account: authRepository.currentSignIn(),
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 12),
-                  TextButton(
-                    onPressed: authRepository.signOut,
-                    child: const Text('Sign out'),
-                  ),
-                ],
-              ),
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: const Text('Finish setting up'),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: signOutOperator,
+                  child: const Text('Sign out'),
+                ),
+              ] else
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    FilledButton.tonal(
+                      onPressed: _resolver.retry,
+                      child: const Text('Retry'),
+                    ),
+                    const SizedBox(width: 12),
+                    TextButton(
+                      onPressed: signOutOperator,
+                      child: const Text('Sign out'),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),

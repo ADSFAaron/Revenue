@@ -441,7 +441,7 @@ class _AccountSettingsState extends State<AccountSettings> {
     try {
       // The next person at this counter is a different person.
       screenLock.relock();
-      await authRepository.signOut();
+      await signOutOperator();
     } catch (e) {
       if (mounted) showFailure(context, e);
     }
@@ -504,7 +504,7 @@ class _AccountSettingsState extends State<AccountSettings> {
       try {
         // The next person at this counter is a different person.
         screenLock.relock();
-        await authRepository.signOut();
+        await signOutOperator();
       } catch (_) {
         // The deletion succeeded, which is the part that cannot be undone.
         // Failing to tidy up the local session afterwards is not worth an

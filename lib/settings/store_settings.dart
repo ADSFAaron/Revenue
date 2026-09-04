@@ -12,6 +12,7 @@ import '../widgets/money.dart';
 import 'store_settings_edit_menu.dart';
 import 'store_delivery_platforms.dart';
 import 'store_payment_methods.dart';
+import '../entry/idle_lock.dart';
 import 'screen_lock.dart';
 import 'store_staff.dart';
 import '../widgets/page_body.dart';
@@ -134,6 +135,17 @@ class _StoreSettingsState extends State<StoreSettings> {
                         'orders before this count towards the previous day',
                     locked: !_isManager,
                     onTap: () => _editDayCutoffDialog(store),
+                  ),
+                  SettingTile.inline(
+                    icon: Icons.hourglass_empty_rounded,
+                    title: 'Cover the till when left alone',
+                    subtitle: store.idleTimeoutMinutes == 0
+                        ? 'Off — the till stays open until somebody signs out'
+                        : 'After ${store.idleTimeoutMinutes} '
+                            '${store.idleTimeoutMinutes == 1 ? 'minute' : 'minutes'} '
+                            '· nobody is signed out and the basket is kept',
+                    locked: !_isManager,
+                    onTap: () => _editIdleTimeoutDialog(store),
                   ),
                   SettingTile.inline(
                     icon: Icons.percent_outlined,
@@ -353,6 +365,77 @@ class _StoreSettingsState extends State<StoreSettings> {
       // ones use the new cutoff.
       _showSnackBar('Trading day now starts at '
           '${hour.toString().padLeft(2, '0')}:00 for new orders');
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    }
+  }
+
+  /// Minutes before the till covers itself.
+  ///
+  /// The options stop at 30. Past that it is not covering an unattended
+  /// counter any more, and the honest way to leave a till open all day is to
+  /// choose Off rather than to set an hour and believe otherwise.
+  Future<void> _editIdleTimeoutDialog(Store store) async {
+    const options = [0, 1, 2, 5, 10, 15, 30];
+    var minutes = store.idleTimeoutMinutes;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          title: const Text('Cover the till when left alone'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'After this long with nothing touched, the screen is covered '
+                'and asks who is at the till.\n\n'
+                'Nobody is signed out and nothing in the basket is lost — '
+                'carrying on puts the same person back where they were.',
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<int>(
+                initialValue: dropdownValue(minutes, options),
+                decoration: const InputDecoration(labelText: 'After'),
+                items: [
+                  for (final option in options)
+                    DropdownMenuItem(
+                      value: option,
+                      child: Text(option == 0
+                          ? 'Off'
+                          : '$option ${option == 1 ? 'minute' : 'minutes'}'),
+                    ),
+                ],
+                onChanged: (value) =>
+                    setStateDialog(() => minutes = value ?? minutes),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true) return;
+    try {
+      await storeRepository.updateIdleTimeout(widget.storeId, minutes);
+      // This device is holding the old value until its session is read again,
+      // and the person who just changed the setting is the one who will judge
+      // whether it works.
+      idleTimeout.value = Duration(minutes: minutes);
+      _showSnackBar(minutes == 0
+          ? 'The till will stay open'
+          : 'The till will cover itself after $minutes '
+              '${minutes == 1 ? 'minute' : 'minutes'}');
     } catch (e) {
       if (mounted) showFailure(context, e);
     }

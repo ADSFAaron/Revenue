@@ -1,3 +1,4 @@
+import 'comparison.dart';
 import 'demand_profile.dart';
 import 'menu_engineering.dart';
 
@@ -48,8 +49,15 @@ List<Headline> headlinesFrom({
   required MenuEngineering matrix,
   required DemandProfile demand,
   required int windowDays,
+
+  /// The window before this one, when there is a comparable one. Used only to
+  /// add direction to findings that already stand on their own — every
+  /// headline here must still read correctly with this absent, because a shop
+  /// in its first months genuinely has nothing behind it.
+  WindowComparison? comparison,
 }) {
   final headlines = <Headline>[];
+  final trend = (comparison?.hasPrevious ?? false) ? comparison : null;
 
   // ------------------------------------------------------------- food cost
   final foodCost = matrix.foodCostRate;
@@ -61,19 +69,51 @@ List<Headline> headlinesFrom({
     // coverage as at 20%, and at 20% the number in front of it is a sample of
     // the menu rather than a fact about the shop.
     final covers = _coverageSentence(matrix);
+    final moved = _foodCostDirection(trend);
     if (matrix.foodCostIsHigh) {
       headlines.add(Headline(
         severity: HeadlineSeverity.warning,
         topic: HeadlineTopic.menu,
-        title: 'Food cost is $percent%, above the $line% watch line',
+        title: 'Food cost is $percent%$moved, above the $line% watch line',
         detail: 'Usually pricing, portioning or waste. $covers',
       ));
     } else {
       headlines.add(Headline(
-        severity: HeadlineSeverity.good,
+        // A rate inside the range but climbing hard is not reassuring news,
+        // and filing it under "going well" is how a shop finds out late.
+        severity: (trend?.foodCost?.pointChange ?? 0) >= 2
+            ? HeadlineSeverity.advice
+            : HeadlineSeverity.good,
         topic: HeadlineTopic.menu,
-        title: 'Food cost is $percent%, within the usual range',
+        title: 'Food cost is $percent%$moved, within the usual range',
         detail: covers,
+      ));
+    }
+  }
+
+  // ------------------------------------------------------------- takings
+  if (trend != null && !trend.revenue.isFlat) {
+    final change = trend.revenue.change;
+    if (change != null) {
+      final direction = change > 0 ? 'up' : 'down';
+      final size = (change.abs() * 100).round();
+      final orders = trend.orders.change;
+      headlines.add(Headline(
+        severity: change > 0 ? HeadlineSeverity.good : HeadlineSeverity.warning,
+        topic: HeadlineTopic.menu,
+        title: 'Takings are $direction $size% on the previous $windowDays days',
+        // Which of the two moved is the whole question. Takings down on
+        // steady order counts is a basket-size problem — pricing, upselling,
+        // a dropped side — and takings down on fewer orders is a footfall
+        // problem. They are not fixed by the same thing.
+        detail: orders == null
+            ? 'Compared with the same length of trading before this window.'
+            : (orders.abs() * 100).round() < 5
+                ? 'On roughly the same number of orders, so it is what each '
+                    'order is worth that changed, not how many came in.'
+                : 'Orders are ${orders > 0 ? 'up' : 'down'} '
+                    '${(orders.abs() * 100).round()}% too, so this is footfall '
+                    'rather than basket size.',
       ));
     }
   }
@@ -150,6 +190,73 @@ List<Headline> headlinesFrom({
     ));
   }
 
+  // -------------------------------------------------------- too few sold
+  if (matrix.insufficient.isNotEmpty) {
+    final count = matrix.insufficient.length;
+    headlines.add(Headline(
+      // Never a warning. Nothing is wrong — the shop simply has not sold
+      // enough of these for the report to have an opinion, and saying so is
+      // the point rather than the caveat.
+      severity: HeadlineSeverity.advice,
+      topic: HeadlineTopic.menu,
+      title: '$count ${_dish(count)} sold too few to place — under '
+          '${MenuEngineering.minimumUnits} each',
+      detail: 'Left unplaced rather than guessed at. Under about ten plates a '
+          'single table decides which quadrant a dish lands in, and '
+          '"consider dropping it" is not a sentence worth printing on four '
+          'orders. ${matrix.insufficient.take(3).map((i) => i.name).join(', ')}'
+          '${count > 3 ? '…' : ''}',
+    ));
+  }
+
+  // --------------------------------------------------------------- movers
+  if (trend != null) {
+    final movers = trend.movers;
+    final regression = movers.where((m) => m.isRegression).toList();
+    final improvement = movers.where((m) => m.isImprovement).toList();
+
+    if (regression.isNotEmpty) {
+      final worst = regression.first;
+      headlines.add(Headline(
+        severity: HeadlineSeverity.warning,
+        topic: HeadlineTopic.menu,
+        title: '${worst.name} slipped from ${worst.from.label} to '
+            '${worst.to.label}',
+        detail: '${worst.previousQty} sold in the previous $windowDays days, '
+            '${worst.qty} in this one.'
+            '${regression.length > 1 ? ' ${regression.length - 1} other '
+                '${_dish(regression.length - 1)} moved the same way.' : ''}',
+      ));
+    }
+    if (improvement.isNotEmpty) {
+      final best = improvement.first;
+      headlines.add(Headline(
+        severity: HeadlineSeverity.good,
+        topic: HeadlineTopic.menu,
+        title: '${best.name} moved up from ${best.from.label} to '
+            '${best.to.label}',
+        detail: '${best.previousQty} sold in the previous $windowDays days, '
+            '${best.qty} in this one. Worth knowing what changed, so it can '
+            'be done again.',
+      ));
+    }
+
+    final faded = trend.fadedOut;
+    if (faded.isNotEmpty) {
+      headlines.add(Headline(
+        severity: HeadlineSeverity.advice,
+        topic: HeadlineTopic.menu,
+        title: '${faded.length} ${_dish(faded.length)} stopped selling enough '
+            'to measure',
+        detail: 'On the matrix last window, under '
+            '${MenuEngineering.minimumUnits} sales this one — which is a dish '
+            'going quiet rather than a dish going bad, and they need different '
+            'answers. ${faded.take(3).join(', ')}'
+            '${faded.length > 3 ? '…' : ''}',
+      ));
+    }
+  }
+
   // ------------------------------------------------------------ peak hour
   final peak = demand.peak;
   if (peak != null) {
@@ -184,6 +291,16 @@ List<Headline> headlinesFrom({
 }
 
 String _dish(int count) => count == 1 ? 'dish' : 'dishes';
+
+/// ", up 3.1 points" — or nothing at all when there is nothing to compare to,
+/// or when the movement is inside the noise.
+String _foodCostDirection(WindowComparison? trend) {
+  final figure = trend?.foodCost;
+  if (figure == null || figure.isFlat) return '';
+  final points = figure.pointChange;
+  return ', ${points > 0 ? 'up' : 'down'} '
+      '${points.abs().toStringAsFixed(1)} points';
+}
 
 /// How much of the shop's takings the cost figures actually describe.
 String _coverageSentence(MenuEngineering matrix) {

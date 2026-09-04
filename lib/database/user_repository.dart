@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'session_apps.dart';
+
 import '../models/app_user.dart';
 import 'auth_repository.dart';
 
@@ -9,10 +11,19 @@ import 'auth_repository.dart';
 /// should assume anything about how a user is stored.
 class UserRepository {
   UserRepository({FirebaseFirestore? firestore, AuthRepository? auth})
-      : _db = firestore ?? FirebaseFirestore.instance,
+      : _injected = firestore,
         _auth = auth ?? AuthRepository();
 
-  final FirebaseFirestore _db;
+  final FirebaseFirestore? _injected;
+
+  /// Read through the session that is current, not captured once.
+  ///
+  /// A counter tablet can hold several operators signed in at the same time,
+  /// one Firebase app each, and handing the till over swaps which of them is
+  /// current. A handle captured in the constructor would keep answering as the
+  /// person who was at the till when this object was built. See SessionApps.
+  FirebaseFirestore get _db =>
+      _injected ?? FirebaseFirestore.instanceFor(app: sessionApps.active);
 
   /// Only for resolving "who is signed in" — who that person *is* lives in
   /// `users/{uid}`, which is this class's business; the uid itself is not.

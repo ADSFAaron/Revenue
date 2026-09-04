@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'session_apps.dart';
+
 import '../models/daily_stats.dart';
 import '../models/stats_period.dart';
 import '../models/store.dart';
@@ -64,9 +66,18 @@ class PeriodReport {
 /// arithmetic left for the phone to do.
 class StatsRepository {
   StatsRepository({FirebaseFirestore? firestore})
-      : _db = firestore ?? FirebaseFirestore.instance;
+      : _injected = firestore;
 
-  final FirebaseFirestore _db;
+  final FirebaseFirestore? _injected;
+
+  /// Read through the session that is current, not captured once.
+  ///
+  /// A counter tablet can hold several operators signed in at the same time,
+  /// one Firebase app each, and handing the till over swaps which of them is
+  /// current. A handle captured in the constructor would keep answering as the
+  /// person who was at the till when this object was built. See SessionApps.
+  FirebaseFirestore get _db =>
+      _injected ?? FirebaseFirestore.instanceFor(app: sessionApps.active);
 
   CollectionReference<Map<String, dynamic>> _stats(String storeId) =>
       _db.collection('stores').doc(storeId).collection('dailyStats');

@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../widgets/dropdown_value.dart';
 import '../database/repositories.dart';
+import '../entry/idle_lock.dart';
 import '../models/menu_item.dart';
 import '../models/order.dart';
 import '../models/order_draft.dart';
@@ -149,6 +150,7 @@ class _AddOrderState extends State<AddOrder> {
         _quantities[line.itemId] = line.qty;
       }
     }
+    _publishBasket();
     _load();
     _loadLayout();
   }
@@ -366,6 +368,9 @@ class _AddOrderState extends State<AddOrder> {
 
   @override
   void dispose() {
+    // Nothing is being rung up once this screen is gone. Left set, the cover
+    // would warn about an order that no longer exists.
+    unsentBasketLines.value = 0;
     _searchController.dispose();
     _optionsController.dispose();
     super.dispose();
@@ -386,6 +391,12 @@ class _AddOrderState extends State<AddOrder> {
         appBar: AppBar(
           title: Text(_isEdit ? 'Edit Order' : 'Add Order'),
           actions: [
+            // Whose name this order is about to carry. It is here rather than
+            // anywhere else because this is the screen where getting it wrong
+            // becomes a false record — and getting it wrong is almost always
+            // somebody walking up to a till a colleague left open, not
+            // anybody pretending to be anybody.
+            const OperatorChip(),
             IconButton(
               tooltip: _posMode ? 'Show as a list' : 'Show as big buttons',
               icon: Icon(_posMode
@@ -460,13 +471,24 @@ class _AddOrderState extends State<AddOrder> {
                       // takes its width from the text in it rather than from
                       // a number that was measured at one font size.
                       width: scaledForText(context, 360, cap: 1.5),
-                      child: _buildOptionsPanel(store),
+                      // The order above the settings it was rung up under.
+                      // Two bounded regions rather than one long scroll: the
+                      // settings must not be pushed off the bottom by a busy
+                      // order, and an order must not be reduced to two lines
+                      // by four settings that are right nearly every time.
+                      child: Column(
+                        children: [
+                          Expanded(flex: 5, child: _buildBasketPanel()),
+                          const Divider(height: 1),
+                          Expanded(flex: 4, child: _buildOptionsPanel(store)),
+                        ],
+                      ),
                     ),
                   ],
                 )
               : _buildMenuList(store, rows, options: true),
         ),
-        _buildSummary(store, totals),
+        _buildSummary(store, totals, wide: wide),
       ],
     );
   }
@@ -993,19 +1015,96 @@ class _AddOrderState extends State<AddOrder> {
     );
   }
 
+  /// What is on the order, in the sequence it was rung up in.
+  ///
+  /// Rows the menu no longer has are dropped rather than shown as blanks: a
+  /// dish retired mid-shift keeps its quantity in `_quantities` and its price
+  /// on the order, but there is nothing to draw a line about.
+  List<_MenuRow> get _basketRows {
+    final byId = {for (final row in _rows) row.itemId: row};
+    return [
+      for (final id in _quantities.keys)
+        if (byId[id] != null) byId[id]!,
+    ];
+  }
+
+  /// One line of the order. Shared by the side panel and the sheet, so the two
+  /// cannot drift into disagreeing about the same order.
+  Widget _buildBasketTile(_MenuRow row, {VoidCallback? alsoOnChange}) {
+    final qty = _quantities[row.itemId] ?? 0;
+    return ListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+      title: Text(row.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        '${_priceLabel(row.price)} × $qty  ·  ${_priceLabel(row.price * qty)}',
+      ),
+      trailing: _buildStepper(
+        value: qty,
+        label: row.name,
+        onChanged: (delta) {
+          alsoOnChange?.call();
+          delta > 0 ? _addOne(row) : _removeOne(row);
+        },
+      ),
+    );
+  }
+
+  /// The order, kept on screen where there is room for it.
+  ///
+  /// On a tablet or a browser window the basket used to be a button that
+  /// opened a sheet — the same as on a phone, on the one layout with a spare
+  /// column. Somebody reading an order back to a customer had to open
+  /// something to do it. In grid mode it was worse: the chosen dishes are
+  /// scattered across tiles, so there was nowhere on screen the order existed
+  /// as a list at all.
+  Widget _buildBasketPanel() {
+    final rows = _basketRows;
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Text(
+            rows.isEmpty
+                ? 'On this order'
+                : 'On this order · ${rows.length} '
+                    '${rows.length == 1 ? 'dish' : 'dishes'}',
+            style: theme.textTheme.titleMedium,
+          ),
+        ),
+        Expanded(
+          child: rows.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'Nothing yet. Tap a dish to add it.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  children: [for (final row in rows) _buildBasketTile(row)],
+                ),
+        ),
+      ],
+    );
+  }
+
   /// The lines currently on the order, adjustable without leaving the grid.
   void _showBasket() {
-    final byId = {for (final row in _rows) row.itemId: row};
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, setSheetState) {
-          final entries = _quantities.entries
-              .where((e) => byId.containsKey(e.key))
-              .toList();
-          if (entries.isEmpty) {
+          final rows = _basketRows;
+          if (rows.isEmpty) {
             Navigator.pop(sheetContext);
             return const SizedBox.shrink();
           }
@@ -1022,22 +1121,12 @@ class _AddOrderState extends State<AddOrder> {
                     child: Text('On this order',
                         style: Theme.of(sheetContext).textTheme.titleMedium),
                   ),
-                  for (final entry in entries)
-                    ListTile(
-                      title: Text(byId[entry.key]!.name),
-                      subtitle: Text(_priceLabel(byId[entry.key]!.price)),
-                      trailing: _buildStepper(
-                        value: entry.value,
-                        label: byId[entry.key]!.name,
-                        onChanged: (delta) {
-                          // Both states: the sheet redraws itself, the page
-                          // behind it redraws its total.
-                          setSheetState(() {});
-                          delta > 0
-                              ? _addOne(byId[entry.key]!)
-                              : _removeOne(byId[entry.key]!);
-                        },
-                      ),
+                  // Both states are driven: the sheet redraws itself, the
+                  // page behind it redraws its total.
+                  for (final row in rows)
+                    _buildBasketTile(
+                      row,
+                      alsoOnChange: () => setSheetState(() {}),
                     ),
                 ],
               ),
@@ -1048,17 +1137,30 @@ class _AddOrderState extends State<AddOrder> {
     );
   }
 
-  void _addOne(_MenuRow row) => setState(
-      () => _quantities[row.itemId] = (_quantities[row.itemId] ?? 0) + 1);
+  void _addOne(_MenuRow row) {
+    setState(
+        () => _quantities[row.itemId] = (_quantities[row.itemId] ?? 0) + 1);
+    _publishBasket();
+  }
 
-  void _removeOne(_MenuRow row) => setState(() {
-        final next = (_quantities[row.itemId] ?? 0) - 1;
-        if (next <= 0) {
-          _quantities.remove(row.itemId);
-        } else {
-          _quantities[row.itemId] = next;
-        }
-      });
+  void _removeOne(_MenuRow row) {
+    setState(() {
+      final next = (_quantities[row.itemId] ?? 0) - 1;
+      if (next <= 0) {
+        _quantities.remove(row.itemId);
+      } else {
+        _quantities[row.itemId] = next;
+      }
+    });
+    _publishBasket();
+  }
+
+  /// Tells the till cover how much there is to lose.
+  ///
+  /// Handing over always costs the basket, but a confirmation on every
+  /// handover would be friction on the exact thing the sessions exist to make
+  /// cheap — so the cover asks only when there is something in it.
+  void _publishBasket() => unsentBasketLines.value = _quantities.length;
 
   Widget _buildStepper({
     required int value,
@@ -1095,7 +1197,7 @@ class _AddOrderState extends State<AddOrder> {
     );
   }
 
-  Widget _buildSummary(Store store, OrderTotals totals) {
+  Widget _buildSummary(Store store, OrderTotals totals, {required bool wide}) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final money = moneyFormat(store);
@@ -1110,7 +1212,14 @@ class _AddOrderState extends State<AddOrder> {
     final fine =
         theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant);
 
-    return Material(
+    // On a phone the order lives behind this bar, so the bar is the handle:
+    // swiping it up opens the basket. The button stays — a gesture nobody is
+    // told about is not a feature — but the swipe is the one that suits a
+    // thumb already resting down there. On a wide layout the order is on
+    // screen in the side column, so there is nothing to pull up.
+    final pullable = !wide && _quantities.isNotEmpty;
+
+    final bar = Material(
       elevation: 3,
       color: scheme.surfaceContainerHigh,
       child: SafeArea(
@@ -1124,8 +1233,20 @@ class _AddOrderState extends State<AddOrder> {
             // which before the button is pressed beats saying it afterwards.
             _OfflineStrip(isEdit: _isEdit),
             PendingOrdersBar(currency: store.currency),
+            if (pullable)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Container(
+                  width: 32,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: scheme.onSurfaceVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              padding: EdgeInsets.fromLTRB(16, pullable ? 8 : 12, 16, 12),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1198,6 +1319,17 @@ class _AddOrderState extends State<AddOrder> {
           ],
         ),
       ),
+    );
+
+    if (!pullable) return bar;
+    return GestureDetector(
+      // Only the flick upwards. A downward drag on this bar means nothing, and
+      // claiming it would take the gesture away from whatever might want it
+      // later.
+      onVerticalDragEnd: (details) {
+        if ((details.primaryVelocity ?? 0) < -100) _showBasket();
+      },
+      child: bar,
     );
   }
 }

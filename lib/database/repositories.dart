@@ -1,8 +1,5 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
-import 'package:flutter/foundation.dart';
 
 export 'connection_status.dart' show ConnectionStatus, connectionStatus;
 export 'pending_order_queue.dart' show PendingOrderQueue;
@@ -14,6 +11,8 @@ import 'audit_log_repository.dart';
 import 'auth_repository.dart';
 import 'data_exception.dart';
 import 'device_accounts.dart';
+import 'session_apps.dart';
+import '../entry/idle_lock.dart';
 import 'feedback_repository.dart';
 import 'invite_repository.dart';
 import 'menu_import_repository.dart';
@@ -29,6 +28,7 @@ export 'audit_log_repository.dart';
 export 'auth_repository.dart';
 export 'data_exception.dart';
 export 'device_accounts.dart';
+export 'session_apps.dart';
 export 'feedback_repository.dart';
 export 'invite_repository.dart';
 export 'menu_import_repository.dart';
@@ -44,67 +44,25 @@ export 'user_repository.dart';
 /// No widget may reach for `FirebaseFirestore.instance` or `FirebaseAuth`
 /// directly. Keeping every query and every sign-in call behind these objects is
 /// what makes the backend replaceable later without touching a single screen.
-/// Turns on the offline cache. Call once, before the first read.
+/// Signs the current operator out and hands the till to whoever else this
+/// device is still holding a session for.
 ///
-/// Set explicitly rather than left to each platform's default: the mobile SDKs
-/// enable persistence, the web SDK does not. The same shop on a tablet kept
-/// working through a dropped connection and on a laptop went blank. A
-/// kitchen's wifi is the case this app should assume, not the one it should be
-/// surprised by.
-void configureFirestore() {
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
-    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-  );
+/// Every "log out" goes through this rather than through `signOut()` alone.
+/// A device with three people signed in has three sessions to keep straight,
+/// and one of them ending is not the same event as the till being empty.
+Future<void> signOutOperator() async {
+  final uid = authRepository.currentUid;
+  await authRepository.signOut();
+  if (uid != null) await sessionApps.release(uid);
 }
 
-/// Attests that a request came from a genuine build of this app.
+/// Parks the operator at the till and opens a blank slot for somebody new.
 ///
-/// The rules decide what a *signed-in account* may do. Nothing until now
-/// decided whether the caller was this app at all — and since anybody can
-/// register in seconds with no email verification, "a valid account" is not a
-/// meaningful barrier. App Check is the missing half: Play Integrity has
-/// Google vouch for the installation, and a script holding a valid login gets
-/// no token at all.
-///
-/// It matters most for the menu import, which is the one call in this project
-/// that spends real money per invocation. `functions/src/quota.ts` caps how
-/// much can be spent in a day; this decides who gets to spend it.
-///
-/// **Debug builds use the debug provider**, which mints a token for a local
-/// secret rather than attesting anything. That secret has to be pasted into
-/// the Firebase console once per machine (App Check → the Android app →
-/// Manage debug tokens); the token is printed to the log on first run. Without
-/// this branch, every `flutter run` would be refused by its own backend as
-/// soon as enforcement is switched on.
-///
-/// **Web needs a reCAPTCHA Enterprise site key**, which is per-project and not
-/// a secret, but is also not something this repository should guess. Pass it
-/// at build time and web activation is skipped when it is absent:
-///
-/// ```
-/// flutter build web --dart-define=APP_CHECK_RECAPTCHA_KEY=6Lc...
-/// ```
-///
-/// Failure here is swallowed on purpose. App Check activation talks to the
-/// network, and a till that cannot reach Google at launch must still open —
-/// the enforcement decision lives on the server, where a missing token is
-/// refused per request rather than at startup.
-Future<void> configureAppCheck() async {
-  const recaptchaKey = String.fromEnvironment('APP_CHECK_RECAPTCHA_KEY');
-  if (kIsWeb && recaptchaKey.isEmpty) return;
-  try {
-    await FirebaseAppCheck.instance.activate(
-      providerAndroid: kDebugMode
-          ? const AndroidDebugProvider()
-          : const AndroidPlayIntegrityProvider(),
-      providerWeb:
-          recaptchaKey.isEmpty ? null : ReCaptchaEnterpriseProvider(recaptchaKey),
-    );
-  } catch (e) {
-    debugPrint('App Check activation failed: $e');
-  }
-}
+/// Not a sign-out. The person stepping away stays signed in on their own slot,
+/// so handing the till back to them later is a local switch that works with no
+/// connection at all — which is the whole point of holding more than one.
+Future<void> addAnotherOperator() => sessionApps.takeSlot();
+
 
 final authRepository = AuthRepository();
 final userRepository = UserRepository(auth: authRepository);
@@ -153,10 +111,18 @@ class Session {
 
 /// Raised when the signed-in account has no usable profile or store.
 class SessionException implements AppException {
-  const SessionException(this.message);
+  const SessionException(this.message, {this.needsRegistration = false});
 
   @override
   final String message;
+
+  /// True when the signed-in account has no profile document at all.
+  ///
+  /// Not a dead end, which is what it used to be presented as: the rules allow
+  /// an account to create its own first `users/{uid}`, so this state is a
+  /// registration that stopped halfway and can be carried on from. Everything
+  /// else that lands here needs somebody else to fix it.
+  final bool needsRegistration;
 
   @override
   String toString() => message;
@@ -178,12 +144,20 @@ Future<Session> loadSession() async {
 
   final user = await userRepository.fetch(uid);
   if (user == null) {
+    // The old wording here sent people to "sign out and register again",
+    // which cannot work: the account already exists, so registering again with
+    // the same address is refused as `email-already-in-use`, and this screen
+    // was the only thing between them and their own shop. The account is
+    // signed in and the rules let it write its own first profile, so the way
+    // out is forwards.
     throw SessionException(
       'Signed in as ${authRepository.currentEmail ?? uid}, but this account '
-      'has no profile document yet.\n\n'
-      'This happens when a sign-in account outlives its Firestore data — for '
-      'example after the database was cleared. Sign out and register again, '
-      'either opening a store or joining one with an invite code.',
+      'is not set up yet.\n\n'
+      'This is what a registration that was interrupted leaves behind — the '
+      'account was created, and the shop it belongs to was not. Carry on from '
+      'where it stopped, either opening a store or joining one with an invite '
+      'code.',
+      needsRegistration: true,
     );
   }
   if (user.storeId.isEmpty) {
@@ -214,5 +188,13 @@ Future<Session> loadSession() async {
   // that cannot drift, and it records the identity the store has confirmed
   // rather than whatever the sign-in screen was told.
   unawaited(deviceAccounts.remember(user));
+  // Ties this session to the slot it is running in, so the entry screen knows
+  // that tapping this person's name is a local switch rather than a sign-in.
+  unawaited(sessionApps.claimActive(user.uid));
+  // The two things the shell above needs to know about whoever is holding the
+  // tablet: their name, for the indicator on the order screen, and how long
+  // the shop lets the till sit untouched.
+  currentOperator.value = user;
+  idleTimeout.value = Duration(minutes: store.idleTimeoutMinutes);
   return Session(user: user, store: store);
 }

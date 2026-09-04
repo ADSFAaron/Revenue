@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -71,11 +73,25 @@ class _StorePageState extends State<StorePage> {
   }
 
   /// Re-reads, and reports a failure without taking the screen down with it.
+  ///
+  /// Bounded, because `RefreshIndicator` keeps its spinner up and the list
+  /// locked for exactly as long as this future takes, with no way for anybody
+  /// to cancel it. A read that never answers therefore does not look like a
+  /// slow refresh — it looks like the app has stopped, on a screen whose whole
+  /// job is to be the way into settings, history and the account.
+  static const Duration _refreshTimeout = Duration(seconds: 20);
+
   Future<void> _refresh() async {
     final next = _load();
     setState(() => _future = next);
     try {
-      await next;
+      // The timeout is on the wait, not on the load: `_future` is left running
+      // so a late answer still reaches the screen through the FutureBuilder.
+      await next.timeout(_refreshTimeout);
+    } on TimeoutException {
+      if (mounted) {
+        showInfo(context, 'Still trying — showing what was last loaded');
+      }
     } catch (e) {
       if (mounted) showFailure(context, e);
     }

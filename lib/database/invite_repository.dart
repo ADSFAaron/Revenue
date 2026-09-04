@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
+import 'session_apps.dart';
+
 import '../models/app_user.dart';
 import '../models/invite.dart';
 import 'data_exception.dart';
@@ -46,11 +48,20 @@ class InviteException implements AppException {
 /// cannot be given a path under one.
 class InviteRepository {
   InviteRepository({FirebaseFirestore? firestore, FirebaseFunctions? functions})
-      : _db = firestore ?? FirebaseFirestore.instance,
+      : _injected = firestore,
         _functions = functions ??
             FirebaseFunctions.instanceFor(region: passkeyFunctionsRegion);
 
-  final FirebaseFirestore _db;
+  final FirebaseFirestore? _injected;
+
+  /// Read through the session that is current, not captured once.
+  ///
+  /// A counter tablet can hold several operators signed in at the same time,
+  /// one Firebase app each, and handing the till over swaps which of them is
+  /// current. A handle captured in the constructor would keep answering as the
+  /// person who was at the till when this object was built. See SessionApps.
+  FirebaseFirestore get _db =>
+      _injected ?? FirebaseFirestore.instanceFor(app: sessionApps.active);
 
   /// Only [validate] uses this. Everything else here is a real Firestore
   /// transaction and stays one — see the class comment.

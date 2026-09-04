@@ -25,12 +25,14 @@ void main() {
           qty: 150,
           revenue: 15000,
           cost: 6000),
-      // Barely sells, high margin.
+      // Sells quietly, high margin. Above the placement floor on purpose —
+      // at the 5 units this used to carry, the matrix now declines to judge
+      // it, which is the whole point of `minimumUnits`.
       const ItemStat(
-          itemId: 'tea', name: 'Oolong', qty: 5, revenue: 500, cost: 100),
-      // Barely sells, low margin.
+          itemId: 'tea', name: 'Oolong', qty: 12, revenue: 1200, cost: 240),
+      // Sells quietly, thin margin.
       const ItemStat(
-          itemId: 'soup', name: 'Corn Soup', qty: 4, revenue: 200, cost: 180),
+          itemId: 'soup', name: 'Corn Soup', qty: 11, revenue: 550, cost: 495),
     ]));
 
     MenuClass classOf(String id) =>
@@ -40,6 +42,72 @@ void main() {
     expect(classOf('rice'), MenuClass.star);
     expect(classOf('tea'), MenuClass.puzzle);
     expect(classOf('soup'), MenuClass.dog);
+  });
+
+  group('too few sold', () {
+    test('a dish under the floor is withheld rather than judged', () {
+      final analysis = MenuEngineering.from(statsWith([
+        const ItemStat(
+            itemId: 'rice',
+            name: 'Braised Rice',
+            qty: 150,
+            revenue: 15000,
+            cost: 6000),
+        // Four plates. Which quadrant this lands in is decided by whichever
+        // table happened to order it, and "consider dropping it" is not a
+        // sentence worth printing on that.
+        const ItemStat(
+            itemId: 'special',
+            name: 'Friday Special',
+            qty: 4,
+            revenue: 800,
+            cost: 700),
+      ]));
+
+      expect(analysis.items.map((i) => i.stat.itemId), ['rice']);
+      expect(analysis.insufficient.map((i) => i.itemId), ['special']);
+      expect(analysis.unclassified, isEmpty,
+          reason: 'it is costed — the problem is volume, not a missing cost');
+    });
+
+    test('withholding a verdict does not move any figure', () {
+      // The thin dish is still a real sale. Dropping it from the totals would
+      // inflate every other dish's share of units and shift the average margin
+      // they are all measured against, so a dish nobody ordered would silently
+      // reclassify the ones they did.
+      const rice = ItemStat(
+          itemId: 'rice',
+          name: 'Braised Rice',
+          qty: 150,
+          revenue: 15000,
+          cost: 6000);
+      const thin = ItemStat(
+          itemId: 'special',
+          name: 'Friday Special',
+          qty: 4,
+          revenue: 800,
+          cost: 700);
+
+      final withThin = MenuEngineering.from(statsWith([rice, thin]));
+
+      expect(withThin.totalRevenue, 15800);
+      expect(withThin.totalCost, 6700);
+      expect(withThin.foodCostRate, closeTo(6700 / 15800, 1e-9));
+    });
+
+    test('exactly at the floor is placed', () {
+      final analysis = MenuEngineering.from(statsWith([
+        ItemStat(
+            itemId: 'edge',
+            name: 'On The Line',
+            qty: MenuEngineering.minimumUnits,
+            revenue: 1000,
+            cost: 400),
+      ]));
+
+      expect(analysis.items, hasLength(1));
+      expect(analysis.insufficient, isEmpty);
+    });
   });
 
   test('a dish with no cost is excluded, never crowned a star', () {

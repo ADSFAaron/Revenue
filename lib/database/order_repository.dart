@@ -2,6 +2,8 @@
 // domain object.
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 
+import 'session_apps.dart';
+
 import '../models/audit_log.dart';
 import '../models/order.dart';
 import '../models/order_draft.dart';
@@ -17,10 +19,19 @@ import 'audit_log_repository.dart';
 /// and would hit Firestore's 1 MB per-document ceiling within months.
 class OrderRepository {
   OrderRepository({FirebaseFirestore? firestore, AuditLogRepository? auditLogs})
-      : _db = firestore ?? FirebaseFirestore.instance,
+      : _injected = firestore,
         _auditLogs = auditLogs ?? AuditLogRepository();
 
-  final FirebaseFirestore _db;
+  final FirebaseFirestore? _injected;
+
+  /// Read through the session that is current, not captured once.
+  ///
+  /// A counter tablet can hold several operators signed in at the same time,
+  /// one Firebase app each, and handing the till over swaps which of them is
+  /// current. A handle captured in the constructor would keep answering as the
+  /// person who was at the till when this object was built. See SessionApps.
+  FirebaseFirestore get _db =>
+      _injected ?? FirebaseFirestore.instanceFor(app: sessionApps.active);
   final AuditLogRepository _auditLogs;
 
   DocumentReference<Map<String, dynamic>> _store(String storeId) =>

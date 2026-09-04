@@ -67,6 +67,7 @@ class MenuEngineering {
   const MenuEngineering({
     required this.items,
     required this.unclassified,
+    required this.insufficient,
     required this.averageUnitMargin,
     required this.popularityThreshold,
     required this.totalRevenue,
@@ -83,6 +84,20 @@ class MenuEngineering {
   /// which is the single most misleading thing this report could do — and it
   /// would happen to precisely the dishes nobody has got round to costing.
   final List<ItemStat> unclassified;
+
+  /// Dishes left unplaced because too few of them sold to place honestly.
+  ///
+  /// Separate from [unclassified] rather than folded into it. Both are "not on
+  /// the matrix", but they are different problems with different fixes: one is
+  /// answered by filling in a cost, the other only by more trading. A single
+  /// bucket would have to tell somebody to go and cost a dish that is already
+  /// costed.
+  ///
+  /// The instability this guards against is per-dish, not per-window, which is
+  /// why the whole report is not gated on a day count. A shop can have three
+  /// months of solid data and still have a dish that sold four plates in it,
+  /// and it is only that dish's verdict that is worthless.
+  final List<ItemStat> insufficient;
 
   final double averageUnitMargin;
 
@@ -117,7 +132,23 @@ class MenuEngineering {
     return coverage != null && coverage < coverageWarningRate;
   }
 
-  bool get isEmpty => items.isEmpty && unclassified.isEmpty;
+  /// How many of a dish must sell before the matrix will place it.
+  ///
+  /// Both axes are ratios, and under about ten units the numerator is small
+  /// enough that one table changes the answer: a party ordering three of
+  /// something can carry a dish across the popularity line on its own, and the
+  /// margin beside it is an average over fewer than ten plates. A verdict that
+  /// turns on one table is not a verdict, and "Dog — consider dropping it" is
+  /// exactly the kind of confident sentence a shop should not be given on four
+  /// observations.
+  ///
+  /// Flat rather than scaled to the window, deliberately. Widening from 30 days
+  /// to 180 does not make four sales into a pattern; it only means the four
+  /// took longer.
+  static const int minimumUnits = 10;
+
+  bool get isEmpty =>
+      items.isEmpty && unclassified.isEmpty && insufficient.isEmpty;
 
   List<MenuItemAnalysis> ofClass(MenuClass menuClass) =>
       items.where((item) => item.menuClass == menuClass).toList();
@@ -159,6 +190,7 @@ class MenuEngineering {
       return MenuEngineering(
         items: const [],
         unclassified: unclassified,
+        insufficient: const [],
         averageUnitMargin: 0,
         popularityThreshold: 0,
         totalRevenue: 0,
@@ -179,7 +211,18 @@ class MenuEngineering {
     // conventional bar for "pulls its weight".
     final popularityThreshold = 0.7 / costed.length;
 
-    final items = costed.map((item) {
+    // Withheld from the matrix, but *not* from the arithmetic above. A thin
+    // dish is still a real sale, so leaving it out of the totals would inflate
+    // every other dish's share of units and shift the average margin it is
+    // measured against. Only the verdict is withheld; no figure on this report
+    // moves because of this line.
+    final placed = <ItemStat>[];
+    final insufficient = <ItemStat>[];
+    for (final item in costed) {
+      (item.qty >= minimumUnits ? placed : insufficient).add(item);
+    }
+
+    final items = placed.map((item) {
       final unitMargin = (item.revenue - item.cost) / item.qty;
       final qtyShare = item.qty / totalQty;
       final popular = qtyShare >= popularityThreshold;
@@ -201,6 +244,7 @@ class MenuEngineering {
     return MenuEngineering(
       items: items,
       unclassified: unclassified,
+      insufficient: insufficient..sort((a, b) => b.qty.compareTo(a.qty)),
       averageUnitMargin: averageUnitMargin,
       popularityThreshold: popularityThreshold,
       totalRevenue: totalRevenue,

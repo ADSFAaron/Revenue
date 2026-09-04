@@ -267,7 +267,7 @@ allow read: if signedIn() &&
    （改名會跟著變），查不到才退回寫入當下複寫的 `byName`——帳號被刪掉時那是
    唯一還留著的線索。報表匯出目前是 `dailyStats` 彙總、沒有逐筆列，所以第三處
    要等 A4 的逐筆 CSV 才有地方放。
-4. `orders.createdBy` 的取捨寫進 rules 註解（§5.2）
+4. ~~`orders.createdBy` 的取捨寫進 rules 註解（§5.2）~~（已完成 2026-09-04）
 
 **Phase 2 — 選人畫面**
 5. 操作者概念與「目前操作者：X」常駐指示

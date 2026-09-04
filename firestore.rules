@@ -260,6 +260,25 @@ service cloud.firestore {
       //
       // The same five minutes lives in `kStaffCorrectionWindow`
       // (lib/models/order.dart), which greys out the buttons. Change both.
+      //
+      // `createdBy` is deliberately not pinned to `request.auth.uid` on
+      // create, and this is the one decision in this file that was an accident
+      // until it was written down. What *is* checked is the writer:
+      // `memberOf(storeId)` means a stranger cannot put an order in this
+      // shop's books at all. What is not checked is the content of
+      // `createdBy`, which may name any uid. (Updates do pin it —
+      // `keepsItsOwnClock()` covers that.)
+      //
+      // Pinning it would make attribution unforgeable and would also make
+      // switching operator offline impossible: a passkey sign-in needs the
+      // custom-token round trip in functions/src/passkeys.ts, and taking
+      // orders offline is a supported path, so the operator on a queued order
+      // has to be able to differ from whichever session flushes it. Under this
+      // app's threat model — carelessness on a shared counter tablet, not
+      // deliberate impersonation, see docs/auth-and-operator-plan.md §1 — the
+      // trade goes to the offline path, and `createdBy` is a claim rather than
+      // an authenticated fact. Anything that must be unforgeable belongs in
+      // `auditLogs`, where `byUid` *is* pinned.
       match /orders/{orderId} {
         allow read: if memberOf(storeId);
         allow create: if memberOf(storeId) && stampedByTheServer();

@@ -291,10 +291,18 @@ class AuthRepository {
         // console. Saying only "your session expired" sent somebody to sign in
         // again over and over against a check that had nothing to do with
         // their session.
+        // Says "the app" rather than "you" on purpose. Firebase reports a
+        // refused App Check as `unauthenticated`, and the function's own log
+        // shows why the distinction matters —
+        // {"verifications":{"app":"INVALID","auth":"VALID"}} — the person is
+        // signed in perfectly well and it is the build that cannot identify
+        // itself. Telling them to sign in again sends them round a loop that
+        // cannot help.
         'unauthenticated' =>
-          'The app could not prove who it was, so nothing was deleted. Sign in '
-              'again and retry; if it keeps happening this build has not been '
-              'registered for App Check.',
+          'The app could not prove which app it is, so nothing was deleted. '
+              'This is usually a debug build whose App Check token is not '
+              'registered — see tool/register_debug_token.sh. If this is a '
+              'store build, sign in again and retry.',
         'deadline-exceeded' || 'unavailable' =>
           'The deletion could not be finished — the connection dropped part '
               'of the way through. Nothing else was removed; sign in again to '

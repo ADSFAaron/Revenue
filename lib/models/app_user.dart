@@ -33,6 +33,7 @@ class AppUser {
     required this.displayName,
     required this.storeId,
     this.role = UserRole.staff,
+    this.active = true,
     this.createdAt,
     this.updatedAt,
   });
@@ -42,6 +43,18 @@ class AppUser {
   final String displayName;
   final String storeId;
   final UserRole role;
+
+  /// Whether this person is still a member of the store.
+  ///
+  /// Removing somebody sets this to false rather than clearing [storeId] or
+  /// deleting the document: the rules refuse both, and neither has a way back
+  /// for a person who returns. Everything the rules grant is gated on it, so a
+  /// false here is the whole of "no longer works here".
+  ///
+  /// Defaults to true, including for documents written before the field
+  /// existed — the rules read a missing value the same way.
+  final bool active;
+
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -53,6 +66,7 @@ class AppUser {
       displayName: data['displayName'] as String? ?? '',
       storeId: data['storeId'] as String? ?? '',
       role: UserRole.fromId(data['role'] as String?),
+      active: data['active'] as bool? ?? true,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
       updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
     );
@@ -66,6 +80,7 @@ class AppUser {
         'displayName': displayName,
         'storeId': storeId,
         'role': role.id,
+        'active': active,
       };
 
   /// Initials for the avatar circles. Falls back to the email so a user who
@@ -84,12 +99,14 @@ class AppUser {
         : source.toUpperCase();
   }
 
-  AppUser copyWith({String? displayName, UserRole? role}) => AppUser(
+  AppUser copyWith({String? displayName, UserRole? role, bool? active}) =>
+      AppUser(
         uid: uid,
         email: email,
         displayName: displayName ?? this.displayName,
         storeId: storeId,
         role: role ?? this.role,
+        active: active ?? this.active,
         createdAt: createdAt,
         updatedAt: updatedAt,
       );

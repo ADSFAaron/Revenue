@@ -182,6 +182,17 @@ Future<Session> loadSession() async {
   if (user.storeId.isEmpty) {
     throw const SessionException('This account is not linked to a store.');
   }
+  // Checked here rather than left to the first denied read. Everything the
+  // rules grant is gated on `active`, so a removed member's next call is a
+  // `permission-denied` on the store document — an error code where the honest
+  // answer is a sentence. The document is watched, so this arrives the moment
+  // a manager removes them rather than at the next cold start.
+  if (!user.active) {
+    throw const SessionException(
+      'Your access to this shop has been removed.\n\n'
+      'A manager can restore it, or you can sign in with another account.',
+    );
+  }
 
   final store = await storeRepository.fetch(user.storeId);
   if (store == null) {

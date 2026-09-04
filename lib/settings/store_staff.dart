@@ -83,11 +83,15 @@ class StoreStaff extends StatelessWidget {
                         itemCount: staff.length,
                         itemBuilder: (context, index) {
                           final user = staff[index];
+                          final mayEdit = _mayEdit(me, user);
                           return _StaffTile(
                             user: user,
                             me: me,
-                            onChangeRole: _mayChangeRoleOf(me, user)
+                            onChangeRole: mayEdit
                                 ? () => _changeRole(context, user)
+                                : null,
+                            onSetActive: mayEdit
+                                ? () => _setActive(context, user)
                                 : null,
                           );
                         },
@@ -100,14 +104,70 @@ class StoreStaff extends StatelessWidget {
     );
   }
 
-  /// Managers may change a colleague's role, but never their own — that is how
-  /// somebody would promote themselves — and never the owner's. A store has
-  /// exactly one owner and it is whoever opened it.
-  static bool _mayChangeRoleOf(AppUser? me, AppUser target) =>
+  /// Managers may change a colleague's role and whether they still work here,
+  /// but never their own — that is how somebody would promote themselves, and
+  /// how a shop locks its last manager out — and never the owner's. A store
+  /// has exactly one owner and it is whoever opened it.
+  ///
+  /// The same line is drawn in firestore.rules; this only decides whether the
+  /// control is offered.
+  static bool _mayEdit(AppUser? me, AppUser target) =>
       me != null &&
       me.role.canManage &&
       me.uid != target.uid &&
       target.role != UserRole.owner;
+
+  /// Removes somebody from the store, or puts them back.
+  ///
+  /// Worth a confirmation in one direction only: restoring is undoable by the
+  /// same tap, removing takes somebody's till away mid-shift.
+  Future<void> _setActive(BuildContext context, AppUser user) async {
+    final name = user.displayName.isEmpty ? user.email : user.displayName;
+
+    if (user.active) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Remove $name from this store?'),
+          content: const Text(
+            'They lose access to the menu, the orders and the takings on '
+            'every device, straight away.\n\n'
+            'The orders they rang up stay — those are the shop\'s books. You '
+            'can put them back on this screen if they return.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+                foregroundColor: Theme.of(context).colorScheme.onError,
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Remove'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    try {
+      await userRepository.setActive(user.uid, !user.active);
+      if (context.mounted) {
+        showInfo(
+          context,
+          user.active
+              ? '$name no longer has access to this store'
+              : '$name is back on the team',
+        );
+      }
+    } catch (e) {
+      if (context.mounted) showFailure(context, e);
+    }
+  }
 
   Future<void> _changeRole(BuildContext context, AppUser user) async {
     final name = user.displayName.isEmpty ? user.email : user.displayName;
@@ -175,39 +235,89 @@ class _StaffTile extends StatelessWidget {
     required this.user,
     required this.me,
     required this.onChangeRole,
+    required this.onSetActive,
   });
 
   final AppUser user;
   final AppUser? me;
   final VoidCallback? onChangeRole;
+  final VoidCallback? onSetActive;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final isMe = me?.uid == user.uid;
+    // A removed member stays on the list — somebody has to be able to put them
+    // back — so the tile has to say which of the two states it is showing, and
+    // colour alone would not (it would also be the only thing distinguishing
+    // them for anybody who cannot see it).
+    final removed = !user.active;
+    final muted = removed ? scheme.onSurfaceVariant : null;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: ListTile(
         title: Text(
           user.displayName.isEmpty ? user.email : user.displayName,
+          style: TextStyle(color: muted),
         ),
         subtitle: Text(
-          '${user.email}\n${user.role.label}${isMe ? ' · you' : ''}',
+          '${user.email}\n'
+          '${removed ? 'No longer works here' : user.role.label}'
+          '${isMe ? ' · you' : ''}',
+          style: TextStyle(color: muted),
         ),
         isThreeLine: true,
         leading: CircleAvatar(
-          backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-          foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+          backgroundColor: removed
+              ? scheme.surfaceContainerHighest
+              : scheme.secondaryContainer,
+          foregroundColor:
+              removed ? scheme.onSurfaceVariant : scheme.onSecondaryContainer,
           child: Text(user.initials),
         ),
-        trailing: onChangeRole == null
+        trailing: onSetActive == null && onChangeRole == null
             ? null
-            : IconButton(
-                tooltip: 'Change role',
-                icon: const Icon(Icons.manage_accounts_outlined),
-                onPressed: onChangeRole,
+            : PopupMenuButton<_StaffAction>(
+                tooltip: 'Manage this person',
+                icon: const Icon(Icons.more_vert),
+                onSelected: (action) => switch (action) {
+                  _StaffAction.changeRole => onChangeRole?.call(),
+                  _StaffAction.setActive => onSetActive?.call(),
+                },
+                itemBuilder: (context) => [
+                  if (onChangeRole != null && !removed)
+                    const PopupMenuItem(
+                      value: _StaffAction.changeRole,
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.manage_accounts_outlined),
+                        title: Text('Change role'),
+                      ),
+                    ),
+                  if (onSetActive != null)
+                    PopupMenuItem(
+                      value: _StaffAction.setActive,
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          removed
+                              ? Icons.person_add_alt
+                              : Icons.person_remove_outlined,
+                          color: removed ? null : scheme.error,
+                        ),
+                        title: Text(
+                          removed ? 'Put back on the team' : 'Remove from store',
+                          style: removed ? null : TextStyle(color: scheme.error),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-        onTap: onChangeRole,
+        onTap: removed ? onSetActive : onChangeRole,
       ),
     );
   }
 }
+
+enum _StaffAction { changeRole, setActive }

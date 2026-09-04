@@ -10,7 +10,10 @@ rules_version = '2';
 // written by the person it describes, and it is also the document every other
 // rule trusts. So it may not be allowed to say whatever it likes. A user
 // document may only claim a store that nobody owns yet, or one that an invite
-// code granted, and after that its `storeId` and `role` are pinned.
+// code granted, and after that its `storeId`, `role` and `active` are pinned
+// against its own owner — only a manager may change the last two, and only on
+// somebody else. `active` is how a member is removed from a store; it defaults
+// to true when absent, so documents written before it existed still work.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -30,8 +33,18 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
+    // Membership can be withdrawn. Until `active` existed there was no way at
+    // all to get a departed member out of a store: `delete` is false, and both
+    // update paths pin `storeId`, so `memberOf()` stayed true forever and with
+    // it every order, price and day's takings the shop has.
+    //
+    // The default is true, and has to be: no document written before this
+    // field existed carries it, and reading a missing `active` as false would
+    // lock every existing shop out of its own books at deploy time.
     function memberOf(storeId) {
-      return meExists() && me().storeId == storeId;
+      return meExists() &&
+        me().storeId == storeId &&
+        me().get('active', true) == true;
     }
 
     // Price changes, menu edits, store settings and invite codes are
@@ -85,31 +98,49 @@ service cloud.firestore {
 
     // You may edit your own profile, but not what you are allowed to do with
     // it. `displayName` and everything else stay freely editable.
-    function keepsOwnStoreAndRole() {
+    function keepsOwnStoreRoleAndAccess() {
       return request.resource.data.storeId == resource.data.storeId &&
-        request.resource.data.role == resource.data.role;
+        request.resource.data.role == resource.data.role &&
+        // Self-update deliberately does not go through memberOf() — somebody
+        // who has been removed still has to be able to correct their own name
+        // — so `active` has to be pinned here, or being removed from a store
+        // would be undone by writing `active: true` back onto yourself.
+        request.resource.data.get('active', true) ==
+          resource.data.get('active', true);
     }
 
-    // A manager may change a colleague's role and nothing else about them.
-    // Never their own — that is how somebody promotes themselves — and never
-    // the owner's, and never *to* owner: a store has exactly one, and it is
-    // whoever opened it.
-    function managerChangingSomeoneElsesRole(uid) {
+    // A manager may change a colleague's role and whether they are still a
+    // member of the store, and nothing else about them. Never their own —
+    // that is how somebody promotes themselves, and it is also how a shop
+    // loses its last manager to a mis-tap — and never the owner's, and never
+    // *to* owner: a store has exactly one, and it is whoever opened it.
+    //
+    // Removal sets `active` to false rather than clearing `storeId`. Clearing
+    // it would be a one-way door: `allow create` only writes a document that
+    // does not exist yet, so there would be no path back for somebody who
+    // returns — and in food service people do return.
+    function managerEditingSomeoneElse(uid) {
       return request.auth.uid != uid &&
         managerOf(resource.data.storeId) &&
         resource.data.role != 'owner' &&
+        // Named rather than excluded. The rule used to pin five fields and say
+        // nothing about the rest, so a manager could write any field at all
+        // onto a colleague's document — harmless only for as long as no rule
+        // trusted one of them, which is exactly what `active` now does.
+        // test/rules/users.test.js found that door before this field needed it.
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['role', 'active', 'updatedAt']) &&
         request.resource.data.role in ['staff', 'manager'] &&
-        request.resource.data.storeId == resource.data.storeId &&
-        request.resource.data.uid == resource.data.uid &&
-        request.resource.data.email == resource.data.email &&
-        request.resource.data.displayName == resource.data.displayName;
+        request.resource.data.get('active', true) is bool;
     }
 
     match /users/{uid} {
-      // Own document always; colleagues only within the same store (this is
-      // what the staff list reads).
+      // Own document always — a removed member still has to be able to read
+      // the document that says so, or the app can only tell them "permission
+      // denied". Colleagues only while still a member of the same store,
+      // which is what the staff list reads.
       allow read: if signedIn() &&
-        (request.auth.uid == uid || (meExists() && resource.data.storeId == me().storeId));
+        (request.auth.uid == uid || memberOf(resource.data.storeId));
 
       allow create: if signedIn() &&
         request.auth.uid == uid &&
@@ -117,8 +148,8 @@ service cloud.firestore {
         (claimsUnusedStore() || redeemsValidInvite());
 
       allow update: if signedIn() && (
-        (request.auth.uid == uid && keepsOwnStoreAndRole()) ||
-        managerChangingSomeoneElsesRole(uid)
+        (request.auth.uid == uid && keepsOwnStoreRoleAndAccess()) ||
+        managerEditingSomeoneElse(uid)
       );
 
       allow delete: if false;

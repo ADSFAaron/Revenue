@@ -125,7 +125,7 @@ second」，六位碼、單次使用）。三個畫面的實際出現頻率跟�
 
 以下是要處理的。
 
-### 5.1 【最嚴重】沒有任何方法把離職員工移出店家
+### 5.1 ~~【最嚴重】沒有任何方法把離職員工移出店家~~ —— 已修（2026-09-04）
 
 ```
 match /users/{uid} {
@@ -157,6 +157,28 @@ create` 只管建立文件，文件已存在就沒有重新加入的路徑，而
 
 **附帶問題**：owner 只有一個且不能移除，所以**沒有頂讓或交接的路徑**。
 現在不用解，但要知道。
+
+**已實作（2026-09-04）**，照上面的建議：
+
+- `memberOf()` 加 `me().get('active', true) == true`。**預設 true 是必要的**——
+  既有的 user 文件全都沒有這個欄位，讀成 false 等於部署當下把每一家店鎖在
+  自己的帳本外面。
+- `users/{uid}` 的 `allow read` 把同事那一支從 `meExists() && storeId 相同`
+  換成 `memberOf()`，所以被移除的人連同事清單都讀不到；**自己的文件仍然讀得到**
+  ——不然 app 只能對他顯示 permission-denied，而不是一句話。
+- 自己更新自己時 `active` 被釘住（`keepsOwnStoreRoleAndAccess`）。自我更新
+  刻意不走 `memberOf()`（被移除的人還是要能改自己的名字），所以不釘就等於
+  「移除」可以自己寫回來。
+- 經理改別人時改成**列舉可改欄位**：`diff().affectedKeys().hasOnly(['role',
+  'active', 'updatedAt'])`。這正是 users.test.js 早先留下的那條註記——舊規則
+  只釘五個欄位、對其餘沉默，在有規則開始信任某個欄位之前都無害，而 `active`
+  就是那個欄位。
+- App 端：`AppUser.active`、`UserRepository.setActive()`、`loadSession()` 在
+  `active == false` 時丟出一句話而不是等第一個被拒的讀取、Store Staff 頁的
+  溢出選單有「Remove from store / Put back on the team」，被移除的人留在清單
+  底部（不然沒有地方把他放回來）。
+- `test/rules/users.test.js` 共 110 項通過，含「沒有 `active` 欄位的舊文件仍是
+  成員」這條明寫出來的迴歸測試。
 
 ### 5.2 `orders.createdBy` 在建立時沒有約束——這是個取捨
 
@@ -237,7 +259,7 @@ allow read: if signedIn() &&
 
 **Phase 1 — 讓歸屬先有意義**（不動流程，風險低）
 1. ~~修離線 `createdBy` 為 null~~（已完成 2026-09-03）
-2. rules 加 `active`，補上移除離職員工的路徑（§5.1）
+2. ~~rules 加 `active`，補上移除離職員工的路徑（§5.1）~~（已完成 2026-09-04）
 3. 歷史訂單、稽核紀錄顯示是誰，含懸空 uid 的處理（§6）
 4. `orders.createdBy` 的取捨寫進 rules 註解（§5.2）
 

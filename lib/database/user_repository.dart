@@ -57,12 +57,29 @@ class UserRepository {
     });
   }
 
+  /// Removes somebody from the store, or puts them back.
+  ///
+  /// Not a delete and not a cleared `storeId`: the rules refuse both, and both
+  /// would be one-way. Their orders stay either way — those are the shop's
+  /// books, not the person's.
+  Future<void> setActive(String uid, bool active) async {
+    await _users.doc(uid).update({
+      'active': active,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// The store's staff list, found by reverse lookup. This replaces the old
   /// `users` / `users2` arrays that were kept on the store document and drifted
   /// out of sync with each other.
+  ///
+  /// Removed members are still in it, at the bottom: somebody has to be able
+  /// to put them back, and a list they have vanished from offers no way to.
   Stream<List<AppUser>> watchStaff(String storeId) => _users
       .where('storeId', isEqualTo: storeId)
       .snapshots()
       .map((snap) => snap.docs.map(AppUser.fromDoc).toList()
-        ..sort((a, b) => a.role.index.compareTo(b.role.index)));
+        ..sort((a, b) => a.active == b.active
+            ? a.role.index.compareTo(b.role.index)
+            : (a.active ? -1 : 1)));
 }

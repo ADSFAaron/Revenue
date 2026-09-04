@@ -169,33 +169,94 @@ describe('deletion', () => {
   });
 });
 
-describe('membership is currently permanent — see docs/auth-and-operator-plan.md §5.1', () => {
-  test('a departed colleague cannot be removed or moved out of the store', async () => {
+describe('removing somebody from the store — docs/auth-and-operator-plan.md §5.1', () => {
+  /** Removal as the app performs it. */
+  const remove = (uid, by = MANAGER) =>
+    updateDoc(doc(as(env, by), 'users', uid), { active: false });
+
+  test('a manager may remove a colleague, and put them back', async () => {
+    await assertSucceeds(remove(STAFF));
+    await assertSucceeds(updateDoc(doc(as(env, MANAGER), 'users', STAFF), { active: true }));
+  });
+
+  test('the owner is not removable — a store has exactly one', async () => {
+    await assertFails(remove(OWNER));
+  });
+
+  test('you cannot remove yourself', async () => {
+    await assertFails(remove(MANAGER, MANAGER));
+  });
+
+  test('staff cannot remove anybody', async () => {
+    await assertFails(remove(MANAGER, STAFF));
+  });
+
+  test('a manager of another store cannot reach in', async () => {
+    await assertFails(remove(STAFF, OUTSIDER));
+  });
+
+  test('`active` has to be a boolean', async () => {
+    await assertFails(updateDoc(doc(as(env, MANAGER), 'users', STAFF), { active: 'no' }));
+  });
+
+  /**
+   * The door this file found before `active` existed: the rule pinned five
+   * fields and said nothing about the rest, so a manager could write anything
+   * onto a colleague — which stopped being harmless the moment a rule started
+   * trusting one of those fields.
+   */
+  test('a manager may change a role or a membership, and nothing else', async () => {
+    await assertFails(updateDoc(doc(as(env, MANAGER), 'users', STAFF), { anythingAtAll: 'yes' }));
+    await assertFails(updateDoc(doc(as(env, MANAGER), 'users', STAFF), { displayName: 'Renamed' }));
+  });
+
+  test('deleting or moving somebody out of the store is still refused', async () => {
     const db = as(env, MANAGER);
     await assertFails(deleteDoc(doc(db, 'users', STAFF)));
     await assertFails(updateDoc(doc(db, 'users', STAFF), { storeId: null }));
     await assertFails(updateDoc(doc(db, 'users', STAFF), { storeId: OTHER_STORE }));
   });
+});
 
-  /**
-   * The hook the planned `active` flag can hang on, discovered by writing this
-   * test rather than assumed: `managerChangingSomeoneElsesRole` pins role,
-   * storeId, uid, email and displayName, and says nothing at all about any
-   * other field. So a manager may add one.
-   *
-   * Good news for the fix — `memberOf()` gaining an `active` check needs no
-   * change to the write rule. Less good as it stands: a manager may write
-   * *anything* onto a colleague's document, including a field some future rule
-   * decides to trust. When `active` lands, this rule should name the fields a
-   * manager may change instead of naming the ones they may not.
-   */
-  test('but a manager may add arbitrary fields to a colleague — including `active`', async () => {
-    await assertSucceeds(updateDoc(doc(as(env, MANAGER), 'users', STAFF), { active: false }));
-    await assertSucceeds(updateDoc(doc(as(env, MANAGER), 'users', STAFF), { anythingAtAll: 'yes' }));
+describe('what a removed member may still do', () => {
+  beforeEach(async () => {
+    await seed(env, (db) =>
+      setDoc(doc(db, 'users', STAFF), { ...user(STAFF, STORE, 'staff'), active: false }));
   });
 
-  test('and that door is only open to a manager of the same store', async () => {
-    await assertFails(updateDoc(doc(as(env, STAFF), 'users', MANAGER), { active: false }));
-    await assertFails(updateDoc(doc(as(env, OUTSIDER), 'users', STAFF), { active: false }));
+  test('they can read their own document — the app has to be able to say why', async () => {
+    await assertSucceeds(getDoc(doc(as(env, STAFF), 'users', STAFF)));
+  });
+
+  test('they cannot restore themselves', async () => {
+    await assertFails(updateDoc(doc(as(env, STAFF), 'users', STAFF), { active: true }));
+  });
+
+  test('they may still correct their own name', async () => {
+    await assertSucceeds(updateDoc(doc(as(env, STAFF), 'users', STAFF), { displayName: 'Still Me' }));
+  });
+
+  test('the store, its colleagues and its books are closed to them', async () => {
+    const db = as(env, STAFF);
+    await assertFails(getDoc(doc(db, 'stores', STORE)));
+    await assertFails(getDoc(doc(db, 'users', MANAGER)));
+    await assertFails(getDocs(query(collection(db, 'users'), where('storeId', '==', STORE))));
+    await assertFails(getDocs(collection(db, 'stores', STORE, 'orders')));
+    await assertFails(getDocs(collection(db, 'stores', STORE, 'menuItems')));
+  });
+
+  test('a manager who has been removed cannot act as one', async () => {
+    await seed(env, (db) =>
+      setDoc(doc(db, 'users', MANAGER), { ...user(MANAGER, STORE, 'manager'), active: false }));
+    await assertFails(updateDoc(doc(as(env, MANAGER), 'users', STAFF), { role: 'manager' }));
+  });
+});
+
+describe('documents written before `active` existed', () => {
+  test('a missing flag means a member, not a stranger', async () => {
+    // seedStore writes no `active` field at all — every other test in this
+    // file depends on that reading as true, and this says so out loud.
+    await assertSucceeds(getDoc(doc(as(env, STAFF), 'stores', STORE)));
+    await assertSucceeds(getDoc(doc(as(env, STAFF), 'users', MANAGER)));
   });
 });

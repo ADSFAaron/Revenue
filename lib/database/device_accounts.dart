@@ -137,6 +137,16 @@ class DeviceAccounts extends ChangeNotifier {
   Future<void> remember(AppUser user) async {
     await _ensureLoaded();
     final existing = _find(user.uid);
+    // `loadSession()` runs on several screens, not only at sign-in, so this is
+    // called far more often than anything about it changes. Already first in
+    // the list with the same name and address is already correct, and a
+    // shared_preferences write per screen open is a write per screen open.
+    if (existing != null &&
+        _accounts.first.uid == user.uid &&
+        existing.displayName == user.displayName &&
+        existing.email == user.email) {
+      return;
+    }
     final updated = (existing ??
             DeviceAccount(
               uid: user.uid,

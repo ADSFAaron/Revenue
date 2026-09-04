@@ -13,7 +13,16 @@
 # says, and the deploy dies with `Cannot use import statement outside a module`
 # before a byte is uploaded — while `npm run build` in a terminal, with a real
 # Node, is fine. Same family as the note in test/rules/package.json, and the
-# same lesson: nothing in a Firebase hook may assume which `node` it gets.
+# same lesson: nothing in a Firebase hook may assume anything about the process
+# it was started from.
+#
+# Which is also why the package is FOUND rather than named. Deriving it from
+# `uname -m` looked obvious and was wrong for exactly the same reason: that
+# firebase binary is x86_64, so under Rosetta every child of it reports x86_64
+# on an arm64 Mac, and the derived path pointed at a package npm had never
+# installed. Whatever is on disk is what npm resolved for this machine, so that
+# is the thing to run. (Executing an arm64 binary from an x86_64 process is
+# fine; macOS picks the right one.)
 #
 # Only the hook uses this. `npm run build` and `npm run lint` still call `tsc`
 # the ordinary way, because they run under the developer's own Node, where the
@@ -22,25 +31,21 @@ set -e
 
 dir="$(cd "$(dirname "$0")/.." && pwd)"
 
-case "$(uname -s)" in
-  Darwin) os=darwin ;;
-  Linux)  os=linux ;;
-  *)      os=win32 ;;
-esac
+exe=""
+for candidate in "$dir"/node_modules/@typescript/typescript-*/lib/tsc; do
+  if [ -x "$candidate" ]; then
+    exe="$candidate"
+    break
+  fi
+done
 
-case "$(uname -m)" in
-  arm64 | aarch64) arch=arm64 ;;
-  x86_64 | amd64)  arch=x64 ;;
-  *)               arch="$(uname -m)" ;;
-esac
-
-exe="$dir/node_modules/@typescript/typescript-$os-$arch/lib/tsc"
-if [ -x "$exe" ]; then
+if [ -n "$exe" ]; then
   exec "$exe" "$@"
 fi
 
-# No binary for this platform — either an unsupported one or an install that
-# skipped optional packages. The shim is correct wherever the ambient node can
-# load an ES module, which is every Node this project supports.
-echo "tools/tsc: no native compiler at $exe; falling back to the node shim" >&2
+# Nothing on disk — an unsupported platform, or an install that skipped
+# optional packages. The shim is correct wherever the ambient node can load an
+# ES module, which is every Node this project supports.
+echo "tools/tsc: no native compiler under $dir/node_modules/@typescript;" >&2
+echo "tools/tsc: falling back to the node shim" >&2
 exec "$dir/node_modules/.bin/tsc" "$@"

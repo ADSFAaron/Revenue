@@ -1,0 +1,46 @@
+#!/bin/sh
+# Runs the TypeScript compiler without going through `node`.
+#
+# TypeScript 7 is the Go port: `node_modules/typescript/bin/tsc` is a two-line
+# ES module whose only job is to exec a native binary shipped in a per-platform
+# package. Running that binary directly is the same compile with one fewer
+# moving part — and the moving part it removes is the one that breaks.
+#
+# What breaks: the standalone (pkg-bundled) `firebase` CLI prepends its own
+# Node 20 to PATH before running a predeploy hook, so the shim's
+# `#!/usr/bin/env node` resolves to that Node rather than the developer's. It
+# loads the shim's `.js` as CommonJS whatever the package's `"type": "module"`
+# says, and the deploy dies with `Cannot use import statement outside a module`
+# before a byte is uploaded — while `npm run build` in a terminal, with a real
+# Node, is fine. Same family as the note in test/rules/package.json, and the
+# same lesson: nothing in a Firebase hook may assume which `node` it gets.
+#
+# Only the hook uses this. `npm run build` and `npm run lint` still call `tsc`
+# the ordinary way, because they run under the developer's own Node, where the
+# shim works.
+set -e
+
+dir="$(cd "$(dirname "$0")/.." && pwd)"
+
+case "$(uname -s)" in
+  Darwin) os=darwin ;;
+  Linux)  os=linux ;;
+  *)      os=win32 ;;
+esac
+
+case "$(uname -m)" in
+  arm64 | aarch64) arch=arm64 ;;
+  x86_64 | amd64)  arch=x64 ;;
+  *)               arch="$(uname -m)" ;;
+esac
+
+exe="$dir/node_modules/@typescript/typescript-$os-$arch/lib/tsc"
+if [ -x "$exe" ]; then
+  exec "$exe" "$@"
+fi
+
+# No binary for this platform — either an unsupported one or an install that
+# skipped optional packages. The shim is correct wherever the ambient node can
+# load an ES module, which is every Node this project supports.
+echo "tools/tsc: no native compiler at $exe; falling back to the node shim" >&2
+exec "$dir/node_modules/.bin/tsc" "$@"

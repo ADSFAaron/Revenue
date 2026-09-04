@@ -8,9 +8,9 @@
     "source": "functions",
     "codebase": "default",
     "runtime": "nodejs22",
-    "//predeploy": "Calls the TypeScript compiler directly instead of `npm --prefix \"$RESOURCE_DIR\" run build`, which is what `firebase init` writes. Under npm 11 on Node 26 that form fails inside the Firebase CLI with `Cannot read properties of undefined (reading 'stdin')` and takes the whole deploy with it before a byte is uploaded. The compile itself is fine — the log shows `> tsc` completing, and npm only falls over afterwards, in its own lifecycle wrapper, reaching for a stdin the CLI never gave it. Running the same command by hand in a terminal works, which is what makes it baffling. So npm is cut out of the path: `tsc` is the thing that needs to run, and this runs it. `npm run build` is still there for people, and still does the same job.",
+    "//predeploy": "Calls the compiler directly instead of `npm --prefix \"$RESOURCE_DIR\" run build`, which is what `firebase init` writes. Under npm 11 on Node 26 that form fails inside the Firebase CLI with `Cannot read properties of undefined (reading 'stdin')` and takes the whole deploy with it before a byte is uploaded. The compile itself is fine — the log shows `> tsc` completing, and npm only falls over afterwards, in its own lifecycle wrapper, reaching for a stdin the CLI never gave it. Running the same command by hand in a terminal works, which is what makes it baffling. So npm is cut out of the path.\n\nIt does not call `./node_modules/.bin/tsc` either, and that is the second half of the same lesson: a predeploy hook may not assume which `node` it gets. The standalone (pkg-bundled) firebase CLI puts its own Node 20 on the hook's PATH, TypeScript 7's bin is an ES module, and that Node loads it as CommonJS — `SyntaxError: Cannot use import statement outside a module`, again before a byte is uploaded. tools/tsc runs the native compiler binary that TypeScript 7 ships, so the compile needs no node at all. See the comments in that file.",
     "predeploy": [
-      "cd \"$RESOURCE_DIR\" && ./node_modules/.bin/tsc"
+      "cd \"$RESOURCE_DIR\" && ./tools/tsc"
     ],
     "ignore": [
       "node_modules",

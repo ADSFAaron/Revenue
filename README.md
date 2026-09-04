@@ -174,10 +174,44 @@ firebase --version   # expect 15.x or newer
 ```
 
 > Use the npm package, **not** the standalone binary from `curl -sL https://firebase.tools | bash`.
-> On Apple Silicon the standalone build is an x86_64 binary that self-extracts into
-> `~/.cache/firebase/tools/`; when that cache is incomplete every invocation dies with
-> `ENOENT ... firebase-tools/lib/templates/hosting/init.js` and there is no clean way to
-> repair it. The npm install is native arm64 and lands in a directory you own.
+> This matters more than it looks, and it is worth knowing how it fails, because the
+> standalone build does not announce itself — it installs to the same path the npm one
+> uses and silently replaces it.
+>
+> The standalone build carries **its own Node 20**, and it runs everything with it: the
+> `predeploy` hook, the source analysis, its own dependencies. Node 20 cannot
+> `require()` an ES module and cannot load one from a `.js` file with `"type": "module"`
+> around it, so as packages move to ESM it breaks a new thing every few months. In this
+> repository it has already broken three, each with a different message and none of them
+> pointing at the CLI:
+>
+> * `test/rules` — `npm run emulate` could not load vitest's ESM entry point (see the
+>   note in [test/rules/package.json](test/rules/package.json)).
+> * `firebase deploy --only functions` — the TypeScript 7 compiler's `bin/tsc` is an ES
+>   module: `SyntaxError: Cannot use import statement outside a module`. Fixed in the repo
+>   by [functions/tools/tsc](functions/tools/tsc), which runs the native compiler instead.
+> * the same deploy, one step later — `ERR_REQUIRE_ESM` from `jwks-rsa` requiring `jose`,
+>   inside the CLI's own dependency tree, where nothing in this repository can reach.
+>
+> The tell in every one of these is `pkg/prelude/bootstrap.js` in the stack trace. That
+> frame is the standalone build's loader; a stack with it in is a stack from a Node you
+> did not choose.
+>
+> On Apple Silicon it is also an x86_64 binary — so under Rosetta `uname -m` reports
+> `x86_64` to every child process it starts, which is its own small trap — and it
+> self-extracts into `~/.cache/firebase/tools/`; when that cache is incomplete every
+> invocation dies with `ENOENT ... firebase-tools/lib/templates/hosting/init.js` and there
+> is no clean way to repair it. The npm install is native, runs on the Node you already
+> have, and lands in a directory you own.
+>
+> **To check which one you have**, and repair it if the standalone has taken the name:
+>
+> ```sh
+> file "$(command -v firebase)"    # a symlink or a JS shebang is right;
+>                                  # "Mach-O ... executable" is the standalone
+> rm -f "$(command -v firebase)"   # only if it is the standalone
+> npm install -g firebase-tools    # restores the link to the npm package
+> ```
 
 **b. Log in.** Access tokens expire, and a stale one still shows up in `firebase login:list`
 while every API call returns 401 — so re-authenticate rather than trusting that listing:

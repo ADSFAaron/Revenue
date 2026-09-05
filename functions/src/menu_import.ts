@@ -21,34 +21,19 @@
  */
 
 import { getFirestore } from "firebase-admin/firestore";
-import { HttpsError, onCall, CallableRequest } from "firebase-functions/v2/https";
+import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { reserveMenuImport } from "./quota.js";
-import { defineSecret } from "firebase-functions/params";
 
 import { CALLABLE_OPTIONS } from "./config.js";
-import { Attempt, LadderFailure, runLadder } from "./model_ladder.js";
-
-/**
- * Set with `firebase functions:secrets:set GEMINI_API_KEY`. Bound to this one
- * function rather than the project, so the passkey functions never see it.
- */
-const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
-
-/**
- * `models.{model}:generateContent`, taken from the API's own discovery
- * document rather than from a documentation page.
- *
- * That distinction cost a release. The docs describe an "Interactions API" at
- * `/v1beta2/interactions` and recommend it for new work; no such resource
- * exists in the discovery document for v1, v1beta, v1beta2 or v1alpha, and
- * calling it returns a 404 with an empty body. `models.generateContent` is
- * what the service actually publishes. When the two disagree, the discovery
- * document is the one that is generated from the running service:
- *
- *   curl 'https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta'
- */
-const ENDPOINT_FOR = (model: string) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+import {
+  GEMINI_API_KEY,
+  Photo,
+  Report,
+  VisionJob,
+  readPhotos,
+  readPhotosAsJson,
+  requireUid,
+} from "./gemini.js";
 
 /**
  * Tried in order. Every one was verified against `GET /v1beta/models` on this
@@ -247,21 +232,6 @@ interface DraftItem {
   reviewNote: string | null;
 }
 
-/**
- * One line of "what is happening right now", on its way to the phone.
- *
- * This exists because the honest answer to "why is nothing happening" used to
- * be unavailable to the only person who needed it. Recognition is one call
- * that can take two minutes, and a spinner with no words under it is
- * indistinguishable from a hang — so people back out, which costs the call and
- * loses the photographs, and then try again into the same overloaded model.
- *
- * Sent with `response.sendChunk`, which is a no-op when the caller did not ask
- * for a stream. Nothing here is required for the result to arrive, so an older
- * client that calls rather than streams still works unchanged.
- */
-type Report = (update: Record<string, unknown>) => Promise<void>;
-
 export const importMenuFromPhotos = onCall(
   {
     ...CALLABLE_OPTIONS,
@@ -278,10 +248,13 @@ export const importMenuFromPhotos = onCall(
       await response?.sendChunk({ ...update, elapsedMs: Date.now() - started });
     };
 
-    const uid = requireUid(request);
+    const uid = requireUid(request, "importing a menu");
     const storeId = await requireMenuEditor(uid);
 
-    const photos = readPhotos(request.data?.photos);
+    const photos = readPhotos(request.data?.photos, {
+      maxPhotos: MAX_PHOTOS,
+      maxChars: MAX_PHOTO_CHARS,
+    });
     // After the photos are validated and before any model is reached: a
     // request that was never going to be sent should not spend an allowance,
     // and one that is about to be sent must not escape counting.
@@ -304,250 +277,28 @@ export const importMenuFromPhotos = onCall(
 // The model call
 // ---------------------------------------------------------------------------
 
+/** Everything the transport needs to know about this particular job. */
+const JOB: VisionJob = {
+  subject: "menu reader",
+  models: MODELS,
+  attemptTimeoutMs: ATTEMPT_TIMEOUT_MS,
+  budgetMs: OVERALL_BUDGET_MS,
+  retryDelaysMs: RETRY_DELAYS_MS,
+  maxOutputTokens: MAX_OUTPUT_TOKENS,
+};
+
 async function recognise(
-  photos: { mimeType: string; data: string }[],
+  photos: Photo[],
   report: Report
 ): Promise<{ categories: string[]; items: DraftItem[] }> {
-  const body = {
-    // One user turn holding the instructions and every photograph. Shape taken
-    // from GenerateContentRequest in the discovery document: `contents` is an
-    // array of Content, each with `parts`, and an image part is a `Blob` under
-    // `inlineData`.
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { text: INSTRUCTIONS },
-          ...photos.map((photo) => ({
-            inlineData: { mimeType: photo.mimeType, data: photo.data },
-          })),
-        ],
-      },
-    ],
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: RESPONSE_SCHEMA,
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
-    },
-    // Not stored. `store` defaults to true, which keeps the request — the menu
-    // photograph included — on Google's servers. Nothing here needs it: this is
-    // one call, never continued, and a shop's price list is its own business.
-    store: false,
-  };
-
-  const text = await callModel(JSON.stringify(body), report);
-
-  await report({ stage: "parsing" });
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    // The schema is supposed to make this impossible. It is checked anyway,
-    // because "impossible" here would surface as a type error at the far end
-    // of a callable, on a phone, with no stack.
-    throw new HttpsError("internal", "The menu reader returned something unreadable.");
-  }
+  const parsed = await readPhotosAsJson(JOB, {
+    instructions: INSTRUCTIONS,
+    photos,
+    schema: RESPONSE_SCHEMA,
+    report,
+  });
 
   return normalise(parsed);
-}
-
-/**
- * Posts the request and returns the model's text.
- *
- * The deciding — which model next, how many tries, when to stop — lives in
- * `model_ladder.ts` and is unit-tested there. This is the half that cannot be:
- * a socket, a secret and a clock.
- */
-async function callModel(payload: string, report: Report): Promise<string> {
-  try {
-    return await runLadder({
-      models: MODELS,
-      attemptTimeoutMs: ATTEMPT_TIMEOUT_MS,
-      budgetMs: OVERALL_BUDGET_MS,
-      retryDelaysMs: RETRY_DELAYS_MS,
-      report,
-      attempt: (model, timeoutMs) =>
-        attemptOnce(ENDPOINT_FOR(model), payload, model, timeoutMs),
-    });
-  } catch (error) {
-    if (error instanceof LadderFailure) throw translate(error);
-    throw error;
-  }
-}
-
-/**
- * The failure the caller is shown, with the technical half in `details`.
- *
- * `details` reaches the client — it is the payload the app puts behind
- * "Details" on the error, so that a test run says `gemini-3.6-flash · 503 ·
- * This model is currently experiencing high demand` instead of a sentence that
- * could mean anything. What it never carries is the response body itself: the
- * request that produced it is the one place in this file the API key appears,
- * and only Google's own `error.message`, already parsed out and truncated,
- * makes the trip.
- */
-function translate(failure: LadderFailure): HttpsError {
-  const attempt = failure.attempt;
-
-  // Out of budget rather than out of models. Said differently on purpose:
-  // "every model refused" and "there was no time left to ask" lead to
-  // different next steps.
-  if (failure.reason === "outOfTime") {
-    return new HttpsError(
-      "deadline-exceeded",
-      "Reading the menu ran out of time before a model answered. Try again, " +
-        "or with fewer photos.",
-      attempt ? describeAttempt(attempt) : { models: MODELS }
-    );
-  }
-
-  if (!attempt) {
-    return new HttpsError("internal", "The menu reader failed. Please try again.");
-  }
-
-  const busy = attempt.status === 429 || attempt.status === 503;
-  const stalled = attempt.status === 0;
-
-  return new HttpsError(
-    busy ? "resource-exhausted" : stalled ? "deadline-exceeded" : "internal",
-    busy
-      ? "Every menu reader is busy right now. Try again in a moment."
-      : stalled
-        ? "The menu reader did not answer in time. Try again, or with fewer photos."
-        : "The menu reader failed. Please try again.",
-    describeAttempt(attempt)
-  );
-}
-
-function describeAttempt(attempt: Attempt): Record<string, unknown> {
-  return {
-    model: attempt.model,
-    status: attempt.status,
-    upstream: attempt.detail,
-    attemptMs: attempt.ms,
-    models: MODELS,
-  };
-}
-
-/** The model's text on success, or an [Attempt] saying why not. */
-async function attemptOnce(
-  url: string,
-  payload: string,
-  model: string,
-  timeoutMs: number
-): Promise<string | Attempt> {
-  const started = Date.now();
-  // `fetch` has no timeout of its own. Without this an overloaded model can
-  // hold the connection for minutes and the only thing that ends it is the
-  // function being killed, which is the least informative failure available.
-  const controller = new AbortController();
-  const alarm = setTimeout(() => controller.abort(), timeoutMs);
-
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "x-goog-api-key": GEMINI_API_KEY.value(),
-        "Content-Type": "application/json",
-      },
-      body: payload,
-      signal: controller.signal,
-    });
-  } catch (error) {
-    // Nothing about a transport failure goes back verbatim. It carries the
-    // request that produced it, and the request is the one place in this file
-    // the API key appears.
-    const aborted = controller.signal.aborted;
-    console.error("menu import transport failure", model, describe(error));
-    return {
-      model,
-      status: 0,
-      detail: aborted
-        ? `no answer within ${Math.round(timeoutMs / 1000)}s`
-        : "could not reach the model",
-      ms: Date.now() - started,
-    };
-  } finally {
-    clearTimeout(alarm);
-  }
-
-  if (response.ok) return readText(await response.json());
-
-  // Logged in full, returned in part. Cloud Logging is inside the project and
-  // an HttpsError is not, so the whole body stays here — a 404 says which
-  // model went away and what replaced it — while only the parsed
-  // `error.message` travels.
-  const body = await response.text();
-  console.error("menu import upstream failure", model, response.status, body.slice(0, 2000));
-
-  return {
-    model,
-    status: response.status,
-    detail: upstreamMessage(body, response.status),
-    ms: Date.now() - started,
-  };
-}
-
-/**
- * Google's own sentence about the failure, or a stand-in.
- *
- * Parsed rather than sliced: an error body is JSON with the useful part at
- * `error.message`, and forwarding raw bytes on the off chance would be
- * forwarding whatever happens to be in them.
- */
-function upstreamMessage(body: string, status: number): string {
-  try {
-    const message = (JSON.parse(body) as { error?: { message?: string } })?.error?.message;
-    if (typeof message === "string" && message.trim()) return message.trim().slice(0, 300);
-  } catch {
-    // Not JSON. Nothing worth forwarding.
-  }
-  return `HTTP ${status}`;
-}
-
-/**
- * Pulls the answer out of a GenerateContentResponse.
- *
- * Two things this must not do. It must not read `parts[0]` — the answer can
- * arrive split across parts. And it must not join parts marked `thought`: the
- * model's own reasoning rides in the same array, and concatenating it into the
- * JSON turns a valid response into a parse error.
- */
-function readText(payload: unknown): string {
-  const candidate = (payload as {
-    candidates?: {
-      finishReason?: string;
-      content?: { parts?: { text?: string; thought?: boolean }[] };
-    }[];
-  })?.candidates?.[0];
-
-  if (!candidate) {
-    throw new HttpsError("internal", "The menu reader returned nothing to read.");
-  }
-
-  // STOP means it finished. MAX_TOKENS means the JSON is cut off mid-object,
-  // and parsing it would fail three lines later with a far less useful message.
-  if (candidate.finishReason && candidate.finishReason !== "STOP") {
-    console.error("menu import finishReason", candidate.finishReason);
-    throw new HttpsError(
-      "internal",
-      candidate.finishReason === "MAX_TOKENS"
-        ? "That menu was too long to read in one go. Try one page at a time."
-        : "The menu reader stopped early. Please try again."
-    );
-  }
-
-  const text = (candidate.content?.parts ?? [])
-    .filter((part) => part.thought !== true && typeof part.text === "string")
-    .map((part) => part.text)
-    .join("");
-
-  if (!text.trim()) {
-    throw new HttpsError("internal", "The menu reader returned nothing to read.");
-  }
-  return text;
 }
 
 /**
@@ -606,14 +357,6 @@ function normalise(parsed: unknown): { categories: string[]; items: DraftItem[] 
 // What the caller is allowed to do
 // ---------------------------------------------------------------------------
 
-function requireUid(request: CallableRequest): string {
-  const uid = request.auth?.uid;
-  if (!uid) {
-    throw new HttpsError("unauthenticated", "Sign in before importing a menu.");
-  }
-  return uid;
-}
-
 /**
  * Only an owner or a manager may import.
  *
@@ -651,42 +394,4 @@ async function requireMenuEditor(uid: string): Promise<string> {
     );
   }
   return storeId;
-}
-
-function readPhotos(value: unknown): { mimeType: string; data: string }[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new HttpsError("invalid-argument", "Send at least one photo.");
-  }
-  if (value.length > MAX_PHOTOS) {
-    throw new HttpsError(
-      "invalid-argument",
-      `A menu can be up to ${MAX_PHOTOS} photos.`
-    );
-  }
-
-  return value.map((entry) => {
-    const photo = (entry ?? {}) as Record<string, unknown>;
-    const data = photo.data;
-    const mimeType = photo.mimeType;
-
-    if (typeof data !== "string" || !data) {
-      throw new HttpsError("invalid-argument", "A photo arrived with no image data.");
-    }
-    if (data.length > MAX_PHOTO_CHARS) {
-      throw new HttpsError(
-        "invalid-argument",
-        "That photo is too large. Take it again at a lower resolution."
-      );
-    }
-    if (mimeType !== "image/jpeg" && mimeType !== "image/png" && mimeType !== "image/webp") {
-      throw new HttpsError("invalid-argument", "Photos must be JPEG, PNG or WebP.");
-    }
-
-    return { mimeType, data };
-  });
-}
-
-/** For the log only — never for a client, and never the key. */
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : "Recognition failed.";
 }

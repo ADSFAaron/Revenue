@@ -32,7 +32,12 @@ class DataExport {
   static String ordersCsv(
     List<Order> orders, {
     required Store store,
-    Map<String, String> staffNames = const {},
+
+    /// Turns the uid on an order into a name. A function rather than a map so
+    /// that this file stays free of the repositories — the whole point of
+    /// these builders being pure is that the formats can be tested without a
+    /// database anywhere near them.
+    String Function(String? uid)? nameFor,
   }) {
     final platforms = {
       for (final platform in store.deliveryPlatforms) platform.id: platform.name
@@ -82,7 +87,7 @@ class DataExport {
           order.total,
           order.totalCost,
           order.total - order.totalCost,
-          _who(order.createdBy, staffNames),
+          nameFor == null ? (order.createdBy ?? '') : nameFor(order.createdBy),
           _timestamp(order.voidedAt),
           order.voidReason,
           order.id,
@@ -247,11 +252,6 @@ class DataExport {
             },
         ],
       };
-
-  static String _who(String? uid, Map<String, String> names) {
-    if (uid == null || uid.isEmpty) return '';
-    return names[uid] ?? uid;
-  }
 
   static String? _timestamp(DateTime? at) => at?.toIso8601String();
 

@@ -8,6 +8,7 @@ import '../models/app_user.dart';
 import '../settings/account_settings.dart';
 import '../settings/screen_lock.dart';
 import '../settings/store_security.dart';
+import '../settings/store_export.dart';
 import '../settings/store_import_orders.dart';
 import '../settings/store_settings.dart';
 import '../settings/store_settings_audit_log.dart';
@@ -159,6 +160,23 @@ class _StorePageState extends State<StorePage> {
                     subtitle: 'Read a delivery platform’s statement into '
                         'the till',
                     onTap: () => _navigateTo(StoreImportOrders(session.storeId)),
+                  ),
+                  SettingTile.page(
+                    icon: Icons.ios_share_outlined,
+                    title: 'Export & backup',
+                    subtitle: 'Orders as a flat table, or the whole shop as '
+                        'one file',
+                    // A UI restriction rather than a permission: the rules let
+                    // any member read this store's orders, so a staff account
+                    // could fetch the same rows another way. What this stops is
+                    // the ordinary version of the problem — somebody walking
+                    // off with the year in two taps from the counter — and it
+                    // is worth being clear that it is not a boundary.
+                    locked: !session.user.role.canManage,
+                    onTap: () => _openLocked(
+                      StoreExport(storeId: session.storeId),
+                      'Unlock to export this shop\'s records',
+                    ),
                   ),
                   SettingTile.page(
                     icon: Icons.fact_check_outlined,

@@ -8,6 +8,8 @@ import '../entry/idle_lock.dart';
 import '../models/menu_item.dart';
 import '../models/order.dart';
 import '../models/order_draft.dart';
+import '../settings/menu_capture_page.dart';
+import 'order_slip_review.dart';
 import '../models/store.dart';
 import '../settings/store_payment_methods.dart';
 import '../settings/store_settings_edit_menu.dart';
@@ -113,6 +115,9 @@ class _AddOrderState extends State<AddOrder> {
   String _paymentMethodId = kDefaultPaymentMethodId;
   bool _paymentMethodChosen = false;
   bool _submitting = false;
+
+  /// True while a photographed slip is with the reader.
+  bool _reading = false;
 
   /// Free-text filter over dish names. A shop with sixty dishes across six
   /// categories still means scrolling to reach one of them by eye.
@@ -397,6 +402,22 @@ class _AddOrderState extends State<AddOrder> {
             // somebody walking up to a till a colleague left open, not
             // anybody pretending to be anybody.
             const OperatorChip(),
+            // Editing an order is not the place for this. A slip is read into
+            // a *new* basket; pointing a camera at one while correcting an
+            // order somebody already rang up would add to it silently, which
+            // is the one thing an edit must never do.
+            if (!_isEdit)
+              IconButton(
+                tooltip: 'Read a paper slip',
+                icon: _reading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.document_scanner_outlined),
+                onPressed: _reading ? null : _readSlip,
+              ),
             IconButton(
               tooltip: _posMode ? 'Show as a list' : 'Show as big buttons',
               icon: Icon(_posMode
@@ -1135,6 +1156,68 @@ class _AddOrderState extends State<AddOrder> {
         },
       ),
     );
+  }
+
+  /// Photographs a paper slip and fills the basket from it.
+  ///
+  /// Nothing here is rung up. The reading goes to a review screen next to the
+  /// prices, and what comes back is *merged* into the basket rather than
+  /// replacing it — somebody who has already tapped two dishes in and then
+  /// photographs the rest expects both, and a reading that silently cleared
+  /// their taps would be the worst possible surprise on this screen.
+  Future<void> _readSlip() async {
+    final store = _store;
+    if (store == null) return;
+    if (_menu.isEmpty) {
+      showInfo(context, 'Add some dishes to the menu first');
+      return;
+    }
+
+    final bytes = await captureMenuPhoto(context);
+    if (bytes == null || !mounted) return;
+
+    setState(() => _reading = true);
+    try {
+      final reading = await orderSlipRepository.read([
+        // The viewfinder writes JPEG. Named rather than sniffed: the function
+        // rejects anything that is not one of three types, and a wrong guess
+        // here is a rejection the person cannot act on.
+        SlipPhoto(bytes: bytes, mimeType: 'image/jpeg'),
+      ]);
+      if (!mounted) return;
+
+      if (reading.isEmpty) {
+        showInfo(
+          context,
+          reading.unreadable.isEmpty
+              ? 'Nothing on that slip matched a dish on the menu'
+              : 'Nothing matched — what was written is not on the menu',
+        );
+        return;
+      }
+
+      final picked = await Navigator.of(context).push<Map<String, int>>(
+        MaterialPageRoute(
+          builder: (_) => OrderSlipReview(
+            reading: reading,
+            menu: _menu,
+            store: store,
+          ),
+        ),
+      );
+      if (picked == null || !mounted) return;
+
+      setState(() {
+        for (final entry in picked.entries) {
+          _quantities[entry.key] = (_quantities[entry.key] ?? 0) + entry.value;
+        }
+      });
+      _publishBasket();
+    } catch (error) {
+      if (mounted) showFailure(context, error);
+    } finally {
+      if (mounted) setState(() => _reading = false);
+    }
   }
 
   void _addOne(_MenuRow row) {

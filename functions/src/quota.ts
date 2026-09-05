@@ -57,8 +57,31 @@ export const PER_STORE_DAILY = 5;
  */
 export const PROJECT_DAILY = 200;
 
+/**
+ * Slips one store may read in a day.
+ *
+ * **A different kind of number from the menu one, and worth understanding
+ * before raising it.** A menu import happens when a shop opens and when its
+ * menu changes — a handful of times ever. Reading an order slip happens *per
+ * order*, so this is the first paid call in the project whose usage scales
+ * with how busy a shop is. Sixty is a normal lunch and dinner service on the
+ * slips, not a whole day of every order: the till is the fast path, and this
+ * is for the ones that arrive on paper.
+ *
+ * Raising it raises the bill in direct proportion. That is a decision about
+ * money rather than about code, which is why the number is here with this
+ * paragraph next to it rather than buried in a config.
+ */
+export const ORDER_SLIP_PER_STORE_DAILY = 60;
+
+/** Slips the whole project may read in a day. See [PROJECT_DAILY]. */
+export const ORDER_SLIP_PROJECT_DAILY = 600;
+
 /** `stores/{storeId}/usage/menuImport` and `usage/menuImport`. */
 const USAGE_DOC = "menuImport";
+
+/** `stores/{storeId}/usage/orderSlip` and `usage/orderSlip`. */
+const SLIP_USAGE_DOC = "orderSlip";
 
 /**
  * The day a count belongs to, as `YYYY-MM-DD` in UTC.
@@ -92,44 +115,83 @@ function spent(data: FirebaseFirestore.DocumentData | undefined, day: string): n
  * @throws HttpsError `resource-exhausted` when either ceiling is reached.
  */
 export async function reserveMenuImport(storeId: string): Promise<void> {
+  await reserve(storeId, {
+    label: "Menu import",
+    doc: USAGE_DOC,
+    perStore: PER_STORE_DAILY,
+    perProject: PROJECT_DAILY,
+    storeLimitMessage:
+      `That is ${PER_STORE_DAILY} menu imports today, which is this store's ` +
+      "limit. It resets tomorrow. If a menu keeps coming back wrong, a " +
+      "flatter, brighter photograph usually reads better than another try " +
+      "at the same one — or add the dishes by hand from Edit menu.",
+    projectLimitMessage:
+      "Menu reading is unavailable for the rest of today. This is a limit " +
+      "on our side, not anything you did. Please try tomorrow, or add the " +
+      "dishes by hand from Edit menu.",
+  });
+}
+
+/**
+ * Claims one slip reading, or refuses.
+ *
+ * Same shape, different ceilings, and a different sentence when it refuses:
+ * somebody at a counter with a customer in front of them needs to be told to
+ * type it in, not to come back tomorrow.
+ */
+export async function reserveOrderSlip(storeId: string): Promise<void> {
+  await reserve(storeId, {
+    label: "Order slip",
+    doc: SLIP_USAGE_DOC,
+    perStore: ORDER_SLIP_PER_STORE_DAILY,
+    perProject: ORDER_SLIP_PROJECT_DAILY,
+    storeLimitMessage:
+      `That is ${ORDER_SLIP_PER_STORE_DAILY} slips read today, which is this ` +
+      "store's limit. It resets tomorrow. Ring this one up on the order " +
+      "screen in the meantime.",
+    projectLimitMessage:
+      "Slip reading is unavailable for the rest of today. This is a limit on " +
+      "our side, not anything you did. Ring the order up on the order screen.",
+  });
+}
+
+interface Ceiling {
+  /** For the log line only. */
+  label: string;
+  doc: string;
+  perStore: number;
+  perProject: number;
+  storeLimitMessage: string;
+  projectLimitMessage: string;
+}
+
+async function reserve(storeId: string, ceiling: Ceiling): Promise<void> {
   const db = getFirestore();
   const day = today();
-  const storeRef = db.doc(`stores/${storeId}/usage/${USAGE_DOC}`);
-  const projectRef = db.doc(`usage/${USAGE_DOC}`);
+  const storeRef = db.doc(`stores/${storeId}/usage/${ceiling.doc}`);
+  const projectRef = db.doc(`usage/${ceiling.doc}`);
 
   await db.runTransaction(async (tx) => {
     const [storeDoc, projectDoc] = await tx.getAll(storeRef, projectRef);
     const storeCount = spent(storeDoc.data(), day);
     const projectCount = spent(projectDoc.data(), day);
 
-    if (storeCount >= PER_STORE_DAILY) {
-      // Named as a limit rather than as a failure: this is a shop that has
-      // been retrying a menu that will not read, and the useful thing to say
-      // is that tomorrow will work and that a clearer photograph works better
-      // than a sixth attempt at the same one.
-      throw new HttpsError(
-        "resource-exhausted",
-        `That is ${PER_STORE_DAILY} menu imports today, which is this store's ` +
-          "limit. It resets tomorrow. If a menu keeps coming back wrong, a " +
-          "flatter, brighter photograph usually reads better than another try " +
-          "at the same one — or add the dishes by hand from Edit menu."
-      );
+    if (storeCount >= ceiling.perStore) {
+      // Named as a limit rather than as a failure, and it always says what to
+      // do instead. This is somebody in the middle of a job, and "quota
+      // exceeded" tells them nothing about how to finish it.
+      throw new HttpsError("resource-exhausted", ceiling.storeLimitMessage);
     }
 
-    if (projectCount >= PROJECT_DAILY) {
+    if (projectCount >= ceiling.perProject) {
       // Nothing the caller did, and nothing they can fix, so it does not
       // pretend otherwise.
-      logger.error("Menu import: project daily ceiling reached", {
+      logger.error(`${ceiling.label}: project daily ceiling reached`, {
         day,
-        ceiling: PROJECT_DAILY,
+        ceiling: ceiling.perProject,
         storeId,
       });
-      throw new HttpsError(
-        "resource-exhausted",
-        "Menu reading is unavailable for the rest of today. This is a limit " +
-          "on our side, not anything you did. Please try tomorrow, or add the " +
-          "dishes by hand from Edit menu."
-      );
+      throw new HttpsError("resource-exhausted", ceiling.projectLimitMessage);
     }
 
     const stamp = Timestamp.now();
@@ -138,11 +200,11 @@ export async function reserveMenuImport(storeId: string): Promise<void> {
 
     // Warns while there is still a day's headroom to react in, rather than at
     // the moment the ceiling stops somebody's import.
-    if (projectCount + 1 >= PROJECT_DAILY * 0.8) {
-      logger.warn("Menu import: past 80% of the project daily ceiling", {
+    if (projectCount + 1 >= ceiling.perProject * 0.8) {
+      logger.warn(`${ceiling.label}: past 80% of the project daily ceiling`, {
         day,
         used: projectCount + 1,
-        ceiling: PROJECT_DAILY,
+        ceiling: ceiling.perProject,
       });
     }
   });

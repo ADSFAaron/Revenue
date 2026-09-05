@@ -10,6 +10,11 @@
  *   menu_import.ts  Reading a menu off a photograph needs a model API key,
  *                   and a key shipped inside an APK is a key anybody can read
  *                   out of it.
+ *   order_slip.ts   The same key, and the same reason. It also needs the
+ *                   store's menu in the prompt, which is a server-side read:
+ *                   the point of that call is that the model picks from a
+ *                   closed set rather than transcribing, and a client that
+ *                   supplied the set could supply a different one.
  *   invites.ts      Checking an invite code happens before the person has an
  *                   account, so no security rule can serve it. It used to be
  *                   an unauthenticated Firestore read; here it is a call that
@@ -35,6 +40,8 @@ export {
 } from "./passkeys.js";
 
 export { importMenuFromPhotos } from "./menu_import.js";
+
+export { readOrderSlip } from "./order_slip.js";
 
 export { checkInvite } from "./invites.js";
 

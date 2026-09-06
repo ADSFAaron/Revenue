@@ -70,12 +70,35 @@ class _MenuRow {
 }
 
 class AddOrder extends StatefulWidget {
-  const AddOrder(this.storeId, {super.key, this.existing});
+  const AddOrder(
+    this.storeId, {
+    super.key,
+    this.existing,
+    this.initialQuantities,
+    this.closeAfterSubmit = false,
+  });
 
   final String storeId;
 
   /// Non-null when editing an order that has already been rung up.
   final Order? existing;
+
+  /// itemId -> quantity to start with, when this screen was opened from a slip
+  /// that has already been read and reviewed.
+  ///
+  /// The basket is prefilled and nothing else is: the channel, the payment
+  /// method and the guest count still come from the store's defaults and are
+  /// still there to be changed, because a slip does not say which of those it
+  /// was. Filling them in from a photograph would be inventing them.
+  final Map<String, int>? initialQuantities;
+
+  /// Whether a successful new order should close this screen.
+  ///
+  /// False at a till, where the screen is a counter that clears itself and
+  /// waits for the next customer. True when the caller is working through a
+  /// stack of slips and needs the one it pushed to come back with the order
+  /// number so it can mark that slip done.
+  final bool closeAfterSubmit;
 
   @override
   State<AddOrder> createState() => _AddOrderState();
@@ -154,6 +177,8 @@ class _AddOrderState extends State<AddOrder> {
       for (final line in existing.items) {
         _quantities[line.itemId] = line.qty;
       }
+    } else if (widget.initialQuantities != null) {
+      _quantities.addAll(widget.initialQuantities!);
     }
     _publishBasket();
     _load();
@@ -306,6 +331,10 @@ class _AddOrderState extends State<AddOrder> {
         createdBy: authRepository.currentUid,
       );
       if (!mounted) return;
+      if (widget.closeAfterSubmit) {
+        Navigator.pop(context, orderNo);
+        return;
+      }
       _snack('Order #$orderNo added');
       setState(() {
         _quantities.clear();

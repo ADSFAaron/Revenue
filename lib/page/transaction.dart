@@ -14,6 +14,7 @@ import '../widgets/page_body.dart';
 import '../widgets/setup_checklist.dart';
 import '../widgets/stat_card.dart';
 import 'addorder.dart';
+import 'slip_batch.dart';
 
 /// The shop's day: today's figures, the last few tickets, and the way in to
 /// ringing one up.
@@ -74,13 +75,35 @@ class _TransactionPageState extends State<TransactionPage> {
     final counts = NumberFormat.decimalPattern();
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => AddOrder(session.storeId)),
-        ),
-        icon: const Icon(Icons.add),
-        label: const Text('Add Order'),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Secondary, and small, on purpose. Ringing an order up at the till
+          // is the thing this app is for and stays the big button; working
+          // through a stack of paper is the quiet-half-hour job.
+          FloatingActionButton.small(
+            heroTag: 'scan-slips',
+            tooltip: 'Scan a stack of paper slips',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SlipBatch(store: session.store),
+              ),
+            ),
+            child: const Icon(Icons.document_scanner_outlined),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'add-order',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => AddOrder(session.storeId)),
+            ),
+            icon: const Icon(Icons.add),
+            label: const Text('Add Order'),
+          ),
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(

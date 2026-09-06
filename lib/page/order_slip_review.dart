@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../database/repositories.dart';
 import '../models/menu_item.dart';
 import '../models/order_slip.dart';
 import '../models/store.dart';
@@ -289,5 +292,106 @@ class _OrderSlipReviewState extends State<OrderSlipReview> {
       for (final entry in _quantities.entries)
         if (entry.value > 0) entry.key: entry.value,
     });
+  }
+}
+
+/// Reads a slip with the wait on screen, and hands back what it found.
+///
+/// Returns null when it was backed out of. Throws whatever the reader threw,
+/// so the caller reports a failure the one way it already does.
+///
+/// A dialog rather than a spinner on the button, because this can take a
+/// minute and a half on a bad day. The point is not decoration: a step that has
+/// visibly failed with the next one already starting is a wait with a reason,
+/// and the same seconds with nothing on screen are a hang — which is how a call
+/// that was about to succeed gets abandoned, taking the photograph with it.
+Future<SlipReading?> readSlipWithProgress(
+  BuildContext context,
+  List<SlipPhoto> photos,
+) async {
+  final outcome = await showDialog<Object>(
+    context: context,
+    // The call is already paid for and already running. Dismissing the box
+    // would not stop it; it would only hide it.
+    barrierDismissible: false,
+    builder: (_) => _SlipProgressDialog(photos: photos),
+  );
+
+  if (outcome == null) return null;
+  if (outcome is SlipReading) return outcome;
+  throw outcome;
+}
+
+class _SlipProgressDialog extends StatefulWidget {
+  const _SlipProgressDialog({required this.photos});
+
+  final List<SlipPhoto> photos;
+
+  @override
+  State<_SlipProgressDialog> createState() => _SlipProgressDialogState();
+}
+
+class _SlipProgressDialogState extends State<_SlipProgressDialog> {
+  StreamSubscription<SlipEvent>? _subscription;
+  SlipProgress _latest = const SlipProgress('Sending the photo');
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = orderSlipRepository.read(widget.photos).listen(
+      (event) {
+        if (!mounted) return;
+        switch (event) {
+          case SlipProgress():
+            setState(() => _latest = event);
+          case SlipRead(:final reading):
+            Navigator.of(context).pop(reading);
+        }
+      },
+      onError: (Object error) {
+        if (mounted) Navigator.of(context).pop(error);
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Reading the slip'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const LinearProgressIndicator(),
+          const SizedBox(height: 16),
+          Text(_latest.message, style: theme.textTheme.bodyLarge),
+          if (_latest.detail != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              _latest.detail!,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          // Leaves rather than cancels, and says so. The call cannot be
+          // recalled — it is running on a server and has already been counted
+          // against the day's allowance — so offering "Cancel" would be a
+          // button that does not do what it says.
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Ring it up by hand'),
+        ),
+      ],
+    );
   }
 }

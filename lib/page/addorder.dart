@@ -1178,13 +1178,13 @@ class _AddOrderState extends State<AddOrder> {
 
     setState(() => _reading = true);
     try {
-      final reading = await orderSlipRepository.read([
+      final reading = await readSlipWithProgress(context, [
         // The viewfinder writes JPEG. Named rather than sniffed: the function
         // rejects anything that is not one of three types, and a wrong guess
         // here is a rejection the person cannot act on.
         SlipPhoto(bytes: bytes, mimeType: 'image/jpeg'),
       ]);
-      if (!mounted) return;
+      if (reading == null || !mounted) return;
 
       if (reading.isEmpty) {
         showInfo(

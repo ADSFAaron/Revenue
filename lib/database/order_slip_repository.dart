@@ -8,7 +8,31 @@ import 'data_exception.dart';
 import 'menu_import_repository.dart' show menuImportFunctionsRegion;
 
 /// Must be at least `TIMEOUT_SECONDS` in functions/src/order_slip.ts.
-const Duration orderSlipTimeout = Duration(seconds: 90);
+const Duration orderSlipTimeout = Duration(minutes: 4);
+
+/// Something the reader said while it was working, or the reading it ended
+/// with.
+sealed class SlipEvent {
+  const SlipEvent();
+}
+
+/// One line of "what is happening right now".
+class SlipProgress extends SlipEvent {
+  const SlipProgress(this.message, {this.detail});
+
+  /// Plain words, for the person waiting.
+  final String message;
+
+  /// The model, the status, the attempt — for whoever is testing.
+  final String? detail;
+}
+
+/// The slip, read. Always the last event, and there is exactly one.
+class SlipRead extends SlipEvent {
+  const SlipRead(this.reading);
+
+  final SlipReading reading;
+}
 
 class SlipReadException implements AppException {
   const SlipReadException(this.message, {this.details});
@@ -27,12 +51,17 @@ class SlipReadException implements AppException {
 
 /// Turning a photograph of a paper order slip into basket lines.
 ///
-/// **A `Future`, not a stream, unlike the menu reader.** That one routinely
-/// runs past a minute and needed to say what it was doing or people backed out
-/// of a call that was about to succeed. This one is bounded at forty-five
-/// seconds on the server and usually answers in ten, because it is used at a
-/// counter with somebody waiting — and a progress checklist for a wait that
-/// short is more to read than the wait is to sit through.
+/// A stream, like the menu reader, and it shipped as a `Future` first.
+///
+/// The reasoning for the `Future` was that this runs at a counter with a
+/// customer waiting, so it was bounded at forty-five seconds and a wait that
+/// short needs no narration. The premise was wrong, and the shop owner said
+/// so: when service is busy the slips *pile up* and get entered afterwards, in
+/// a quiet half hour, precisely because there was no time to type them in
+/// while it was busy. So the budget went up — and above about half a minute, a
+/// spinner with nothing under it is indistinguishable from a hang, which is
+/// how a call that was going to succeed gets abandoned, taking the photograph
+/// with it.
 ///
 /// It writes nothing and it decides nothing. The reading goes to a review
 /// screen, and only what a person confirms there reaches the basket.
@@ -47,7 +76,7 @@ class OrderSlipRepository {
   /// function, which is what actually enforces it.
   static const int maxPhotos = 2;
 
-  Future<SlipReading> read(List<SlipPhoto> photos) async {
+  Stream<SlipEvent> read(List<SlipPhoto> photos) async* {
     if (photos.isEmpty) {
       throw const SlipReadException('Take a photo of the slip first.');
     }
@@ -57,17 +86,56 @@ class OrderSlipRepository {
       options: HttpsCallableOptions(timeout: orderSlipTimeout),
     );
 
+    // Said here rather than by the function, because the upload is the part
+    // the function cannot see: by the time it can report anything, the bytes
+    // have already arrived.
+    yield const SlipProgress('Sending the photo');
+
     try {
-      final result = await callable.call<Object?>({
+      final responses = callable.stream({
         'photos': [
           for (final photo in photos)
             {'mimeType': photo.mimeType, 'data': base64Encode(photo.bytes)},
         ],
       });
-      return _reading(_asMap(result.data));
+
+      await for (final response in responses) {
+        switch (response) {
+          case Chunk(:final partialData):
+            final progress = _progress(_asMap(partialData));
+            if (progress != null) yield progress;
+          case Result(:final result):
+            yield SlipRead(_reading(_asMap(result.data)));
+        }
+      }
     } on FirebaseFunctionsException catch (e) {
       throw _translate(e);
     }
+  }
+
+  /// Turns one progress frame into a line somebody can read.
+  ///
+  /// The wording lives here rather than in the function because it is the
+  /// app's vocabulary, not the server's — and because the server should be
+  /// free to add a stage without shipping an app update to describe it. An
+  /// unknown stage is dropped rather than shown raw.
+  static SlipProgress? _progress(Map<String, dynamic> frame) {
+    final model = frame['model'] as String?;
+    final status = (frame['status'] as num?)?.toInt();
+
+    return switch (frame['stage']) {
+      'received' => const SlipProgress('Sent'),
+      'reading' => SlipProgress('Reading the slip', detail: model),
+      // The one frame that exists to stop somebody leaving. A step that has
+      // visibly failed, with the next one already starting, is a wait with a
+      // reason; the same seconds with nothing on screen are a hang.
+      'busy' => SlipProgress(
+          'That reader was busy — trying another',
+          detail: [?model, if (status != null) 'HTTP $status'].join(' · '),
+        ),
+      'parsing' => const SlipProgress('Matching it against the menu'),
+      _ => null,
+    };
   }
 
   static SlipReading _reading(Map<String, dynamic> data) => SlipReading(

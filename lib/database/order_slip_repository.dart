@@ -159,8 +159,16 @@ class OrderSlipRepository {
     ].where((part) => part.isNotEmpty).join(' · ');
 
     return switch (e.code) {
+      // Almost never what it sounds like. The caller is signed in — the app
+      // would not have got this far otherwise — so `unauthenticated` out of a
+      // callable is App Check refusing the request, and telling somebody to
+      // sign in sends them round a loop that cannot help. This app has been
+      // here before; see the same wording in auth_repository.
       'unauthenticated' => SlipReadException(
-          'Sign in before reading a slip.',
+          'The app could not prove which app it is. This is usually a debug '
+          'build whose App Check token is not registered — see '
+          'tool/register_debug_token.sh. If this is a store build, sign in '
+          'again and retry.',
           details: details,
         ),
       'permission-denied' => SlipReadException(

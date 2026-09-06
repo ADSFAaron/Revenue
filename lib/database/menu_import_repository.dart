@@ -499,8 +499,14 @@ class MenuImportRepository {
   MenuImportException _translate(FirebaseFunctionsException e) {
     final details = _details(e);
     return switch (e.code) {
+      // Same trap as everywhere else a callable is called: the caller is
+      // signed in, so this is App Check refusing the request rather than a
+      // missing session. See auth_repository for where this was first learned.
       'unauthenticated' => MenuImportException(
-          'Sign in before importing a menu.',
+          'The app could not prove which app it is. This is usually a debug '
+          'build whose App Check token is not registered — see '
+          'tool/register_debug_token.sh. If this is a store build, sign in '
+          'again and retry.',
           details: details,
         ),
       'permission-denied' => MenuImportException(

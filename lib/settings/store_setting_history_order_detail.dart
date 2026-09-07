@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../database/repositories.dart';
+import '../models/app_user.dart';
 import '../models/order.dart';
 import '../models/store.dart';
 import '../page/addorder.dart';
@@ -34,8 +35,9 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
   Store? _store;
 
   /// Managers may change any order at any time; everyone else has
-  /// [kStaffCorrectionWindow] from the moment it was rung up.
-  bool _isManager = false;
+  /// [kStaffCorrectionWindow] from the moment it was rung up. See
+  /// [mayChangeOrder].
+  UserRole _role = UserRole.staff;
 
   /// Who the uids on this order belong to. Empty until the lookup lands, which
   /// reads as "Not recorded" for a moment rather than as a blank row that
@@ -84,7 +86,7 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
       if (mounted) {
         setState(() {
           _store = session.store;
-          _isManager = session.user.role.canManage;
+          _role = session.user.role;
           _staff = staff;
         });
       }
@@ -97,7 +99,7 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
   ///
   /// Recomputed on every build rather than latched, so the window closing
   /// while the screen is open takes the buttons with it.
-  bool get _mayChange => _isManager || withinCorrectionWindow(_order);
+  bool get _mayChange => mayChangeOrder(_order, _role);
 
   @override
   Widget build(BuildContext context) {
@@ -322,7 +324,7 @@ class _StoreHistoryOrderDetailState extends State<StoreHistoryOrderDetail> {
   }
 
   String _changeWindowNote() {
-    if (_isManager) return 'You can change any order, at any time.';
+    if (_role.canManage) return 'You can change any order, at any time.';
 
     final createdAt = _order.createdAt;
     if (createdAt == null) {

@@ -273,7 +273,34 @@ class _StatisticsPageState extends State<StatisticsPage>
                 }
               },
               child: StreamBuilder<PeriodReport>(
+                // Paging to another period must not leave the previous
+                // period's figures on screen. `StreamBuilder` keeps its last
+                // snapshot when the stream it is given changes — it only marks
+                // the connection as gone — so without a key, tapping Previous
+                // redrew the heading as "Yesterday" over today's takings and
+                // left them there until the new stream delivered. A figure
+                // under the wrong date is the worst thing this page can show:
+                // it reads as a fact about a day the shop cannot check any
+                // other way.
+                key: ValueKey(period),
                 stream: _reportStream,
+                // The report this page already has, if the stream got there
+                // first.
+                //
+                // [_reportStream] is a broadcast stream and [_setPeriod]
+                // subscribes to it before this widget does, so the first
+                // report is delivered to a listener that may already have run.
+                // A broadcast stream does not replay, so a late subscriber
+                // gets nothing until the *next* snapshot — and on a shop that
+                // is not currently trading there is no next snapshot. The page
+                // then shows a spinner for as long as it is open.
+                //
+                // A network round trip normally leaves the first build in
+                // front of the first event, which is why this was never seen;
+                // a read served from Firestore's own cache does not, and
+                // neither does anything else fast. [_latestReport] is kept for
+                // the export button anyway, so the fix costs nothing.
+                initialData: _latestReport,
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return ErrorView(

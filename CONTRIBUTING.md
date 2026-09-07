@@ -55,8 +55,22 @@ flutter test
 flutter build apk --debug     # if you touched a plugin or anything under android/
 ```
 
+Two more suites run in CI and are worth running locally when you have touched
+what they cover:
+
+```bash
+cd functions && npm test      # if you touched functions/
+cd test/rules && npm run emulate   # if you touched firestore.rules
+```
+
 Tests live beside what they cover in `test/`. A bug fix wants a test that fails
 without it.
+
+A change that crosses two of them — a write and the read that finds it again,
+an order and the day's takings — wants a journey test in `test/journey/`
+instead: those drive the real repositories against a fake Firestore, and they
+are the only thing that can catch a seam. [docs/testing.md](docs/testing.md)
+maps out what each suite proves, and what is left to a person with a tablet.
 
 ## Pull requests
 

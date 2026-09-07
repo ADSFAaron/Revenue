@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 
 export 'connection_status.dart' show ConnectionStatus, connectionStatus;
 export 'pending_order_queue.dart' show PendingOrderQueue;
@@ -66,28 +68,182 @@ Future<void> signOutOperator() async {
 Future<void> addAnotherOperator() => sessionApps.takeSlot();
 
 
-final authRepository = AuthRepository();
-final userRepository = UserRepository(auth: authRepository);
-final storeRepository = StoreRepository();
-final menuRepository = MenuRepository();
-final menuImportRepository = MenuImportRepository();
-final orderRepository = OrderRepository();
-final orderSlipRepository = OrderSlipRepository();
-final passkeyRepository = PasskeyRepository(auth: authRepository);
-final statsRepository = StatsRepository();
-final inviteRepository = InviteRepository();
-final feedbackRepository = FeedbackRepository();
-final auditLogRepository = AuditLogRepository();
+// The repositories every screen reaches for.
+//
+// Reassignable, and there is exactly one reason for it. A screen calls
+// `orderRepository.submit(...)` straight — no constructor argument, no
+// provider, no lookup — and that is what keeps the call sites readable. The
+// price, while these were `final`, was that a widget test had no way to put a
+// fake in front of a screen: not one page in `lib/page/` or `lib/settings/`
+// could be built by a test at all, because building it meant reaching a real
+// Firebase. Two thirds of the app was therefore only ever checked by hand.
+//
+// Each is a getter over a nullable field rather than a variable with an
+// initialiser, and that is not decoration. Several of these constructors call
+// `FirebaseFunctions.instanceFor` or `FirebaseAuth.instanceFor`, which throw
+// without an initialised Firebase app — so merely *reading* one of these names
+// in a test builds something that cannot exist there. Null means "not built
+// yet", [useRepositories] saves and restores the nulls, and a repository the
+// app never touches is never constructed.
+//
+// **Nothing in `lib/` assigns to any of these.** They are written once, here,
+// and by `test/journey/shop.dart`. If app code ever needs to swap one at
+// runtime, that is a different problem and wants a different answer.
+
+AuthRepository? _authRepository;
+AuthRepository get authRepository => _authRepository ??= AuthRepository();
+set authRepository(AuthRepository value) => _authRepository = value;
+
+UserRepository? _userRepository;
+UserRepository get userRepository =>
+    _userRepository ??= UserRepository(auth: authRepository);
+set userRepository(UserRepository value) => _userRepository = value;
+
+StoreRepository? _storeRepository;
+StoreRepository get storeRepository => _storeRepository ??= StoreRepository();
+set storeRepository(StoreRepository value) => _storeRepository = value;
+
+MenuRepository? _menuRepository;
+MenuRepository get menuRepository => _menuRepository ??= MenuRepository();
+set menuRepository(MenuRepository value) => _menuRepository = value;
+
+MenuImportRepository? _menuImportRepository;
+MenuImportRepository get menuImportRepository =>
+    _menuImportRepository ??= MenuImportRepository();
+set menuImportRepository(MenuImportRepository value) =>
+    _menuImportRepository = value;
+
+OrderRepository? _orderRepository;
+OrderRepository get orderRepository => _orderRepository ??= OrderRepository();
+set orderRepository(OrderRepository value) => _orderRepository = value;
+
+OrderSlipRepository? _orderSlipRepository;
+OrderSlipRepository get orderSlipRepository =>
+    _orderSlipRepository ??= OrderSlipRepository();
+set orderSlipRepository(OrderSlipRepository value) =>
+    _orderSlipRepository = value;
+
+PasskeyRepository? _passkeyRepository;
+PasskeyRepository get passkeyRepository =>
+    _passkeyRepository ??= PasskeyRepository(auth: authRepository);
+set passkeyRepository(PasskeyRepository value) => _passkeyRepository = value;
+
+StatsRepository? _statsRepository;
+StatsRepository get statsRepository => _statsRepository ??= StatsRepository();
+set statsRepository(StatsRepository value) => _statsRepository = value;
+
+InviteRepository? _inviteRepository;
+InviteRepository get inviteRepository =>
+    _inviteRepository ??= InviteRepository();
+set inviteRepository(InviteRepository value) => _inviteRepository = value;
+
+FeedbackRepository? _feedbackRepository;
+FeedbackRepository get feedbackRepository =>
+    _feedbackRepository ??= FeedbackRepository();
+set feedbackRepository(FeedbackRepository value) =>
+    _feedbackRepository = value;
+
+AuditLogRepository? _auditLogRepository;
+AuditLogRepository get auditLogRepository =>
+    _auditLogRepository ??= AuditLogRepository();
+set auditLogRepository(AuditLogRepository value) =>
+    _auditLogRepository = value;
 
 /// Who uses this till. Local only — see [DeviceAccounts].
-final deviceAccounts = DeviceAccounts();
+DeviceAccounts deviceAccounts = DeviceAccounts();
 
 /// Orders rung up with no connection, waiting on this device. Device-local and
 /// never synced — see [PendingOrderQueue].
-final pendingOrders = PendingOrderQueue(
-  orders: orderRepository,
-  stores: storeRepository,
-);
+///
+/// Built from whatever [orderRepository] and [storeRepository] are when it is
+/// first touched, so anything that replaces those has to replace this too.
+/// [useRepositories] does; nothing else has any business changing it.
+PendingOrderQueue? _pendingOrders;
+PendingOrderQueue get pendingOrders => _pendingOrders ??= PendingOrderQueue(
+      orders: orderRepository,
+      stores: storeRepository,
+    );
+set pendingOrders(PendingOrderQueue value) => _pendingOrders = value;
+
+/// Points the whole app at a different set of repositories, and hands back a
+/// function that puts the originals back.
+///
+/// The one supported way to install fakes. It exists so that a test does not
+/// have to know which of these hold references to which others —
+/// [pendingOrders] captures two, [userRepository] and [passkeyRepository]
+/// capture the auth one — and so that restoring is one call rather than a list
+/// somebody will eventually get one short.
+///
+/// It also clears the session cache. [currentActor], [currentOperator] and
+/// [idleTimeout] outlive a signed-in session by design, and a test that
+/// inherited the previous test's operator would pass or fail for reasons
+/// nothing in it mentions.
+///
+/// ```dart
+/// addTearDown(useRepositories(auth: fakeAuth, orders: fakeOrders));
+/// ```
+@visibleForTesting
+VoidCallback useRepositories({
+  AuthRepository? auth,
+  UserRepository? users,
+  StoreRepository? stores,
+  MenuRepository? menu,
+  OrderRepository? orders,
+  StatsRepository? stats,
+  InviteRepository? invites,
+  AuditLogRepository? auditLogs,
+}) {
+  // The *fields*, not the getters: reading a getter would build the real
+  // repository this is being called to avoid ever building.
+  final previous = (
+    auth: _authRepository,
+    users: _userRepository,
+    stores: _storeRepository,
+    menu: _menuRepository,
+    orders: _orderRepository,
+    stats: _statsRepository,
+    invites: _inviteRepository,
+    auditLogs: _auditLogRepository,
+    passkeys: _passkeyRepository,
+    pending: _pendingOrders,
+    actor: _lastKnownActor,
+    operator: currentOperator.value,
+    idle: idleTimeout.value,
+  );
+
+  if (auth != null) _authRepository = auth;
+  if (users != null) _userRepository = users;
+  if (stores != null) _storeRepository = stores;
+  if (menu != null) _menuRepository = menu;
+  if (orders != null) _orderRepository = orders;
+  if (stats != null) _statsRepository = stats;
+  if (invites != null) _inviteRepository = invites;
+  if (auditLogs != null) _auditLogRepository = auditLogs;
+  // Holds the auth repository that has just been replaced, and building the
+  // real one needs a Firebase app. Dropped rather than rebuilt: it is restored
+  // below, and nothing that can be tested this way touches a passkey.
+  _passkeyRepository = null;
+  _pendingOrders = null;
+  _lastKnownActor = null;
+  currentOperator.value = null;
+  idleTimeout.value = Duration.zero;
+
+  return () {
+    _authRepository = previous.auth;
+    _userRepository = previous.users;
+    _storeRepository = previous.stores;
+    _menuRepository = previous.menu;
+    _orderRepository = previous.orders;
+    _statsRepository = previous.stats;
+    _inviteRepository = previous.invites;
+    _auditLogRepository = previous.auditLogs;
+    _passkeyRepository = previous.passkeys;
+    _pendingOrders = previous.pending;
+    _lastKnownActor = previous.actor;
+    currentOperator.value = previous.operator;
+    idleTimeout.value = previous.idle;
+  };
+}
 
 Actor? _lastKnownActor;
 

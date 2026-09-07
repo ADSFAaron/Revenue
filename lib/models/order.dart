@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import 'app_user.dart';
+
 /// How the order reached the customer. Kept separate from payment method
 /// because the cost structures differ completely — packaging on takeout,
 /// platform commission on delivery.
@@ -57,6 +59,22 @@ bool withinCorrectionWindow(Order order, {DateTime? now}) {
   final elapsed = (now ?? DateTime.now()).difference(createdAt);
   return !elapsed.isNegative && elapsed < kStaffCorrectionWindow;
 }
+
+/// Whether somebody at [role] may still change [order].
+///
+/// The client half of the correction rule, written down once. It used to live
+/// inline in the order-detail screen, which meant the only way to check it was
+/// to build that screen — so it was never checked, and a rule about who may
+/// move money is a poor thing to leave untested. The server half is in
+/// `firestore.rules` and is tested in `test/rules/orders.test.js`; this one
+/// decides whether the buttons are there at all, which is what anybody
+/// actually experiences.
+///
+/// Viewing is not gated on any of this. An order older than the window is
+/// still readable by every member of the shop — it is the shop's own record,
+/// and hiding it would be worse than useless.
+bool mayChangeOrder(Order order, UserRole role, {DateTime? now}) =>
+    role.canManage || withinCorrectionWindow(order, now: now);
 
 enum OrderStatus {
   completed('completed'),

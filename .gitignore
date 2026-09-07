@@ -31,6 +31,12 @@
 .pub/
 /build/
 
+# `flutter test --coverage` output. A local measurement, not a record.
+/coverage/
+
+# `mutation_test` writes its report here. Same reasoning: a measurement.
+/mutation-test-report/
+
 # Web related
 
 # Symbolication related

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Which defects to inject when checking whether the tests would notice.
+
+  Coverage says a line ran. It does not say anything was verified — strip every
+  assertion out of a suite and the coverage barely moves. Mutation testing asks
+  the question that matters instead: if this code had a bug in it, would a test
+  go red?
+
+  The operator list is deliberately short. Google's experience running this at
+  scale is that most generated mutants are noise, and that the useful move is
+  to select operators on their historical record rather than to generate
+  everything. These are the ones that map onto mistakes this codebase has
+  actually made or nearly made: an inverted comparison at a boundary, an `and`
+  where an `or` belongs, a sign dropped from an increment, a guard that always
+  answers the same way.
+
+  Run it the way CI does — over the files a change touches, not the whole
+  project:
+
+    dart pub global activate mutation_test
+    mutation_test (rules tool/mutation_rules.xml) (no-builtin) FILES...
+
+  (Written without the leading dashes because an XML comment may not contain
+  two of them in a row. The real flags are the usual double-dash ones; see
+  .github/workflows/ci.yml for the line CI runs.)
+
+  A surviving mutant is not automatically a missing test. It is a question:
+  "nothing failed when this behaviour changed — did we mean that?" Sometimes
+  the honest answer is yes.
+-->
+<mutations version="1.0">
+  <commands>
+    <!--
+      The whole suite, not a subset. A mutation in `lib/models/order.dart` is
+      caught by `test/journey/`, by `test/settings/user_manual_test.dart` and
+      by nothing that could be guessed from the file's own name.
+    -->
+    <command group="test" expected-return="0" timeout="900">flutter test --no-pub</command>
+  </commands>
+
+  <!-- Comments are prose. Mutating them proves nothing and costs a test run. -->
+  <exclude>
+    <token begin="//" end="\n"/>
+    <token begin="///" end="\n"/>
+    <token begin="/*" end="*/"/>
+    <token begin="&quot;" end="&quot;"/>
+    <token begin="'" end="'"/>
+  </exclude>
+
+  <rules>
+    <!-- Boundaries. Every off-by-one this project has shipped was one of these. -->
+    <literal text="&lt;"><mutation text="&lt;=" /></literal>
+    <literal text="&lt;="><mutation text="&lt;" /></literal>
+    <literal text="&gt;"><mutation text="&gt;=" /></literal>
+    <literal text="&gt;="><mutation text="&gt;" /></literal>
+
+    <!-- A rule that should be "either" turned into "both", and the reverse. -->
+    <literal text="||"><mutation text="&amp;&amp;" /></literal>
+    <literal text="&amp;&amp;"><mutation text="||" /></literal>
+
+    <!-- Equality flipped: the shape of a permission check answering backwards. -->
+    <literal text="=="><mutation text="!=" /></literal>
+    <literal text="!="><mutation text="==" /></literal>
+
+    <!-- Arithmetic, which is what a shop's takings are made of. -->
+    <literal text="+"><mutation text="-" /></literal>
+    <literal text="-"><mutation text="+" /></literal>
+    <literal text="*"><mutation text="/" /></literal>
+
+    <!-- A guard that always says the same thing. -->
+    <literal text="true"><mutation text="false" /></literal>
+    <literal text="false"><mutation text="true" /></literal>
+  </rules>
+</mutations>

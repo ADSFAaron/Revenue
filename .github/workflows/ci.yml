@@ -44,7 +44,7 @@ jobs:
       - run: flutter test
 
   functions:
-    name: functions typecheck
+    name: functions typecheck & test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -61,6 +61,14 @@ jobs:
       # The same compiler the Firebase predeploy hook runs, so a deploy cannot
       # be the first thing that discovers a type error.
       - run: ./node_modules/.bin/tsc --noEmit
+        working-directory: functions
+
+      # `functions/test/` had been here for a while with nothing running it, so
+      # the two things it covers — the closed-set match that stops a model
+      # inventing a dish, and the retry ladder's arithmetic — were only ever
+      # checked by hand. Both are the kind of mistake that reads as correct.
+      # `npm test` builds first: the tests require the compiled `lib/`.
+      - run: npm test
         working-directory: functions
 
   rules:
@@ -91,6 +99,71 @@ jobs:
       # read a shop's takings.
       - run: npm run emulate
         working-directory: test/rules
+
+  # Would the tests notice if this change were wrong?
+  #
+  # Coverage answers a different and much weaker question — whether a line ran.
+  # Strip every assertion out of a suite and the coverage barely moves, so a
+  # high number says nothing about whether behaviour is checked. This injects
+  # real defects into the lines a pull request touches and reports which ones
+  # no test objected to.
+  #
+  # It earned its place before it was written: run by hand over this project it
+  # found two blind spots in a suite that was otherwise catching 17 of 19
+  # planted bugs, and one of them was on the five-minute correction window —
+  # the rule that decides who may move money.
+  #
+  # Incremental on purpose. Mutating the whole project would take hours and
+  # bury the answer; Google's own experience of running this at scale is that
+  # the working version mutates only what a change touched. Advisory, for the
+  # same reason the strict analyser is: a surviving mutant is a question worth
+  # asking, not a reason to stop somebody shipping.
+  mutation:
+    name: mutation analysis (advisory)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The merge base has to exist locally for the diff below to work.
+          fetch-depth: 0
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.2
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      # Installed globally rather than added to pubspec: mutation_test needs
+      # `xml ^6`, excel_plus needs `xml ^7`, and there is no version of this
+      # project that can hold both. As a separate binary it resolves its own
+      # dependencies and the conflict never arises.
+      - run: dart pub global activate mutation_test
+
+      - name: Mutate what this pull request changed
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          files=$(git diff --name-only "$base"...HEAD -- 'lib/**/*.dart' | tr '\n' ' ')
+          if [ -z "$files" ]; then
+            echo "No Dart files under lib/ changed — nothing to mutate."
+            exit 0
+          fi
+          echo "Mutating: $files"
+          dart pub global run mutation_test \
+            --rules tool/mutation_rules.xml \
+            --no-builtin \
+            $files
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report
+          path: mutation-test-report/
+          if-no-files-found: ignore
 
   # Advisory only. `continue-on-error` means this can never fail a build or
   # hold up a release — it is here to notice things, not to stop work. See the

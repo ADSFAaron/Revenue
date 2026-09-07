@@ -140,7 +140,7 @@ class _StoreInvitesState extends State<StoreInvites> {
                           )),
                     const SizedBox(height: 16),
                     if (spent.isNotEmpty) ...[
-                      _SectionHeader('Used and expired'),
+                      const _SectionHeader('Used and expired'),
                       ...spent.map((i) => _InviteTile(
                             invite: i,
                             now: now,
@@ -161,8 +161,8 @@ class _StoreInvitesState extends State<StoreInvites> {
   Future<void> _issue() async {
     final role = await showDialog<UserRole>(
       context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('What may this person do?'),
+      builder: (context) => const SimpleDialog(
+        title: Text('What may this person do?'),
         children: [
           _RoleOption(
             role: UserRole.staff,

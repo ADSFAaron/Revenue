@@ -28,9 +28,6 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # iOS style icons.
-  cupertino_icons: ^1.0.8
-
   # Online Database for data
   cloud_firestore: ^6.9.0
   firebase_core: ^4.14.0
@@ -41,17 +38,8 @@ dependencies:
   # Using for SVG Asset
   flutter_svg: ^2.0.17
 
-  # Use for Page Animation
-  simple_animations: ^5.1.0
-
   # Use for getting clock
   intl: ^0.20.3
-
-  # Use for App Drawer
-  flutter_launcher_icons: ^0.14.3
-
-  # Use for opening app splash screen
-  flutter_native_splash: ^2.4.8
 
   # Charts on the Reports page.
   #
@@ -127,7 +115,6 @@ dependencies:
   cloud_functions: ^6.4.0
 
   # Use for app name
-  rename: ^3.0.2
 
   # Capturing a menu in-app rather than borrowing another app's camera.
   #
@@ -165,6 +152,17 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  # The three below are command-line generators, not app code: they are run by
+  # hand (`dart run flutter_launcher_icons`, `dart run
+  # flutter_native_splash:create`, `dart run rename`) and nothing under `lib/`
+  # imports any of them. They were in `dependencies`, which is the wrong list —
+  # it is what the app is built against, so a build-time tool sitting there is
+  # weight the release carries for no reason. Their configuration blocks stay
+  # at the foot of this file; only the list they are declared in has changed.
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.8
+  rename: ^3.0.2
 
   flutter_lints: ^6.0.0
   change_app_package_name: ^1.5.0

@@ -308,14 +308,14 @@ class _MenuCapturePageState extends State<MenuCapturePage>
               ),
             ),
           ),
-          Positioned(
+          const Positioned(
             left: 0,
             right: 0,
             bottom: 16,
             child: Text(
               'Fill the frame with the menu and hold the phone square on.',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70),
+              style: TextStyle(color: Colors.white70),
             ),
           ),
         ],

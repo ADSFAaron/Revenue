@@ -51,3 +51,13 @@ linter:
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options
+    # A widget built with `const` is built once and then reused rather than
+    # rebuilt every time its parent rebuilds. On a till screen that redraws on
+    # every tap that is not a micro-optimisation, and it is free — the compiler
+    # can see which of these are constant, which is why turning the rules on
+    # found eleven the author had not.
+    #
+    # Kept as rules rather than a one-off cleanup so they cannot come back.
+    prefer_const_constructors: true
+    prefer_const_literals_to_create_immutables: true
+    prefer_const_declarations: true

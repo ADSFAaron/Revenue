@@ -41,7 +41,7 @@ WindowComparison compare({
 void main() {
   group('a change that cannot be computed is not invented', () {
     test('there is no percentage change from zero', () {
-      final c = Comparison(label: 'Takings', current: 5000, previous: 0);
+      const c = Comparison(label: 'Takings', current: 5000, previous: 0);
       expect(c.change, isNull,
           reason: 'a shop\'s first week is not "up 100%"');
     });

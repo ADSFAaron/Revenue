@@ -5,8 +5,8 @@ import 'package:Revenue/widgets/menu_filling.dart';
 
 Widget harness({bool dark = false, bool still = false}) => MaterialApp(
       theme: dark
-          ? MaterialTheme(const TextTheme()).dark()
-          : MaterialTheme(const TextTheme()).light(),
+          ? const MaterialTheme(TextTheme()).dark()
+          : const MaterialTheme(TextTheme()).light(),
       home: MediaQuery(
         data: MediaQueryData(disableAnimations: still),
         child: const Scaffold(

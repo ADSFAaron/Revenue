@@ -659,13 +659,13 @@ class _VersionTileState extends State<_VersionTile> {
               )
             : FilledButton(onPressed: _download, child: const Text('Update')),
       ),
-      UpdateStage.downloading => SettingTile.inline(
+      UpdateStage.downloading => const SettingTile.inline(
         icon: Icons.downloading_rounded,
         title: 'Downloading update',
         subtitle:
             'Carry on serving — you will be asked to restart when it '
             'is ready.',
-        trailing: const SizedBox(
+        trailing: SizedBox(
           width: 20,
           height: 20,
           child: CircularProgressIndicator(strokeWidth: 2),

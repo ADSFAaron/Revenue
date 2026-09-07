@@ -13,8 +13,8 @@ import 'package:Revenue/widgets/stat_card.dart';
 void main() {
   Widget host(Widget child, {Brightness brightness = Brightness.light}) {
     final theme = brightness == Brightness.light
-        ? MaterialTheme(const TextTheme()).light()
-        : MaterialTheme(const TextTheme()).dark();
+        ? const MaterialTheme(TextTheme()).light()
+        : const MaterialTheme(TextTheme()).dark();
     return MaterialApp(
       theme: theme,
       home: Scaffold(body: Center(child: child)),
@@ -37,11 +37,11 @@ void main() {
               onTap: () {},
               trailing: const ChangeBadge(change: 0.12),
             ),
-            StatCard(
+            const StatCard(
               title: 'Orders',
               value: '87',
               icon: Icons.receipt_long_outlined,
-              trailing: const ChangeBadge(change: -0.08),
+              trailing: ChangeBadge(change: -0.08),
             ),
             const StatCard(title: 'Guests', value: '0'),
           ],
@@ -102,7 +102,7 @@ void main() {
         minScaleFactor: scale,
         maxScaleFactor: scale,
         child: host(
-          SizedBox(
+          const SizedBox(
             width: 380,
             child: Wrap(
               children: [
@@ -110,9 +110,9 @@ void main() {
                   title: 'Gross profit',
                   value: 'NT\$1,234,567',
                   icon: Icons.trending_up_rounded,
-                  trailing: const ChangeBadge(change: -0.08),
+                  trailing: ChangeBadge(change: -0.08),
                 ),
-                const StatCard(title: 'Per head', value: 'NT\$285'),
+                StatCard(title: 'Per head', value: 'NT\$285'),
               ],
             ),
           ),

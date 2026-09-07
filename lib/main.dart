@@ -367,9 +367,9 @@ class _SessionGateState extends State<_SessionGate> {
                   label: const Text('Finish setting up'),
                 ),
                 const SizedBox(height: 8),
-                TextButton(
+                const TextButton(
                   onPressed: signOutOperator,
-                  child: const Text('Sign out'),
+                  child: Text('Sign out'),
                 ),
               ] else
                 Row(
@@ -380,9 +380,9 @@ class _SessionGateState extends State<_SessionGate> {
                       child: const Text('Retry'),
                     ),
                     const SizedBox(width: 12),
-                    TextButton(
+                    const TextButton(
                       onPressed: signOutOperator,
-                      child: const Text('Sign out'),
+                      child: Text('Sign out'),
                     ),
                   ],
                 ),

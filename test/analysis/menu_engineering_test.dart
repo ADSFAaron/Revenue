@@ -97,7 +97,7 @@ void main() {
 
     test('exactly at the floor is placed', () {
       final analysis = MenuEngineering.from(statsWith([
-        ItemStat(
+        const ItemStat(
             itemId: 'edge',
             name: 'On The Line',
             qty: MenuEngineering.minimumUnits,

@@ -7,8 +7,8 @@ import 'package:Revenue/entry/entry_ui.dart';
 import 'package:Revenue/theme.dart';
 
 ThemeData themeFor(Brightness brightness) => brightness == Brightness.dark
-    ? MaterialTheme(const TextTheme()).dark()
-    : MaterialTheme(const TextTheme()).light();
+    ? const MaterialTheme(TextTheme()).dark()
+    : const MaterialTheme(TextTheme()).light();
 
 Widget wrap(Widget child, Brightness brightness) =>
     MaterialApp(theme: themeFor(brightness), home: child);

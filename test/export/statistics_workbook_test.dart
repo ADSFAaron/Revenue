@@ -9,13 +9,13 @@ const store =
     Store(id: 'noodle/shop', name: 'Ah Ming Noodles', currency: 'TWD');
 
 final days = [
-  DailyStats(
+  const DailyStats(
     businessDate: '2026-08-17',
     orderCount: 40,
     guestCount: 55,
     revenue: 12000,
     cost: 4000,
-    byItem: const {
+    byItem: {
       'a': ItemStat(
           itemId: 'a',
           name: 'Beef Noodles',
@@ -25,10 +25,10 @@ final days = [
       'b': ItemStat(
           itemId: 'b', name: 'Tea Egg', qty: 25, revenue: 3000, cost: 0),
     },
-    byPayment: const {'cash': StatBucket(orders: 30, revenue: 9000)},
-    byChannel: const {'dine_in': StatBucket(orders: 40, revenue: 12000)},
+    byPayment: {'cash': StatBucket(orders: 30, revenue: 9000)},
+    byChannel: {'dine_in': StatBucket(orders: 40, revenue: 12000)},
   ),
-  DailyStats(
+  const DailyStats(
     businessDate: '2026-08-18',
     orderCount: 20,
     guestCount: 24,

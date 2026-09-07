@@ -16,7 +16,7 @@ import 'package:Revenue/widgets/text_scale.dart';
 /// fail on the overflow that used to be found by eye, or not at all.
 void main() {
   Widget host(Widget child, {double width = 320}) => MaterialApp(
-        theme: MaterialTheme(const TextTheme()).light(),
+        theme: const MaterialTheme(TextTheme()).light(),
         home: Scaffold(
           // Scrolling, like the screens these live on: a page that is too
           // tall for the window is not the failure being looked for here — a

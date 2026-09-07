@@ -87,7 +87,7 @@ class _LogoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
-    final box = LogoGeometry.viewBox;
+    const box = LogoGeometry.viewBox;
     final fit = math.min(size.width / box.width, size.height / box.height);
 
     canvas.save();

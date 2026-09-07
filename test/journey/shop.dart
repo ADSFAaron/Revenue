@@ -744,7 +744,7 @@ class _UnusedFunctions implements FirebaseFunctions {
 /// anything still pending after that is not slow, it is stuck.
 Future<void> showScreen(WidgetTester tester, Widget screen) async {
   await tester.pumpWidget(MaterialApp(
-    theme: MaterialTheme(const TextTheme()).light(),
+    theme: const MaterialTheme(TextTheme()).light(),
     home: screen,
   ));
   for (var frame = 0; frame < 20; frame++) {

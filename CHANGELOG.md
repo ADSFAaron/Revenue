@@ -8,7 +8,7 @@ The number in brackets is the Android `versionCode` — the one Google Play
 compares, and the one shown after the version in **Store → Account & app →
 Version**.
 
-## [3.0.0] (3) — unreleased
+## [3.0.0] (4) — unreleased
 
 The release that made the app usable by somebody who is not its author: an
 offline queue so a bad connection cannot stop a shift, delivery orders and
@@ -105,6 +105,22 @@ Everything here was live behind an app that was about to be published.
 
 ### Fixed
 
+- **Reports could sit on a spinner for as long as it was open.** The page keeps
+  its own subscription to the takings so the export button knows whether there
+  is anything to export, and it subscribes before the body does. The stream is a
+  broadcast one and a broadcast stream does not replay, so whenever the figures
+  arrived before the first frame the body was left waiting for a *second*
+  delivery — and on a shop that is not currently trading there is no second
+  delivery. A network round trip normally gets the first frame in first, which
+  is why this was never seen by hand; a read served from Firestore's own cache
+  does not.
+- **Paging back a day showed the previous day's date over today's figures.**
+  Tapping the back arrow redrew the heading immediately and left the four cards
+  showing whatever was on them, because the widget behind them keeps its last
+  value when it is handed a different source. A number under the wrong date is
+  the worst thing that page can do: it reads as a fact about a day the shop
+  cannot check any other way. Both of these were found by the new end-to-end
+  tests rather than by using the app.
 - **The offline banners said the opposite of what the app does.** Both of them
   — the shell's and the one on Add Order — still read "orders cannot be rung
   up" and "it cannot be saved until the connection is back". That was true

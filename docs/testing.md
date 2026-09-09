@@ -225,6 +225,13 @@ be argued with rather than just inherited.
       fingerprint or face, plus the `passkeys` Cloud Function as relying party.
       Register one, sign out, sign in with it, then delete it. Also check the
       device with **no** enrolled biometric: it must be told, not let in.
+
+      **Build this one with `flutter run --release`, on a machine that has
+      android/key.properties.** A plain `flutter run` is debug-signed, and the
+      debug certificate is no longer listed in `EXPECTED_ORIGINS` or in
+      assetlinks.json — deliberately, see the note in functions/src/config.ts.
+      A debug build now fails with `domain-not-associated`, which is the
+      configuration working rather than breaking.
 - [ ] **"Continue with a passkey" on a device nobody has used.** The one
       entrance that sorts people out by itself, and the only place both of its
       branches can be seen. On a device that holds a passkey it must sign that

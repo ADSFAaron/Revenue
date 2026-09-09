@@ -45,12 +45,24 @@ export const MAX_INSTANCES = 3;
  * which is a completely different shape and has to be listed explicitly or
  * every Android assertion is rejected.
  *
- * The hash below is the **debug** signing certificate, because
- * android/app/build.gradle currently signs release builds with it
- * (`signingConfig signingConfigs.debug`). When a real release keystore
- * arrives, this and web/well-known/assetlinks.json both need its fingerprint
- * instead — they are two encodings of the same SHA-256 and must never
- * disagree.
+ * **The debug certificate is deliberately not here.** It used to be, from when
+ * android/app/build.gradle read `signingConfig signingConfigs.debug` and a
+ * release build really was debug-signed. That is no longer how it works — the
+ * release build type now picks `signingConfigs.release` whenever
+ * android/key.properties exists — so the debug hash bought nothing in
+ * production except a second certificate that could mint valid assertions. A
+ * debug keystore is generated per machine rather than shared, which limited
+ * the damage; it did not make listing it a good idea.
+ *
+ * The cost is real and worth stating: `flutter run` in **debug** builds an
+ * unsigned-by-release APK, so passkeys no longer work there. Testing them by
+ * hand needs `flutter run --release` on a machine that has key.properties,
+ * which produces an upload-signed build — and that hash *is* listed below.
+ * docs/testing.md says the same thing where the manual checks live.
+ *
+ * Whatever is listed here and in web/well-known/assetlinks.json must agree:
+ * they are two encodings of the same SHA-256, and a hash in one but not the
+ * other is the failure that looks like a working configuration.
  *
  *   keytool -list -v -keystore <keystore> -alias <alias> \
  *     | grep SHA256          # colon-separated hex, for assetlinks.json
@@ -59,8 +71,6 @@ export const MAX_INSTANCES = 3;
  */
 export const EXPECTED_ORIGINS = [
   `https://${RP_ID}`,
-  // Debug keystore. Kept so passkeys work in `flutter run` on this machine.
-  "android:apk-key-hash:zRuSX88IxxAfUr1ZXMHSW2ZqWJDjXeynpD3q0M3WRrg",
   // Upload keystore (~/upload-keystore.jks, alias `upload`), SHA-256
   // 05:A6:DB:61:…:D4:32. This is what signs a locally built release AAB, so it
   // covers a build sideloaded for testing before it reaches Play.

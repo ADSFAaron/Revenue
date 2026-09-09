@@ -51,6 +51,12 @@ class UserRepository {
   }
 
   Future<void> create(AppUser user) async {
+    // `_names` maps a store to a *cached future*, so removing an entry evicts
+    // a cache rather than starting work — there is nothing here to wait for.
+    // Awaiting it would be worse than pointless: it would resurface an error
+    // that was already handled where the future was created, on a call that
+    // has nothing to do with reading staff names.
+    // ignore: unawaited_futures
     _names.remove(user.storeId);
     await _users.doc(user.uid).set({
       ...user.toMap(),

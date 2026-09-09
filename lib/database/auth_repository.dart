@@ -131,6 +131,14 @@ class AuthRepository {
   /// out, at the moment somebody else took the till.
   Stream<String?> get uidChanges {
     StreamSubscription<User?>? inner;
+    // Never closed, and that is the design. This is a broadcast controller
+    // whose whole job is to outlive the Firebase app underneath it — closing
+    // it on the last unsubscribe would end the stream for good, and the next
+    // person to take the till would get a dead one. What actually has to be
+    // released is the inner subscription and the revision listener, and
+    // `onCancel` below does both; the controller itself is then unreachable
+    // and collectable like any other object.
+    // ignore: close_sinks
     late final StreamController<String?> controller;
 
     void attach() {

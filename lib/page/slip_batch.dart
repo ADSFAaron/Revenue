@@ -304,6 +304,10 @@ class _Slip {
   /// reads means a photograph can sit for a moment before its turn.
   bool queued = true;
 
+  /// Cancelled by whoever owns this row — on dispose, and again before a
+  /// re-read replaces it. The analyzer cannot see either from here, because a
+  /// field's lifetime is not something it can follow out of the class.
+  // ignore: cancel_subscriptions
   StreamSubscription<SlipEvent>? subscription;
 
   SlipReading? reading;

@@ -225,6 +225,13 @@ be argued with rather than just inherited.
       fingerprint or face, plus the `passkeys` Cloud Function as relying party.
       Register one, sign out, sign in with it, then delete it. Also check the
       device with **no** enrolled biometric: it must be told, not let in.
+- [ ] **"Continue with a passkey" on a device nobody has used.** The one
+      entrance that sorts people out by itself, and the only place both of its
+      branches can be seen. On a device that holds a passkey it must sign that
+      person straight in; on a freshly wiped one the authenticator answers "no
+      credentials" and it must land on **Get started**, not on an error. That
+      second branch is also what somebody with an account and a new phone hits,
+      so check "Already have an account? Sign in" gets them back out.
 - [ ] **A password Firebase itself rejects.** `FakeAuth` checks passwords so
       the screens' branching can be tested; whether Google's servers accept one
       is not ours to test. Worth one real wrong-password attempt per release.

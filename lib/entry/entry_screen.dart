@@ -35,6 +35,11 @@ class _EntryScreenState extends State<EntryScreen> {
   /// Which person's sign-in is running, so their tile alone shows it.
   String? _busyUid;
 
+  /// The first-run passkey button, which belongs to nobody in particular and
+  /// so cannot use [_busyUid]. The two never coexist: one screen has a roster
+  /// and the other does not.
+  bool _busyPasskey = false;
+
   @override
   void initState() {
     super.initState();
@@ -74,20 +79,112 @@ class _EntryScreenState extends State<EntryScreen> {
         const SizedBox(height: 24),
         const EntryHeader(tagline: 'What the till took, and what it kept.'),
         const SizedBox(height: 48),
-        EntryButton(
-          label: 'Sign in',
-          onPressed: () => _push(const SignInScreen()),
-        ),
-        const SizedBox(height: 16),
-        EntryButton.outlined(
-          label: 'Get started',
-          onPressed: () => _push(const ChoosePathScreen()),
+        FutureBuilder<bool>(
+          future: _passkeysSupported,
+          // Absent until the platform answers, and the layout is built for
+          // that: the passkey button appears above the other two rather than
+          // between them, so nothing that was already under a thumb moves when
+          // the answer arrives.
+          builder: (context, snapshot) => _firstRunActions(snapshot.data == true),
         ),
         const SizedBox(height: 24),
         const StepNote(
           'Opening a shop, or joining one with an invite code.',
         ),
       ];
+
+  /// The three ways in, in the order they are worth trying.
+  ///
+  /// A passkey first, because it is the only one of the three that does not
+  /// need to be told anything first. The authenticator holds discoverable
+  /// credentials, so it can answer "who is this?" on its own, and the answer
+  /// decides the rest: a passkey it recognises signs that person in, and no
+  /// passkey at all means this is somebody new and the registration flow is
+  /// what they wanted. Neither branch asks anybody to declare which one they
+  /// are before the app can know.
+  ///
+  /// Both other buttons stay. A passkey is additive here and always will be —
+  /// it lives on one device, and the person whose account it belongs to may be
+  /// standing in front of a different one.
+  Widget _firstRunActions(bool canUsePasskey) {
+    final disabled = _busyPasskey;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (canUsePasskey) ...[
+          EntryButton(
+            label: 'Continue with a passkey',
+            icon: const Icon(Icons.fingerprint, size: 22),
+            busy: _busyPasskey,
+            onPressed: disabled ? null : _continueWithPasskey,
+          ),
+          const SizedBox(height: 16),
+        ],
+        // Filled only when it is the first thing on the screen. There is one
+        // primary button per screen and the passkey takes that role when it is
+        // there to take it.
+        EntryButton(
+          label: 'Sign in',
+          filled: !canUsePasskey,
+          onPressed: disabled ? null : () => _push(const SignInScreen()),
+        ),
+        const SizedBox(height: 16),
+        EntryButton.outlined(
+          label: 'Get started',
+          onPressed: disabled ? null : () => _push(const ChoosePathScreen()),
+        ),
+      ],
+    );
+  }
+
+  /// The unified entrance: sign in if the device holds a passkey we know, and
+  /// start registering if it holds none.
+  ///
+  /// Nothing is navigated to on success. The root watches auth state and
+  /// replaces this screen the moment the session lands — and if that account
+  /// turns out to have no shop yet, the session gate in main.dart already
+  /// lands it on "Finish setting up" rather than on the app. Both halves of
+  /// "have you been here before?" are therefore answered by something that
+  /// already exists; this only asks the question.
+  Future<void> _continueWithPasskey() async {
+    setState(() => _busyPasskey = true);
+    try {
+      // No `credentialIds`: the device does not yet know anybody, which is the
+      // one case the discoverable ceremony is actually for. The authenticator
+      // shows whoever it holds a Revenue passkey for and tells us which was
+      // picked.
+      final session = await passkeyRepository.signIn();
+      // The roster learns which credential belongs to whom here, from the
+      // person who has just used it — the only way to know that without asking
+      // a server "whose passkeys are these", which from a signed-out screen
+      // would be an enumeration oracle.
+      await deviceAccounts.rememberPasskey(
+        session.user.uid,
+        session.credentialId,
+      );
+    } on PasskeyException catch (e) {
+      if (!mounted) return;
+      switch (e.failure) {
+        case PasskeyFailure.cancelled:
+          break; // A decision, not a failure.
+        case PasskeyFailure.noCredentials:
+          // Not an error, and the whole point of routing through here: no
+          // passkey on this device for Revenue is what a newcomer looks like.
+          //
+          // It is also what somebody with an account and a new phone looks
+          // like, and nothing here can tell the two apart — asking a server
+          // would mean asking it about an account nobody has proved they own.
+          // So this goes to the screen that offers both: `ChoosePathScreen`
+          // ends with "Already have an account? Sign in", which pops straight
+          // back to the two buttons underneath this one.
+          _push(const ChoosePathScreen());
+        default:
+          showEntryError(context, e.message);
+      }
+    } finally {
+      if (mounted) setState(() => _busyPasskey = false);
+    }
+  }
 
   List<Widget> _roster(BuildContext context, List<DeviceAccount> accounts) => [
         const EntryHeader(),

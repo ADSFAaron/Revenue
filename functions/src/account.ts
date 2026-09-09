@@ -26,6 +26,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { logger } from "firebase-functions/v2";
 
 import { CALLABLE_OPTIONS } from "./config.js";
+import { deletePasskeysFor } from "./passkeys.js";
 
 const options = CALLABLE_OPTIONS;
 
@@ -70,7 +71,8 @@ export const deleteAccount = onCall(options, async (request) => {
   const userSnap = await userRef.get();
   if (!userSnap.exists) {
     // No profile to clean up; still remove the login, which is what the
-    // person asked for.
+    // person asked for — and the passkeys, which *are* the login.
+    await deletePasskeysFor([uid]);
     await getAuth().deleteUser(uid);
     return { deletedStore: false, removedMembers: 0 };
   }
@@ -84,6 +86,7 @@ export const deleteAccount = onCall(options, async (request) => {
   // and `createdBy` is a uid that now refers to nobody.
   if (!isOwner || !storeId) {
     await userRef.delete();
+    await deletePasskeysFor([uid]);
     await getAuth().deleteUser(uid);
     return { deletedStore: false, removedMembers: 0 };
   }
@@ -166,6 +169,14 @@ export const deleteAccount = onCall(options, async (request) => {
   // auditLog — in one recursive pass. A busy shop has thousands of order
   // documents, which is the other reason this cannot be done from a client.
   await db().recursiveDelete(storeRef);
+
+  // Before the logins, not after: a passkey whose account survives is a
+  // passkey that still works, while a login whose passkeys are already gone is
+  // just a login. If this throws, the next run finds the same accounts and the
+  // same credentials and finishes the job — the ordering the rest of this
+  // function is built on.
+  const passkeys = await deletePasskeysFor([uid, ...memberUids]);
+  if (passkeys > 0) logger.info("passkeys removed with the store", { storeId, passkeys });
 
   if (memberUids.length > 0) {
     const result = await getAuth().deleteUsers(memberUids);

@@ -25,6 +25,7 @@
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall, CallableRequest } from "firebase-functions/v2/https";
+import { logger } from "firebase-functions/v2";
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -128,7 +129,16 @@ export const beginPasskeyRegistration = onCall(options, async (request) => {
     authenticatorSelection: {
       // Discoverable, or sign-in cannot start from "who is this?".
       residentKey: "required",
-      userVerification: "preferred",
+      // 'required', because the verifying side already requires it:
+      // @simplewebauthn's `requireUserVerification` defaults to `true` on both
+      // `verifyRegistrationResponse` and `verifyAuthenticationResponse`, and
+      // neither call below overrides it. Asking for 'preferred' while
+      // enforcing 'required' is the worst of the two — an authenticator that
+      // skipped the fingerprint would sail through the whole ceremony and then
+      // be refused here, with a message about the passkey not being recognised
+      // that describes nothing that actually happened. Ask for what is
+      // enforced.
+      userVerification: "required",
     },
     // ES256 and RS256. Every platform authenticator worth supporting does one.
     supportedAlgorithmIDs: [-7, -257],
@@ -169,16 +179,41 @@ export const finishPasskeyRegistration = onCall(options, async (request) => {
     uid,
     publicKey: Buffer.from(credential.publicKey).toString("base64"),
     signCount: credential.counter,
-    transports: credential.transports ?? [],
+    transports: toTransports(credential.transports),
     deviceName: typeof deviceName === "string" && deviceName.trim()
       ? deviceName.trim().slice(0, 60)
       : "Unnamed device",
   };
 
-  await db().collection(CREDENTIALS).doc(credential.id).set({
-    ...record,
-    createdAt: FieldValue.serverTimestamp(),
-    lastUsedAt: null,
+  // WebAuthn §7.1 ends with "if the credentialId is already known then the
+  // Relying Party SHOULD fail the registration ceremony", and `.set()` did the
+  // opposite: it overwrote whatever was already there.
+  //
+  // The credential id is this document's id and the authenticator chooses it.
+  // With `attestationType: "none"` nothing here attests that the authenticator
+  // is a real one, so a caller running their own picks any id it likes. That
+  // is not a way *in* — the record it writes carries its own public key, so it
+  // can only ever sign in as itself. It is a way to delete somebody else's
+  // passkey by registering on top of it, and the ids are not secret from the
+  // people best placed to try: `DeviceAccount.passkeyIds` keeps every
+  // colleague's credential id in one unencrypted store on the shared tablet.
+  //
+  // A transaction rather than `.create()`, because re-registering an id you
+  // already own is not the attack and should not be an error.
+  const ref = db().collection(CREDENTIALS).doc(credential.id);
+  await db().runTransaction(async (tx) => {
+    const existing = await tx.get(ref);
+    if (existing.exists && (existing.data() as StoredCredential).uid !== uid) {
+      throw new HttpsError(
+        "already-exists",
+        "That passkey is already registered.",
+      );
+    }
+    tx.set(ref, {
+      ...record,
+      createdAt: FieldValue.serverTimestamp(),
+      lastUsedAt: null,
+    });
   });
 
   return { credentialId: credential.id, deviceName: record.deviceName };
@@ -208,25 +243,30 @@ const MAX_ALLOWED_CREDENTIALS = 10;
  * So the caller may narrow it. `credentialIds` is a hint to the authenticator
  * and nothing more — the assertion is still verified against the stored public
  * key in `finishPasskeyAuthentication`, which looks the credential up by the
- * id the authenticator signed, not by anything sent here. Nor does taking the
- * list leak anything: these ids come off the caller's own device, where they
- * were written when that person registered or last signed in. This endpoint
- * still cannot be asked "does this email have a passkey?", because it is still
- * never told an email.
+ * id the authenticator signed, not by anything sent here.
+ *
+ * Since `allowedCredentials` started dropping ids it has no record of, the
+ * reply does reflect what is stored — ask with an id and the answer tells you
+ * whether it exists. That is not an enumeration oracle: a credential id is a
+ * random value from an authenticator, not something anybody guesses, and the
+ * only people holding one already had it. This endpoint still cannot be asked
+ * "does this email have a passkey?", because it is still never told an email.
  */
 export const beginPasskeyAuthentication = onCall(options, async (request) => {
   const requested = request.data?.credentialIds;
-  const allowCredentials = Array.isArray(requested)
+  const ids = Array.isArray(requested)
     ? requested
         .filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
         .slice(0, MAX_ALLOWED_CREDENTIALS)
-        .map((id: string) => ({ id }))
-    : undefined;
+    : [];
+  const allowCredentials = ids.length ? await allowedCredentials(ids) : [];
 
   const created = await generateAuthenticationOptions({
     rpID: RP_ID,
-    userVerification: "preferred",
-    ...(allowCredentials?.length ? { allowCredentials } : {}),
+    // Enforced on the way back in, so asked for on the way out — see the note
+    // in `beginPasskeyRegistration`.
+    userVerification: "required",
+    ...(allowCredentials.length ? { allowCredentials } : {}),
   });
 
   const challengeId = await storeChallenge(created.challenge, "authentication");
@@ -234,14 +274,57 @@ export const beginPasskeyAuthentication = onCall(options, async (request) => {
 });
 
 /**
+ * The allow-list entries for `credentialIds`, each carrying the transports its
+ * credential was registered with.
+ *
+ * `transports` is not decoration here, and omitting it was a crash rather than
+ * a missing hint. The Dart client parses every entry with generated code that
+ * casts `json['transports']` to a *non-nullable* `List<dynamic>`
+ * (passkeys_platform_interface, credential.g.dart), so an entry without the
+ * field threw "type 'Null' is not a subtype of type 'List<dynamic>'" before
+ * the authenticator was ever asked anything.
+ *
+ * It threw on the operator picker only, because that is the one caller that
+ * sends ids at all. The sign-in screen's own passkey button sends none, gets
+ * no `allowCredentials` back, and never reached the offending parse — which is
+ * why this survived every test that went in through the front door.
+ *
+ * Sending the real transports rather than an empty array is the other half of
+ * it: that list is what lets the authenticator say "use your phone" instead of
+ * offering to wait for a security key nobody owns.
+ *
+ * Ids with no stored credential are dropped. `finishPasskeyAuthentication`
+ * looks a credential up by the id the authenticator signed, so an assertion
+ * from one of these would be refused anyway; passing it on only widens what
+ * the person is asked to choose from. If every id is stale the list comes back
+ * empty and the ceremony falls back to discoverable credentials — the same
+ * thing the sign-in screen does.
+ */
+async function allowedCredentials(
+  ids: string[],
+): Promise<{ id: string; transports: string[] }[]> {
+  const docs = await db().getAll(
+    ...ids.map((id) => db().collection(CREDENTIALS).doc(id)),
+  );
+  return docs
+    .filter((doc) => doc.exists)
+    .map((doc) => ({
+      id: doc.id,
+      transports: (doc.data() as StoredCredential).transports ?? [],
+    }));
+}
+
+/**
  * Verifies the assertion and mints a Firebase custom token for the account the
  * credential belongs to.
  *
  * This is the only function that can hand out a session, so it is the one
- * worth reading twice. Six things are checked, and all six matter: the
+ * worth reading twice. Seven things are checked, and all seven matter: the
  * challenge is one we issued, is unspent and has not expired; the origin is
  * one of ours; the RP ID matches; the signature verifies against the stored
- * public key; and the signature counter has not gone backwards.
+ * public key; the person was verified by their authenticator, not merely
+ * present (`requireUserVerification` defaults to `true` and nothing here turns
+ * it off); and the signature counter has not gone backwards.
  */
 export const finishPasskeyAuthentication = onCall(options, async (request) => {
   const { challengeId, response } = request.data ?? {};
@@ -278,7 +361,18 @@ export const finishPasskeyAuthentication = onCall(options, async (request) => {
       },
     });
   } catch (error) {
-    throw new HttpsError("unauthenticated", describe(error));
+    // Deliberately not `describe(error)`. The library's messages are precise in
+    // a way that only helps somebody probing: "Response counter value 4 was
+    // lower than expected 9" hands back a counter, and an origin mismatch hands
+    // back the configuration. The two branches around this one go to the
+    // trouble of giving an unknown credential and a bad signature the same
+    // wording; this one used to undo that. The detail belongs in the log, where
+    // it is still there to debug with.
+    logger.warn("passkey assertion rejected", {
+      credentialId: doc.id,
+      reason: describe(error),
+    });
+    throw new HttpsError("unauthenticated", "That passkey is not recognised.");
   }
 
   if (!verification.verified) {
@@ -347,6 +441,42 @@ export const deletePasskey = onCall(options, async (request) => {
   return { deleted: true };
 });
 
+/**
+ * Removes every passkey belonging to these accounts. Called by `deleteAccount`,
+ * not by any client.
+ *
+ * A credential that outlives its account is not a leftover row, it is a live
+ * way in: `finishPasskeyAuthentication` verifies the assertion, finds the
+ * credential, and mints a custom token for a uid that no longer exists — and
+ * `signInWithCustomToken` *creates* an account for a uid it does not find, so
+ * the deleted login comes back. It comes back with no `users/{uid}` document,
+ * so every security rule refuses it, but "signed in as a ghost" is not the
+ * outcome account deletion is supposed to have. The header of account.ts says
+ * the account goes and the personal data with it; this is part of that
+ * promise, and `deviceName` is personal data besides.
+ *
+ * Returns how many went, for the log.
+ */
+export async function deletePasskeysFor(uids: string[]): Promise<number> {
+  let deleted = 0;
+  // `in` takes at most 30 values, and an owner deleting a store can be taking
+  // more colleagues than that with them.
+  for (let i = 0; i < uids.length; i += 30) {
+    const snapshot = await db()
+      .collection(CREDENTIALS)
+      .where("uid", "in", uids.slice(i, i + 30))
+      .get();
+    // Same 400 as account.ts, and the same reason: a batch is capped at 500.
+    for (let j = 0; j < snapshot.docs.length; j += 400) {
+      const batch = db().batch();
+      for (const doc of snapshot.docs.slice(j, j + 400)) batch.delete(doc.ref);
+      await batch.commit();
+    }
+    deleted += snapshot.size;
+  }
+  return deleted;
+}
+
 // ---------------------------------------------------------------------------
 // Challenges
 // ---------------------------------------------------------------------------
@@ -396,19 +526,31 @@ async function consumeChallenge(
   uid?: string
 ): Promise<string> {
   const ref = db().collection(CHALLENGES).doc(challengeId);
-  const doc = await ref.get();
-  if (doc.exists) await ref.delete();
 
-  if (!doc.exists) {
+  // In a transaction, because a read followed by a delete is not single use.
+  // Two calls arriving together both read the document before either deletes
+  // it, and both then hold a challenge the other has supposedly spent — and
+  // spending it is the one thing standing between a captured assertion and a
+  // replay of it. The transaction makes the loser of that race fail its read.
+  //
+  // The delete still happens before any of the checks below, for the reason it
+  // always did: a challenge that fails verification is spent too, or an
+  // assertion could be retried against it until something worked.
+  const data = await db().runTransaction(async (tx) => {
+    const doc = await tx.get(ref);
+    if (!doc.exists) return null;
+    tx.delete(ref);
+    return doc.data() as {
+      challenge: string;
+      type: string;
+      uid: string | null;
+      expiresAt: Timestamp;
+    };
+  });
+
+  if (!data) {
     throw new HttpsError("failed-precondition", "That request has expired. Please try again.");
   }
-
-  const data = doc.data() as {
-    challenge: string;
-    type: string;
-    uid: string | null;
-    expiresAt: Timestamp;
-  };
 
   if (data.type !== type || (uid !== undefined && data.uid !== uid)) {
     throw new HttpsError("failed-precondition", "That request does not match. Please try again.");
@@ -421,6 +563,21 @@ async function consumeChallenge(
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * The transports to store, out of whatever the client sent.
+ *
+ * `credential.transports` is `response.response.transports` — client-supplied,
+ * and @simplewebauthn passes it straight through without looking at it. This
+ * array is stored and then handed back out to authenticators, and WebAuthn
+ * defines a handful of transports rather than an unbounded list, so a caller
+ * that sends ten thousand of them gets a cap instead of a document.
+ */
+function toTransports(value: string[] | undefined): string[] {
+  return (value ?? [])
+    .filter((t) => typeof t === "string" && t.length > 0 && t.length <= 32)
+    .slice(0, 8);
+}
 
 function requireUid(request: CallableRequest): string {
   const uid = request.auth?.uid;

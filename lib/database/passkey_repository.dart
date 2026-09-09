@@ -328,6 +328,14 @@ class PasskeyRepository {
             PasskeyFailure.rejected,
             e.message ?? 'That request has expired. Please try again.',
           ),
+        // The relying party refuses to register on top of a credential id
+        // that belongs to somebody else. The platform's own
+        // `excludeCredentials` prompt normally catches this first, so the
+        // screen already has wording for it.
+        'already-exists' => const PasskeyException(
+            PasskeyFailure.alreadyRegistered,
+            'That passkey is already registered.',
+          ),
         'not-found' => const PasskeyException(
             PasskeyFailure.unknown,
             'The passkey service is not deployed. Run '

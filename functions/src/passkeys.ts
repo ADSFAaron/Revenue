@@ -25,6 +25,7 @@
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall, CallableRequest } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions/v2";
 import {
   generateAuthenticationOptions,
@@ -43,6 +44,7 @@ import {
   CHALLENGE_TTL_MS,
   CREDENTIALS,
   EXPECTED_ORIGINS,
+  REGION,
   RP_ID,
   RP_NAME,
 } from "./config.js";
@@ -498,15 +500,17 @@ async function storeChallenge(
     challenge,
     type,
     uid: uid ?? null,
-    // A Timestamp rather than a plain number, so a Firestore TTL policy can be
-    // pointed at this field — TTL only recognises date-and-time values. The
-    // policy is only housekeeping: a challenge that is used gets deleted on the
-    // spot below, and expiry is enforced by comparing against this value, not
-    // by the document's absence. What TTL clears up is the abandoned ones,
-    // where somebody opened the sheet and walked away.
+    // What every other check reads. Expiry is enforced by comparing against
+    // this value in `consumeChallenge`, never by the document being absent, so
+    // nothing about security depends on anything sweeping these up.
     //
-    //   gcloud firestore fields ttls update expiresAt \
-    //     --collection-group=passkeyChallenges --enable-ttl
+    // The sweeping is `purgeExpiredChallenges` below. It used to be a Firestore
+    // TTL policy set once by hand, with the `gcloud firestore fields ttls
+    // update` command living in this comment — which meant the only record of
+    // whether it had ever been run was a console page, and nothing in the
+    // repository could tell you. A scheduled function is set up by
+    // `firebase deploy` along with everything else in here. A TTL policy on
+    // this field stays harmless if somebody has one: the two do the same work.
     expiresAt: Timestamp.fromMillis(Date.now() + CHALLENGE_TTL_MS),
     createdAt: FieldValue.serverTimestamp(),
   });
@@ -561,6 +565,52 @@ async function consumeChallenge(
 
   return data.challenge;
 }
+
+/**
+ * Deletes challenges nobody came back for.
+ *
+ * Housekeeping, not security. A challenge that is used is deleted the moment it
+ * is read, and one that is merely old is refused on its `expiresAt` — so what
+ * accumulates is the abandoned ones, where somebody opened the sheet and walked
+ * away. At a shop's volume that is a few documents a day, which is why this
+ * runs daily rather than often.
+ *
+ * Paged rather than done in one query: "delete everything matching" has no
+ * upper bound and a batch is capped at 500 writes. Each pass takes the oldest
+ * 400, so a day's work never fills one pass and a backlog drains over as many
+ * as it takes rather than failing whole.
+ */
+export const purgeExpiredChallenges = onSchedule(
+  {
+    region: REGION,
+    schedule: "every 24 hours",
+    timeZone: "Asia/Taipei",
+    // One at a time. Two copies would only fight over the same documents, and
+    // there is never enough work here to want a second.
+    maxInstances: 1,
+  },
+  async () => {
+    const PAGE = 400;
+    let deleted = 0;
+    for (;;) {
+      const stale = await db()
+        .collection(CHALLENGES)
+        .where("expiresAt", "<", Timestamp.now())
+        .orderBy("expiresAt")
+        .limit(PAGE)
+        .get();
+      if (stale.empty) break;
+
+      const batch = db().batch();
+      for (const doc of stale.docs) batch.delete(doc.ref);
+      await batch.commit();
+      deleted += stale.size;
+
+      if (stale.size < PAGE) break;
+    }
+    if (deleted > 0) logger.info("expired passkey challenges purged", { deleted });
+  },
+);
 
 // ---------------------------------------------------------------------------
 

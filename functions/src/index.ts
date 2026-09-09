@@ -21,6 +21,11 @@
  *                   App Check can gate and that returns the store's name
  *                   without its id.
  *
+ * One thing here is not like the others: `purgeExpiredChallenges` needs no
+ * credential, it needs a clock. It deletes the passkey challenges nobody came
+ * back for, and it lives here rather than in a console-set Firestore TTL
+ * policy so that deploying the relying party deploys its housekeeping too.
+ *
  * Everything else the app does — including redeeming an invite, which is a
  * real cross-document Firestore transaction — runs client-side and needs no
  * server.
@@ -37,6 +42,7 @@ export {
   finishPasskeyAuthentication,
   listPasskeys,
   deletePasskey,
+  purgeExpiredChallenges,
 } from "./passkeys.js";
 
 export { importMenuFromPhotos } from "./menu_import.js";
